@@ -7,7 +7,7 @@ their inputs, paired request identities, and the Q-only calibration rules.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
 import json
@@ -89,6 +89,51 @@ def _as_fraction(value: Any, label: str) -> Fraction:
     except (TypeError, ValueError, ZeroDivisionError) as exc:
         raise PerfGError(f"{label} is not an exact rational") from exc
     return result
+
+
+@dataclass(frozen=True)
+class PairedRetentionPolicy:
+    """Explicit CAL retention policy; selection results remain data-driven."""
+
+    reference_utilization: Fraction = Fraction("1/2")
+    low_max_retention: Fraction = Fraction("1/5")
+    transition_min_retention: Fraction = Fraction("1/5")
+    transition_max_retention: Fraction = Fraction("4/5")
+    high_min_retention: Fraction = Fraction("4/5")
+
+    def __post_init__(self) -> None:
+        fields = (
+            "reference_utilization", "low_max_retention",
+            "transition_min_retention", "transition_max_retention",
+            "high_min_retention",
+        )
+        for field in fields:
+            value = _as_fraction(getattr(self, field), field)
+            if not Fraction(0) <= value <= Fraction(1):
+                raise PerfGError(f"{field} must be in [0, 1]")
+            object.__setattr__(self, field, value)
+        if self.transition_min_retention > self.transition_max_retention:
+            raise PerfGError("transition retention bounds are inverted")
+
+
+def _coerce_paired_policy(policy: PairedRetentionPolicy | Mapping[str, Any] | None) -> PairedRetentionPolicy:
+    if policy is None:
+        return PairedRetentionPolicy()
+    if isinstance(policy, PairedRetentionPolicy):
+        return policy
+    if isinstance(policy, Mapping):
+        return PairedRetentionPolicy(**dict(policy))
+    raise PerfGError("threshold_policy must be a PairedRetentionPolicy or mapping")
+
+
+def _paired_policy_payload(policy: PairedRetentionPolicy) -> dict[str, str]:
+    return {
+        "reference_utilization": fraction_text(policy.reference_utilization),
+        "low_max_retention": fraction_text(policy.low_max_retention),
+        "transition_min_retention": fraction_text(policy.transition_min_retention),
+        "transition_max_retention": fraction_text(policy.transition_max_retention),
+        "high_min_retention": fraction_text(policy.high_min_retention),
+    }
 
 
 def condition(name: str, kappa: Any, eta: Any, *, smoke_only: bool = False) -> dict[str, Any]:
@@ -545,7 +590,11 @@ def paired_retention_matrix(
             valid = [member for member in members if member["status"] == "AVAILABLE"]
             retentions = [member["retention"] for member in valid]
             if not valid:
-                status = "UNAVAILABLE"
+                status = (
+                    "INCOMPLETE"
+                    if any(member["status"] == "INCOMPLETE" for member in members)
+                    else "UNAVAILABLE"
+                )
                 retention = None
             elif len(valid) != len(members):
                 status = "PARTIAL"
@@ -586,15 +635,21 @@ def paired_saturation_diagnostics(
     diagnostics = []
     for kappa, eta in conditions:
         values = []
+        missing_count = 0
         for row in rows:
             row_key = _paired_condition_key(row)
             if row_key[:3] == (kappa, eta, reference) and row_key[3] in schedulers:
                 metric = _paired_row_metric(row, "energy_blocked_ticks")
                 if isinstance(metric, (int, float)):
                     values.append(float(metric))
+                else:
+                    missing_count += 1
         diagnostics.append({
             "kappa": kappa, "eta": eta, "U_norm": reference,
             "observed_count": len(values),
+            "missing_count": missing_count,
+            "energy_blocking_complete": missing_count == 0 and bool(values),
+            "energy_blocked_positive_count": sum(value > 0 for value in values),
             "energy_blocked_ticks_sum": sum(values),
             "energy_blocked_ticks_max": max(values) if values else None,
             "energy_blocked_zero_ratio": (
@@ -609,79 +664,129 @@ def select_calibration_paired(
     rows: Sequence[Mapping[str, Any]],
     saturation_condition: Mapping[str, Any],
     *,
-    reference_utilization: Fraction = Fraction("1/2"),
+    threshold_policy: PairedRetentionPolicy | Mapping[str, Any] | None = None,
     utilizations: Sequence[Fraction] = CAL_UTILIZATIONS,
     schedulers: Sequence[str] = CAL_SCHEDULERS,
-    low_max_retention: float | None = None,
-    high_min_retention: float | None = None,
-    transition_min_retention: float | None = None,
-    transition_max_retention: float | None = None,
-    saturation_energy_blocked_max: float | None = None,
-    transition_energy_blocked_min: float | None = None,
 ) -> dict[str, Any]:
-    """Return paired diagnostics and optional explicit-threshold selection.
-
-    Thresholds are deliberately optional.  Without a supplied policy this
-    function reports candidates and returns ``THRESHOLD_POLICY_UNSPECIFIED``;
-    it does not silently turn an exploratory policy into a frozen protocol.
-    """
+    """Select CAL conditions using an explicit, data-driven policy."""
+    policy = _coerce_paired_policy(threshold_policy)
     matrix = paired_retention_matrix(
         rows, saturation_condition, utilizations=utilizations, schedulers=schedulers,
     )
     diagnostics = paired_saturation_diagnostics(
-        rows, saturation_condition, reference_utilization=reference_utilization,
+        rows, saturation_condition, reference_utilization=policy.reference_utilization,
         schedulers=schedulers,
     )
-    reference = fraction_text(reference_utilization)
+    reference = fraction_text(policy.reference_utilization)
     diag_by_condition = {(row["kappa"], row["eta"]): row for row in diagnostics}
     candidates = []
     for key, aggregate in sorted(matrix["aggregates"].items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]))):
         if key[2] != reference:
             continue
         candidate = dict(aggregate)
+        candidate["is_saturation"] = (key[0], key[1]) == (
+            matrix["saturation_condition"]["kappa"],
+            matrix["saturation_condition"]["eta"],
+        )
         candidate["energy_diagnostics"] = diag_by_condition.get((key[0], key[1]))
-        candidates.append(candidate)
-    thresholds = {
-        "low_max_retention": low_max_retention,
-        "high_min_retention": high_min_retention,
-        "transition_min_retention": transition_min_retention,
-        "transition_max_retention": transition_max_retention,
-        "saturation_energy_blocked_max": saturation_energy_blocked_max,
-        "transition_energy_blocked_min": transition_energy_blocked_min,
-    }
-    if any(value is None for value in thresholds.values()):
-        status = "THRESHOLD_POLICY_UNSPECIFIED"
-        selection = None
-    else:
-        available = [
-            candidate for candidate in candidates
-            if candidate["status"] == "AVAILABLE" and candidate["retention"] is not None
-        ]
-        sat_limit = float(saturation_energy_blocked_max)
-        transition_floor = float(transition_energy_blocked_min)
-        low = [candidate for candidate in available if candidate["retention"] <= float(low_max_retention)]
-        high = [
-            candidate for candidate in available
-            if candidate["retention"] >= float(high_min_retention)
-            and candidate["energy_diagnostics"]
-            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] is not None
-            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] <= sat_limit
-        ]
-        transition = [
-            candidate for candidate in available
-            if float(transition_min_retention) <= candidate["retention"] <= float(transition_max_retention)
-            and candidate["energy_diagnostics"]
-            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] is not None
-            and candidate["energy_diagnostics"]["energy_blocked_ticks_max"] >= transition_floor
-        ]
-        selection = {
-            "LOW": min(low, key=lambda candidate: candidate["retention"]) if low else None,
-            "TRANSITION": min(transition, key=lambda candidate: abs(candidate["retention"] - 0.5)) if transition else None,
-            "HIGH": min(high, key=lambda candidate: candidate["retention"]) if high else None,
+        aggregates_by_u = {
+            utilization: matrix["aggregates"][(key[0], key[1], utilization)]
+            for utilization in map(fraction_text, utilizations)
         }
-        status = "SELECTED" if all(selection.values()) else "CAL_BLOCKED"
+        retention_by_u = {
+            utilization: aggregate["retention"]
+            for utilization, aggregate in aggregates_by_u.items()
+        }
+        available_values = [value for value in retention_by_u.values() if value is not None]
+        transition_values = [
+            value for value in available_values
+            if policy.transition_min_retention <= Fraction(str(value)) <= policy.transition_max_retention
+        ]
+        candidate["retention_by_u"] = retention_by_u
+        candidate["all_required_u_available"] = all(
+            aggregate["status"] == "AVAILABLE"
+            for aggregate in aggregates_by_u.values()
+        )
+        candidate["transition_N_T"] = len(transition_values)
+        candidate["transition_deviation"] = sum(
+            abs(float(value) - 0.5) for value in transition_values
+        )
+        candidate["energy_blocking_positive_count"] = (
+            candidate["energy_diagnostics"]["energy_blocked_positive_count"]
+            if candidate["energy_diagnostics"] else None
+        )
+        candidates.append(candidate)
+    transition_candidates = [
+        candidate for candidate in candidates
+        if candidate["all_required_u_available"]
+        and not candidate["is_saturation"]
+        and candidate["status"] == "AVAILABLE"
+        and candidate["transition_N_T"] >= 2
+        and candidate["energy_diagnostics"]
+        and candidate["energy_diagnostics"]["energy_blocking_complete"]
+        and candidate["energy_blocking_positive_count"] > 0
+    ]
+    if not transition_candidates:
+        return {
+            "status": "PAIRED_CAL_BLOCKED", "selection": None,
+            "threshold_policy": _paired_policy_payload(policy),
+            "saturation_condition": matrix["saturation_condition"],
+            "candidates": candidates, "diagnostics": diagnostics, "matrix": matrix,
+        }
+    selected_transition = min(
+        transition_candidates,
+        key=lambda candidate: (
+            -candidate["transition_N_T"], candidate["transition_deviation"],
+            abs(Fraction(candidate["eta"]) - 1), Fraction(candidate["kappa"]),
+            Fraction(candidate["eta"]),
+        ),
+    )
+    selected_kappa = selected_transition["kappa"]
+    selected_eta = Fraction(selected_transition["eta"])
+    same_kappa = [candidate for candidate in candidates if candidate["kappa"] == selected_kappa]
+    low = [
+        candidate for candidate in same_kappa
+        if Fraction(candidate["eta"]) < selected_eta
+        and not candidate["is_saturation"]
+        and candidate["status"] == "AVAILABLE"
+        and candidate["energy_diagnostics"]
+        and candidate["energy_diagnostics"]["energy_blocking_complete"]
+        and candidate["retention"] is not None
+        and Fraction(str(candidate["retention"])) <= policy.low_max_retention
+    ]
+    high = [
+        candidate for candidate in same_kappa
+        if Fraction(candidate["eta"]) > selected_eta
+        and not candidate["is_saturation"]
+        and candidate["status"] == "AVAILABLE"
+        and candidate["energy_diagnostics"]
+        and candidate["energy_diagnostics"]["energy_blocking_complete"]
+        and candidate["energy_blocking_positive_count"] == 0
+        and candidate["retention"] is not None
+        and Fraction(str(candidate["retention"])) >= policy.high_min_retention
+    ]
+    low = max(low, key=lambda candidate: Fraction(candidate["eta"]), default=None)
+    high = min(high, key=lambda candidate: Fraction(candidate["eta"]), default=None)
+    selection = {
+        "kappa_star": selected_kappa,
+        "eta_low": low["eta"] if low else None,
+        "eta_transition": selected_transition["eta"],
+        "eta_high": high["eta"] if high else None,
+        "LOW": {"kappa": selected_kappa, "eta": low["eta"]} if low else None,
+        "TRANSITION": {"kappa": selected_kappa, "eta": selected_transition["eta"]},
+        "HIGH": {"kappa": selected_kappa, "eta": high["eta"]} if high else None,
+    }
+    if low is None and high is None:
+        status = "NEEDS_PAIRED_EXTENSION_BOTH"
+    elif low is None:
+        status = "NEEDS_PAIRED_EXTENSION_LOW"
+    elif high is None:
+        status = "NEEDS_PAIRED_EXTENSION_HIGH"
+    else:
+        status = "PAIRED_SELECTION_OK"
     return {
-        "status": status, "selection": selection, "thresholds": thresholds,
+        "status": status, "selection": selection,
+        "threshold_policy": _paired_policy_payload(policy),
         "saturation_condition": matrix["saturation_condition"],
         "candidates": candidates, "diagnostics": diagnostics, "matrix": matrix,
     }
@@ -690,7 +795,7 @@ def select_calibration_paired(
 __all__ = [
     "CAL_ETAS", "CAL_KAPPAS", "CAL_SCHEDULERS", "CAL_UTILIZATIONS",
     "FORMAL_HORIZON_MS", "FORMAL_SCHEDULERS", "FORMAL_TASKSETS_PER_UTILIZATION",
-    "FORMAL_UTILIZATIONS", "PerfGError", "SMOKE_CONDITIONS", "SCHEDULER_CLI",
+    "FORMAL_UTILIZATIONS", "PairedRetentionPolicy", "PerfGError", "SMOKE_CONDITIONS", "SCHEDULER_CLI",
     "build_raw_trace", "cal_plan", "condition", "energy_material", "formal_plan",
     "materialize_tasksets", "q_matrix", "q_only_projection", "request_id",
     "paired_retention_matrix", "paired_saturation_diagnostics",
