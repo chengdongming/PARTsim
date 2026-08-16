@@ -310,34 +310,41 @@ def test_paired_aggregate_excludes_zero_sat_denominator_scheduler():
     assert aggregate["sat_denominator_count"] == 2
 
 
-def _policy_condition_rows(kappa, eta, ratios, *, energy_blocked_ticks, scheduler="ASAP-BLOCK"):
+def _policy_condition_rows(kappa, eta, ratios, *, energy_blocked_ticks,
+                           schedulers=("ASAP-BLOCK",), failed_schedulers=()):
     rows = []
     for utilization, ratio in ratios.items():
         for index in range(10):
-            row = _paired_row(
-                kappa, eta, utilization, scheduler, f"t{index}",
-                index < ratio, taskset_hash=f"hash-{index}",
-            )
-            row["energy_blocked_ticks"] = energy_blocked_ticks
-            rows.append(row)
+            for scheduler in schedulers:
+                row = _paired_row(
+                    kappa, eta, utilization, scheduler, f"t{index}",
+                    index < ratio and scheduler not in failed_schedulers,
+                    taskset_hash=f"hash-{index}",
+                )
+                row["energy_blocked_ticks"] = energy_blocked_ticks
+                rows.append(row)
     return rows
 
 
 def _default_policy_rows(*, include_low=True, include_high=True,
                          transition_energy=1, high_energy=0,
-                         transition_incomplete=False):
+                         transition_incomplete=False,
+                         schedulers=("ASAP-BLOCK",), failed_schedulers=()):
     ratios = {"3/10": 10, "1/2": 6, "7/10": 3}
     rows = _policy_condition_rows(
         "200", "2", {utilization: 10 for utilization in ratios},
-        energy_blocked_ticks=0,
+        energy_blocked_ticks=0, schedulers=schedulers,
+        failed_schedulers=failed_schedulers,
     )
     if include_low:
         rows.extend(_policy_condition_rows(
             "50", "3/4", {utilization: 0 for utilization in ratios},
-            energy_blocked_ticks=1,
+            energy_blocked_ticks=1, schedulers=schedulers,
+            failed_schedulers=failed_schedulers,
         ))
     rows.extend(_policy_condition_rows(
         "50", "1", ratios, energy_blocked_ticks=transition_energy,
+        schedulers=schedulers, failed_schedulers=failed_schedulers,
     ))
     if transition_incomplete:
         rows[ next(
@@ -348,15 +355,16 @@ def _default_policy_rows(*, include_low=True, include_high=True,
     if include_high:
         rows.extend(_policy_condition_rows(
             "50", "5/4", {utilization: 10 for utilization in ratios},
-            energy_blocked_ticks=high_energy,
+            energy_blocked_ticks=high_energy, schedulers=schedulers,
+            failed_schedulers=failed_schedulers,
         ))
     return rows
 
 
-def _select_default_policy(rows):
+def _select_default_policy(rows, *, schedulers=("ASAP-BLOCK",)):
     return select_calibration_paired(
         rows, {"kappa": "200", "eta": "2"},
-        schedulers=("ASAP-BLOCK",),
+        schedulers=schedulers,
     )
 
 
@@ -401,6 +409,52 @@ def test_paired_selection_ignores_incomplete_transition_candidate():
             row["taskset_pass"] = None
             break
     assert _select_default_policy(non_reference_incomplete)["status"] == "PAIRED_CAL_BLOCKED"
+
+
+def test_paired_selection_accepts_legal_partial_aggregate_from_sat_zero_scheduler():
+    schedulers = (
+        "ASAP-BLOCK", "ASAP-NONBLOCK", "ASAP-SYNC", "ALAP-BLOCK", "ST-BLOCK",
+    )
+    rows = _default_policy_rows(
+        schedulers=schedulers, failed_schedulers=("ALAP-BLOCK",),
+    )
+    result = _select_default_policy(rows, schedulers=schedulers)
+    assert result["status"] == "PAIRED_SELECTION_OK"
+    assert result["selection"] == {
+        "kappa_star": "50", "eta_low": "3/4", "eta_transition": "1", "eta_high": "5/4",
+        "LOW": {"kappa": "50", "eta": "3/4"},
+        "TRANSITION": {"kappa": "50", "eta": "1"},
+        "HIGH": {"kappa": "50", "eta": "5/4"},
+    }
+    for eta in ("3/4", "1", "5/4"):
+        for utilization in ("3/10", "1/2", "7/10"):
+            aggregate = result["matrix"]["aggregates"][("50", eta, utilization)]
+            assert aggregate["status"] == "PARTIAL"
+            assert aggregate["valid_scheduler_count"] == 4
+            assert aggregate["unavailable_scheduler_count"] == 1
+            assert aggregate["incomplete_scheduler_count"] == 0
+
+
+def test_paired_selection_rejects_partial_aggregate_with_incomplete_scheduler():
+    schedulers = (
+        "ASAP-BLOCK", "ASAP-NONBLOCK", "ASAP-SYNC", "ALAP-BLOCK", "ST-BLOCK",
+    )
+    rows = _default_policy_rows(
+        schedulers=schedulers, failed_schedulers=("ALAP-BLOCK",),
+    )
+    for row in rows:
+        if (
+            row["kappa"], row["eta"], row["U_norm"], row["scheduler"], row["taskset_id"]
+        ) == ("50", "1", "1/2", "ASAP-BLOCK", "t0"):
+            row["taskset_pass"] = None
+            break
+    result = _select_default_policy(rows, schedulers=schedulers)
+    aggregate = result["matrix"]["aggregates"][("50", "1", "1/2")]
+    assert aggregate["status"] == "PARTIAL"
+    assert aggregate["valid_scheduler_count"] == 3
+    assert aggregate["unavailable_scheduler_count"] == 1
+    assert aggregate["incomplete_scheduler_count"] == 1
+    assert result["status"] == "PAIRED_CAL_BLOCKED"
 
 
 def test_paired_selection_transition_tie_break_is_deterministic():
