@@ -8,6 +8,8 @@ from dataclasses import asdict
 import json
 from fractions import Fraction
 from pathlib import Path
+import os
+import re
 import shutil
 import sys
 from typing import Any
@@ -39,6 +41,92 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+_ATTEMPT_DIR_RE = re.compile(r"^attempt_(\d+)$")
+_NORMAL_SCIENTIFIC_STATUSES = {
+    SimulationStatus.PASS_OBSERVED.value,
+    SimulationStatus.DEADLINE_MISS.value,
+}
+_TECHNICAL_STATUSES = {
+    "SIM_INTERNAL_ERROR", "TECHNICAL_FAILURE", "RUNTIME_TIMEOUT",
+    SimulationStatus.INTERNAL_ERROR.value,
+    SimulationStatus.RUNTIME_TIMEOUT.value,
+    SimulationStatus.HORIZON_INSUFFICIENT.value,
+}
+
+
+def _is_technical_result(row: dict[str, Any]) -> bool:
+    status = str(row.get("simulation_status", ""))
+    return row.get("technical_error") is not None or status in _TECHNICAL_STATUSES
+
+
+def _read_pid(lock_path: Path) -> int | None:
+    for line in lock_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("pid="):
+            try:
+                return int(line[4:])
+            except ValueError:
+                return None
+    return None
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _assert_no_live_attempt_lock(request_root: Path) -> None:
+    for lock_path in request_root.rglob("*.lock") if request_root.is_dir() else ():
+        pid = _read_pid(lock_path)
+        if pid is None:
+            raise RuntimeError(f"cannot determine lock owner: {lock_path}")
+        if _pid_is_alive(pid):
+            raise RuntimeError(f"request has an active execution lock: {lock_path} (pid={pid})")
+
+
+def _next_attempt_root(root: Path, request_id: str, attempts: list[dict[str, Any]]) -> tuple[int, Path]:
+    request_root = root / "simulations" / request_id
+    _assert_no_live_attempt_lock(request_root)
+    used: set[int] = set()
+    if request_root.is_dir():
+        for child in request_root.iterdir():
+            match = _ATTEMPT_DIR_RE.match(child.name)
+            if match and child.is_dir():
+                used.add(int(match.group(1)))
+    for row in attempts:
+        if str(row.get("request_id")) != request_id:
+            continue
+        try:
+            used.add(int(row["attempt_index"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(f"invalid attempt history for {request_id}") from exc
+    attempt_index = 1
+    while attempt_index in used:
+        attempt_index += 1
+    attempt_root = request_root / f"attempt_{attempt_index:04d}"
+    try:
+        attempt_root.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
+        # A concurrent invocation won the allocation race.  Do not overwrite
+        # or reuse its directory; fail closed and let the caller retry.
+        raise RuntimeError(f"attempt directory allocation raced: {attempt_root}")
+    return attempt_index, attempt_root
+
+
+def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -122,17 +210,34 @@ def main(argv: list[str] | None = None) -> int:
     raw_trace = tuple(experiment.construct_paired_harvest_trace(
         service.system_path, experiment.FORMAL_NORMALIZATION_HORIZON,
     ))
-    existing = read_jsonl(root / "results.jsonl") if args.resume else []
+    results_path = root / "results.jsonl"
+    attempts_path = root / "attempts.jsonl"
+    existing = read_jsonl(results_path) if args.resume else []
     existing_ids = [str(row.get("request_id")) for row in existing]
     expected_ids = {str(row["request_id"]) for row in requests}
     if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
         raise SystemExit("persisted results contain duplicate or unexpected request IDs")
+    if any(_is_technical_result(row) for row in existing):
+        raise SystemExit(
+            "active results contain a technical row; migration/recovery is required"
+        )
+    attempts = read_jsonl(attempts_path) if args.resume else []
+    for attempt in attempts:
+        if not attempt.get("request_id") or "attempt_index" not in attempt:
+            raise SystemExit("attempt history contains an invalid row")
     results = list(existing)
+    completed_ids = set(existing_ids)
     taskset_by_id = {taskset.taskset_id: taskset for taskset in tasksets}
     for request in requests:
-        if request["request_id"] in set(existing_ids):
+        request_id = str(request["request_id"])
+        if request_id in completed_ids:
             continue
         taskset = taskset_by_id[request["taskset_id"]]
+        try:
+            attempt_index, attempt_root = _next_attempt_root(root, request_id, attempts)
+        except RuntimeError as exc:
+            print(f"scheduler-load-cross resume blocked: {exc}", file=sys.stderr)
+            return 2
         energy = experiment.energy_material(
             taskset, Fraction(request["target_ue"]), raw_trace, kappa=kappa,
         )
@@ -151,8 +256,8 @@ def main(argv: list[str] | None = None) -> int:
         technical = None
         try:
             execution = run_paired_simulation(
-                simulation_id_value=request["request_id"], base_system_path=service.system_path,
-                run_root=root / "simulations" / request["request_id"], task_payload=taskset.task_payload,
+                simulation_id_value=request_id, base_system_path=service.system_path,
+                run_root=attempt_root, task_payload=taskset.task_payload,
                 taskset_hash=taskset.semantic_hash, processors=args.processors,
                 exact_e0=Fraction(energy["initial_energy_j"]), energy_config=energy_config,
                 simulation_config=simulation, scheduler_id=request["scheduler_cli"],
@@ -165,13 +270,16 @@ def main(argv: list[str] | None = None) -> int:
                 horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
                 simulation_completed=False, technical_error=technical,
             )
-            row = {**request, "energy": energy, "simulation_status": "TECHNICAL_FAILURE",
-                   "simulation_reason": technical, "technical_error": technical,
-                   "schedulable": None, "deadline_miss": None, "runtime_seconds": 0.0,
-                   "outcome": outcome, "taskset_pass": None}
+            status = "TECHNICAL_FAILURE"
+            reason = technical
+            runtime_seconds = 0.0
+            metrics: dict[str, Any] = {}
+            stdout_tail = ""
+            stderr_tail = ""
+            retained_trace_path = None
         else:
             status = execution.result.status
-            is_technical = status in {SimulationStatus.RUNTIME_TIMEOUT, SimulationStatus.INTERNAL_ERROR, SimulationStatus.HORIZON_INSUFFICIENT}
+            is_technical = status.value not in _NORMAL_SCIENTIFIC_STATUSES
             technical_error = execution.result.reason if is_technical else None
             outcome = evaluate_outcome(
                 [asdict(job) for job in execution.result.jobs],
@@ -180,16 +288,52 @@ def main(argv: list[str] | None = None) -> int:
                 simulation_completed=execution.result.simulation_completed,
                 technical_error=technical_error,
             )
-            row = {**request, "energy": energy, "simulation_status": status.value,
-                   "simulation_reason": execution.result.reason,
+            reason = execution.result.reason
+            status = status.value
+            runtime_seconds = execution.runtime_seconds
+            metrics = dict(execution.result.metrics)
+            stdout_tail = execution.stdout_tail
+            stderr_tail = execution.stderr_tail
+            retained_trace_path = str(execution.retained_trace_path) if execution.retained_trace_path else None
+            row = {**request, "energy": energy, "simulation_status": status,
+                   "simulation_reason": reason,
                    "technical_error": technical_error,
                    "schedulable": outcome.get("taskset_pass"),
-                   "deadline_miss": status is SimulationStatus.DEADLINE_MISS,
-                   "runtime_seconds": execution.runtime_seconds,
-                   "metrics": dict(execution.result.metrics), "outcome": outcome,
+                   "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
+                   "runtime_seconds": runtime_seconds,
+                   "metrics": metrics, "outcome": outcome,
                    "taskset_pass": outcome.get("taskset_pass")}
+        attempt_row = {
+            **request,
+            "request_id": request_id,
+            "attempt_index": attempt_index,
+            "attempt_root": str(attempt_root.relative_to(root)),
+            "taskset_id": taskset.taskset_id,
+            "taskset_hash": taskset.semantic_hash,
+            "target_uc": request["target_uc"],
+            "actual_uc": request["actual_uc"],
+            "target_ue": request["target_ue"],
+            "eta": request["eta"],
+            "simulation_status": status,
+            "technical_error": technical if execution is None else technical_error,
+            "runtime_seconds": runtime_seconds,
+            "stdout_tail": stdout_tail,
+            "stderr_tail": stderr_tail,
+            "retained_trace_path": retained_trace_path,
+            "simulation_reason": reason,
+        }
+        _append_jsonl(attempts_path, attempt_row)
+        attempts.append(attempt_row)
+        if status not in _NORMAL_SCIENTIFIC_STATUSES:
+            print(
+                f"scheduler-load-cross technical execution failure for "
+                f"{request_id}: {status}: {reason}",
+                file=sys.stderr,
+            )
+            return 2
         results.append(row)
-        write_jsonl(root / "results.jsonl", results)
+        completed_ids.add(request_id)
+        write_jsonl(results_path, results)
     observed_ids = [str(row["request_id"]) for row in results]
     report = {
         "expected_results": len(requests), "observed_results": len(results),

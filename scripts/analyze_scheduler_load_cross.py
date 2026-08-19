@@ -54,6 +54,13 @@ def analyze(root: Path) -> dict[str, Any]:
     ):
         raise SystemExit("actual U_C exceeds configured tolerance")
     for row in results:
+        if (
+            row.get("technical_error") is not None
+            or row.get("simulation_status") not in {
+                "SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS",
+            }
+        ):
+            raise SystemExit("active results contain a technical or non-terminal row")
         taskset = taskset_by_id[str(row["taskset_id"])]
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("scheduler changed taskset identity")
