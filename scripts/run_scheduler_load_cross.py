@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict
 import json
 from fractions import Fraction
+import multiprocessing
 from pathlib import Path
 import os
 import re
@@ -19,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3 import perf_g, scheduler_load_cross as experiment
+from experiments.v9_3 import simulation_engine
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from experiments.v9_3.simulation_engine import SimulationStatus, run_paired_simulation
 
@@ -41,6 +44,31 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
+    """Run one independent simulation in a worker process."""
+
+    try:
+        execution = run_paired_simulation(
+            simulation_id_value=str(job["simulation_id"]),
+            base_system_path=Path(job["base_system_path"]),
+            run_root=Path(job["run_root"]),
+            task_payload=job["task_payload"],
+            taskset_hash=str(job["taskset_hash"]),
+            processors=int(job["processors"]),
+            exact_e0=job["exact_e0"],
+            energy_config=job["energy_config"],
+            simulation_config=job["simulation_config"],
+            scheduler_id=str(job["scheduler_id"]),
+        )
+    except Exception as exc:
+        return None, f"{type(exc).__name__}: {exc}"
+    return execution, None
+
+
+def _initialize_simulation_worker(parse_semaphore: Any) -> None:
+    simulation_engine._set_trace_parse_semaphore(parse_semaphore)
 
 
 _ATTEMPT_DIR_RE = re.compile(r"^attempt_(\d+)$")
@@ -228,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
     results = list(existing)
     completed_ids = set(existing_ids)
     taskset_by_id = {taskset.taskset_id: taskset for taskset in tasksets}
+    pending_jobs: list[dict[str, Any]] = []
     for request in requests:
         request_id = str(request["request_id"])
         if request_id in completed_ids:
@@ -246,94 +275,120 @@ def main(argv: list[str] | None = None) -> int:
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
             "warmup": 0, "minimum_jobs_per_task": 1, "trace_mode": "semantic",
             "trace_on_failure": True, "timeout_seconds": args.timeout_seconds,
+            "cleanup_transient_artifacts": True,
         }
         energy_config = {
             "simulation_initial_battery": energy["initial_energy_j"],
             "battery_capacity": energy["battery_capacity_j"], "allow_harvest_clipping": True,
             "service_curve": {"solar_scale": energy["solar_scale"], "use_real_solar_data": True},
         }
-        execution = None
-        technical = None
-        try:
-            execution = run_paired_simulation(
-                simulation_id_value=request_id, base_system_path=service.system_path,
-                run_root=attempt_root, task_payload=taskset.task_payload,
-                taskset_hash=taskset.semantic_hash, processors=args.processors,
-                exact_e0=Fraction(energy["initial_energy_j"]), energy_config=energy_config,
-                simulation_config=simulation, scheduler_id=request["scheduler_cli"],
-            )
-        except Exception as exc:
-            technical = f"{type(exc).__name__}: {exc}"
-        if execution is None:
-            outcome = evaluate_outcome(
-                [], [str(row["task_id"]) for row in taskset.task_payload],
-                horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
-                simulation_completed=False, technical_error=technical,
-            )
-            status = "TECHNICAL_FAILURE"
-            reason = technical
-            runtime_seconds = 0.0
-            metrics: dict[str, Any] = {}
-            stdout_tail = ""
-            stderr_tail = ""
-            retained_trace_path = None
-        else:
-            status = execution.result.status
-            is_technical = status.value not in _NORMAL_SCIENTIFIC_STATUSES
-            technical_error = execution.result.reason if is_technical else None
-            outcome = evaluate_outcome(
-                [asdict(job) for job in execution.result.jobs],
-                [str(row["task_id"]) for row in taskset.task_payload],
-                horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
-                simulation_completed=execution.result.simulation_completed,
-                technical_error=technical_error,
-            )
-            reason = execution.result.reason
-            status = status.value
-            runtime_seconds = execution.runtime_seconds
-            metrics = dict(execution.result.metrics)
-            stdout_tail = execution.stdout_tail
-            stderr_tail = execution.stderr_tail
-            retained_trace_path = str(execution.retained_trace_path) if execution.retained_trace_path else None
-            row = {**request, "energy": energy, "simulation_status": status,
-                   "simulation_reason": reason,
-                   "technical_error": technical_error,
-                   "schedulable": outcome.get("taskset_pass"),
-                   "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
-                   "runtime_seconds": runtime_seconds,
-                   "metrics": metrics, "outcome": outcome,
-                   "taskset_pass": outcome.get("taskset_pass")}
-        attempt_row = {
-            **request,
+        pending_jobs.append({
+            "request": request,
             "request_id": request_id,
+            "simulation_id": request_id,
             "attempt_index": attempt_index,
-            "attempt_root": str(attempt_root.relative_to(root)),
+            "attempt_root": str(attempt_root),
+            "run_root": str(attempt_root),
             "taskset_id": taskset.taskset_id,
             "taskset_hash": taskset.semantic_hash,
-            "target_uc": request["target_uc"],
-            "actual_uc": request["actual_uc"],
-            "target_ue": request["target_ue"],
-            "eta": request["eta"],
-            "simulation_status": status,
-            "technical_error": technical if execution is None else technical_error,
-            "runtime_seconds": runtime_seconds,
-            "stdout_tail": stdout_tail,
-            "stderr_tail": stderr_tail,
-            "retained_trace_path": retained_trace_path,
-            "simulation_reason": reason,
-        }
-        _append_jsonl(attempts_path, attempt_row)
-        attempts.append(attempt_row)
-        if status not in _NORMAL_SCIENTIFIC_STATUSES:
-            print(
-                f"scheduler-load-cross technical execution failure for "
-                f"{request_id}: {status}: {reason}",
-                file=sys.stderr,
-            )
-            return 2
-        results.append(row)
-        completed_ids.add(request_id)
-        write_jsonl(results_path, results)
+            "task_payload": taskset.task_payload,
+            "energy": energy,
+            "base_system_path": str(service.system_path),
+            "processors": args.processors,
+            "exact_e0": Fraction(energy["initial_energy_j"]),
+            "energy_config": energy_config,
+            "simulation_config": simulation,
+            "scheduler_id": request["scheduler_cli"],
+        })
+
+    mp_context = multiprocessing.get_context("fork")
+    parse_semaphore = mp_context.Semaphore(1)
+    with ProcessPoolExecutor(
+        max_workers=args.workers,
+        mp_context=mp_context,
+        initializer=_initialize_simulation_worker,
+        initargs=(parse_semaphore,),
+    ) as executor:
+        futures = [executor.submit(_run_simulation_job, job) for job in pending_jobs]
+        for job, future in zip(pending_jobs, futures):
+            request = job["request"]
+            request_id = str(job["request_id"])
+            task_payload = job["task_payload"]
+            try:
+                execution, technical = future.result()
+            except Exception as exc:
+                execution = None
+                technical = f"worker failure: {type(exc).__name__}: {exc}"
+            if execution is None:
+                outcome = evaluate_outcome(
+                    [], [str(row["task_id"]) for row in task_payload],
+                    horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
+                    simulation_completed=False, technical_error=technical,
+                )
+                status = "TECHNICAL_FAILURE"
+                reason = technical
+                runtime_seconds = 0.0
+                metrics: dict[str, Any] = {}
+                stdout_tail = ""
+                stderr_tail = ""
+                retained_trace_path = None
+            else:
+                status = execution.result.status
+                is_technical = status.value not in _NORMAL_SCIENTIFIC_STATUSES
+                technical_error = execution.result.reason if is_technical else None
+                outcome = evaluate_outcome(
+                    [asdict(observation) for observation in execution.result.jobs],
+                    [str(row["task_id"]) for row in task_payload],
+                    horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
+                    simulation_completed=execution.result.simulation_completed,
+                    technical_error=technical_error,
+                )
+                reason = execution.result.reason
+                status = status.value
+                runtime_seconds = execution.runtime_seconds
+                metrics = dict(execution.result.metrics)
+                stdout_tail = execution.stdout_tail
+                stderr_tail = execution.stderr_tail
+                retained_trace_path = str(execution.retained_trace_path) if execution.retained_trace_path else None
+                row = {**request, "energy": job["energy"], "simulation_status": status,
+                       "simulation_reason": reason,
+                       "technical_error": technical_error,
+                       "schedulable": outcome.get("taskset_pass"),
+                       "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
+                       "runtime_seconds": runtime_seconds,
+                       "metrics": metrics, "outcome": outcome,
+                       "taskset_pass": outcome.get("taskset_pass")}
+            attempt_row = {
+                **request,
+                "request_id": request_id,
+                "attempt_index": job["attempt_index"],
+                "attempt_root": str(Path(job["attempt_root"]).relative_to(root)),
+                "taskset_id": job["taskset_id"],
+                "taskset_hash": job["taskset_hash"],
+                "target_uc": request["target_uc"],
+                "actual_uc": request["actual_uc"],
+                "target_ue": request["target_ue"],
+                "eta": request["eta"],
+                "simulation_status": status,
+                "technical_error": technical if execution is None else technical_error,
+                "runtime_seconds": runtime_seconds,
+                "stdout_tail": stdout_tail,
+                "stderr_tail": stderr_tail,
+                "retained_trace_path": retained_trace_path,
+                "simulation_reason": reason,
+            }
+            _append_jsonl(attempts_path, attempt_row)
+            attempts.append(attempt_row)
+            if status not in _NORMAL_SCIENTIFIC_STATUSES:
+                print(
+                    f"scheduler-load-cross technical execution failure for "
+                    f"{request_id}: {status}: {reason}",
+                    file=sys.stderr,
+                )
+                return 2
+            results.append(row)
+            completed_ids.add(request_id)
+            write_jsonl(results_path, results)
     observed_ids = [str(row["request_id"]) for row in results]
     report = {
         "expected_results": len(requests), "observed_results": len(results),
