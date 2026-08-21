@@ -48,6 +48,7 @@ from .task_identity import runtime_task_name_for_source_id
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOGGER = logging.getLogger(__name__)
+_TRACE_PARSE_SEMAPHORE: Any = None
 SUPPORTED_TRACE_SCHEMA_VERSION = 2
 CORE3_ENERGY_PREFLIGHT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1"
 SHARED_SOLAR_INPUT_SCHEMA = "ASAP_BLOCK_V9_3_SHARED_SOLAR_INPUT_V3"
@@ -1185,6 +1186,27 @@ def _cleanup_trace_artifacts(trace_path: Path) -> None:
         partial_path.unlink(missing_ok=True)
 
 
+def _set_trace_parse_semaphore(semaphore: Any) -> None:
+    """Limit concurrent large trace parses for process-based campaigns."""
+
+    global _TRACE_PARSE_SEMAPHORE
+    _TRACE_PARSE_SEMAPHORE = semaphore
+
+
+def _cleanup_transient_artifacts(run_root: Path) -> None:
+    """Remove per-simulation inputs and trace work after the terminal result."""
+
+    for name in ("simulation_inputs", "simulation_trace_work"):
+        path = run_root / name
+        try:
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(path)
+        except OSError as exc:
+            LOGGER.warning("could not remove transient simulation artifacts %s: %s", path, exc)
+
+
 def _record_simulator_failure(
     command: Sequence[str],
     trace_path: Path,
@@ -1336,27 +1358,34 @@ def run_paired_simulation(
                 )
             else:
                 try:
-                    result = parse_simulation_trace(
-                        trace_path, task_payload,
-                        expected_taskset_hash=taskset_hash, horizon=horizon,
-                        warmup=int(simulation_config["warmup"]),
-                        minimum_jobs_per_task=int(simulation_config["minimum_jobs_per_task"]),
-                        release_e0=exact_e0,
-                        expected_scheduler=scheduler_id,
-                        expected_processors=processors,
-                    )
-                    for task_id, observed in result.observed_task_power_j_per_tick.items():
-                        task_row = _task_payload_for_trace_id(
-                            task_payload, task_id,
+                    parse_semaphore = _TRACE_PARSE_SEMAPHORE
+                    if parse_semaphore is not None:
+                        parse_semaphore.acquire()
+                    try:
+                        result = parse_simulation_trace(
+                            trace_path, task_payload,
+                            expected_taskset_hash=taskset_hash, horizon=horizon,
+                            warmup=int(simulation_config["warmup"]),
+                            minimum_jobs_per_task=int(simulation_config["minimum_jobs_per_task"]),
+                            release_e0=exact_e0,
+                            expected_scheduler=scheduler_id,
+                            expected_processors=processors,
                         )
-                        expected = float(exact_energy.parse_persisted_fraction(
-                            task_row["P"],
-                            f"simulation task {task_id} P",
-                        ))
-                        if not math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12):
-                            raise SimulationTraceError(
-                                f"task {task_id} RTA/simulation power mismatch"
+                        for task_id, observed in result.observed_task_power_j_per_tick.items():
+                            task_row = _task_payload_for_trace_id(
+                                task_payload, task_id,
                             )
+                            expected = float(exact_energy.parse_persisted_fraction(
+                                task_row["P"],
+                                f"simulation task {task_id} P",
+                            ))
+                            if not math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12):
+                                raise SimulationTraceError(
+                                    f"task {task_id} RTA/simulation power mismatch"
+                                )
+                    finally:
+                        if parse_semaphore is not None:
+                            parse_semaphore.release()
                 except SimulationTraceError as exc:
                     stderr_tail = _record_simulator_failure(
                         command, trace_path, stdout_tail, stderr_tail,
@@ -1414,6 +1443,9 @@ def run_paired_simulation(
         if extended is None:
             break
         horizon = extended
+
+    if bool(simulation_config.get("cleanup_transient_artifacts", False)):
+        _cleanup_transient_artifacts(run_root)
 
     return SimulationExecution(
         simulation_id_value, result, total_runtime, len(horizons), tuple(horizons),
