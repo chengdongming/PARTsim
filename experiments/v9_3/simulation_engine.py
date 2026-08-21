@@ -6,13 +6,16 @@ from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
 import json
+import logging
 import math
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from typing import Any, Dict, Mapping, Optional, Sequence
 
 import yaml
@@ -44,6 +47,7 @@ from .task_identity import runtime_task_name_for_source_id
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+LOGGER = logging.getLogger(__name__)
 SUPPORTED_TRACE_SCHEMA_VERSION = 2
 CORE3_ENERGY_PREFLIGHT_SCHEMA = "ASAP_BLOCK_V9_3_CORE3_ENERGY_PREFLIGHT_V1"
 SHARED_SOLAR_INPUT_SCHEMA = "ASAP_BLOCK_V9_3_SHARED_SOLAR_INPUT_V3"
@@ -1173,6 +1177,34 @@ def _task_payload_for_trace_id(
         return matches[0]
 
 
+def _cleanup_trace_artifacts(trace_path: Path) -> None:
+    """Remove only this invocation's public and private trace artifacts."""
+
+    trace_path.unlink(missing_ok=True)
+    for partial_path in trace_path.parent.glob(trace_path.name + ".partial.*"):
+        partial_path.unlink(missing_ok=True)
+
+
+def _record_simulator_failure(
+    command: Sequence[str],
+    trace_path: Path,
+    stdout_tail: str,
+    stderr_tail: str,
+    reason: str = "simulator execution failed",
+) -> str:
+    """Log actionable child diagnostics without changing normal output."""
+
+    command_text = shlex.join(str(argument) for argument in command)
+    diagnostic = (
+        f"{reason}; command={command_text}; trace_path={trace_path}"
+    )
+    LOGGER.error(
+        "%s\nstdout_tail=%s\nstderr_tail=%s",
+        diagnostic, stdout_tail, stderr_tail,
+    )
+    return f"{stderr_tail}\n[{diagnostic}]" if stderr_tail else f"[{diagnostic}]"
+
+
 def run_paired_simulation(
     *,
     simulation_id_value: str,
@@ -1242,8 +1274,11 @@ def run_paired_simulation(
 
     while True:
         horizons.append(horizon)
-        trace_path = trace_work / f"{simulation_id_value}.{horizon}.json"
-        trace_path.unlink(missing_ok=True)
+        trace_path = trace_work / (
+            f"{simulation_id_value}.{horizon}.{os.getpid()}"
+            f".{uuid.uuid4().hex}.json"
+        )
+        _cleanup_trace_artifacts(trace_path)
         command = [
             str(simulator), str(system_path), str(taskset_path), str(horizon),
             "-t", str(trace_path), "--run-id",
@@ -1263,6 +1298,9 @@ def run_paired_simulation(
             stdout_tail = (completed.stdout or "")[-6000:]
             stderr_tail = (completed.stderr or "")[-6000:]
             if completed.returncode:
+                stderr_tail = _record_simulator_failure(
+                    command, trace_path, stdout_tail, stderr_tail,
+                )
                 result = _failure_result(
                     SimulationStatus.INTERNAL_ERROR,
                     f"simulator_exit_{completed.returncode}", horizon,
@@ -1292,6 +1330,10 @@ def run_paired_simulation(
                                 f"task {task_id} RTA/simulation power mismatch"
                             )
                 except SimulationTraceError as exc:
+                    stderr_tail = _record_simulator_failure(
+                        command, trace_path, stdout_tail, stderr_tail,
+                        reason=f"trace validation failed: {exc}",
+                    )
                     result = _failure_result(
                         SimulationStatus.INTERNAL_ERROR,
                         f"trace_semantic_error:{exc}", horizon,
@@ -1301,6 +1343,10 @@ def run_paired_simulation(
             total_runtime += time.perf_counter() - started
             stdout_tail = str(exc.stdout or "")[-6000:]
             stderr_tail = str(exc.stderr or "")[-6000:]
+            stderr_tail = _record_simulator_failure(
+                command, trace_path, stdout_tail, stderr_tail,
+                reason="simulator timed out",
+            )
             result = _failure_result(
                 SimulationStatus.RUNTIME_TIMEOUT, "simulation_timeout", horizon,
                 scheduler_id,
@@ -1329,7 +1375,7 @@ def run_paired_simulation(
             destination_root.mkdir(parents=True, exist_ok=True)
             retained = destination_root / f"{simulation_id_value}.json"
             shutil.copy2(trace_path, retained)
-        trace_path.unlink(missing_ok=True)
+        _cleanup_trace_artifacts(trace_path)
 
         if result.status is not SimulationStatus.HORIZON_INSUFFICIENT:
             break
