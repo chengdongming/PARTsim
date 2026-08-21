@@ -2330,8 +2330,8 @@ namespace RTSim {
 
         beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
-        fd << "\"event_type\": \"" << evt_name << "\", ";
-        fd << "\"task_name\": \"" << tt.getName() << "\", ";
+        fd << "\"event_type\": \"" << escapeJson(evt_name) << "\", ";
+        fd << "\"task_name\": \"" << escapeJson(tt.getName()) << "\", ";
         // ⭐ 修复：使用getLastArrival()获取当前实例的到达时间，而不是第一次实例的到达时间
         fd << "\"arrival_time\": \"" << tt.getLastArrival() << "\"";
 
@@ -2369,7 +2369,7 @@ namespace RTSim {
         beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"arrival\", ";
-        fd << "\"task_name\": \"" << tt.getName() << "\", ";
+        fd << "\"task_name\": \"" << escapeJson(tt.getName()) << "\", ";
         fd << "\"arrival_time\": \"" << SIMUL.getTime() << "\"";  // 使用当前时间
 
         // ⭐ 添加能量信息
@@ -2404,7 +2404,7 @@ namespace RTSim {
         beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"end_instance\", ";
-        fd << "\"task_name\": \"" << tt.getName() << "\", ";
+        fd << "\"task_name\": \"" << escapeJson(tt.getName()) << "\", ";
         fd << "\"arrival_time\": \"" << tt.getLastArrival() << "\"";
 
         // ⭐ 添加能量信息
@@ -2463,7 +2463,7 @@ namespace RTSim {
         beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"scheduled\", ";
-        fd << "\"task_name\": \"" << tt.getName() << "\", ";
+        fd << "\"task_name\": \"" << escapeJson(tt.getName()) << "\", ";
         fd << "\"arrival_time\": \"" << tt.getLastArrival() << "\"";
 
         // ⭐ 添加能量信息
@@ -2530,7 +2530,7 @@ namespace RTSim {
         beginEvent();
         fd << "\"time\": \"" << SIMUL.getTime() << "\", ";
         fd << "\"event_type\": \"descheduled\", ";
-        fd << "\"task_name\": \"" << tt.getName() << "\", ";
+        fd << "\"task_name\": \"" << escapeJson(tt.getName()) << "\", ";
         fd << "\"arrival_time\": \"" << tt.getLastArrival() << "\"";
 
         // ⭐ 添加能量信息
