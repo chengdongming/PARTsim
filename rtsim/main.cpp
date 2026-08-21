@@ -1388,7 +1388,11 @@ int main(int argc, char *argv[]) {
             publication_contract);
         partial_trace_guard.release();
     } catch (const std::exception &error) {
-        discardPartialTraces(trace_targets);
+        // Keep the closed private partial available to the experiment runner
+        // for failure diagnostics.  Successful publication still removes it
+        // atomically, and the runner copies then cleans it after recording the
+        // failure.
+        partial_trace_guard.release();
         std::cerr << "TRACE PUBLICATION ERROR: " << error.what() << std::endl;
         return EXIT_FAILURE;
     }
