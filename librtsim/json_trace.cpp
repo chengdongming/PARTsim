@@ -1639,6 +1639,14 @@ namespace RTSim {
                     out << "\\t";
                     break;
                 default:
+                    if (static_cast<unsigned char>(c) < 0x20) {
+                        out << "\\u" << std::hex << std::setw(4)
+                            << std::setfill('0')
+                            << static_cast<unsigned int>(
+                                   static_cast<unsigned char>(c))
+                            << std::dec << std::setfill(' ');
+                        break;
+                    }
                     out << c;
                     break;
             }

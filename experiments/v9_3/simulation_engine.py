@@ -1205,6 +1205,29 @@ def _record_simulator_failure(
     return f"{stderr_tail}\n[{diagnostic}]" if stderr_tail else f"[{diagnostic}]"
 
 
+def _retain_failed_trace(
+    trace_path: Path,
+    destination_root: Path,
+    simulation_id_value: str,
+) -> Optional[Path]:
+    """Copy a failed publication artifact before its private path is cleaned."""
+
+    candidates = [
+        trace_path,
+        *sorted(trace_path.parent.glob(trace_path.name + ".partial.*")),
+    ]
+    source = next((path for path in candidates if path.is_file()), None)
+    if source is None:
+        return None
+    destination_root.mkdir(parents=True, exist_ok=True)
+    destination = destination_root / (
+        f"{simulation_id_value}.publication_failure.json"
+    )
+    shutil.copy2(source, destination)
+    LOGGER.error("retained failed trace: %s", destination)
+    return destination
+
+
 def run_paired_simulation(
     *,
     simulation_id_value: str,
@@ -1301,6 +1324,9 @@ def run_paired_simulation(
                 stderr_tail = _record_simulator_failure(
                     command, trace_path, stdout_tail, stderr_tail,
                 )
+                retained = _retain_failed_trace(
+                    trace_path, failure_traces, simulation_id_value,
+                )
                 result = _failure_result(
                     SimulationStatus.INTERNAL_ERROR,
                     f"simulator_exit_{completed.returncode}", horizon,
@@ -1346,6 +1372,9 @@ def run_paired_simulation(
             stderr_tail = _record_simulator_failure(
                 command, trace_path, stdout_tail, stderr_tail,
                 reason="simulator timed out",
+            )
+            retained = _retain_failed_trace(
+                trace_path, failure_traces, simulation_id_value,
             )
             result = _failure_result(
                 SimulationStatus.RUNTIME_TIMEOUT, "simulation_timeout", horizon,
