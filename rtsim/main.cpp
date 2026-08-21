@@ -1394,6 +1394,14 @@ int main(int argc, char *argv[]) {
         // failure.
         partial_trace_guard.release();
         std::cerr << "TRACE PUBLICATION ERROR: " << error.what() << std::endl;
+        for (const auto &target : trace_targets) {
+            std::error_code partial_error;
+            if (std::filesystem::is_regular_file(
+                    target.partial_path, partial_error)) {
+                std::cerr << "TRACE PUBLICATION PARTIAL: "
+                          << target.partial_path << std::endl;
+            }
+        }
         return EXIT_FAILURE;
     }
 
