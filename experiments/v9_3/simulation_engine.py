@@ -1213,18 +1213,20 @@ def _retain_failed_trace(
     """Copy a failed publication artifact before its private path is cleaned."""
 
     candidates = [
-        trace_path,
         *sorted(trace_path.parent.glob(trace_path.name + ".partial.*")),
+        trace_path,
     ]
     source = next((path for path in candidates if path.is_file()), None)
     if source is None:
         return None
     destination_root.mkdir(parents=True, exist_ok=True)
     destination = destination_root / (
-        f"{simulation_id_value}.publication_failure.json"
+        f"{simulation_id_value}.publication_failure.json.partial"
     )
     shutil.copy2(source, destination)
-    LOGGER.error("retained failed trace: %s", destination)
+    LOGGER.error(
+        "retained failed trace: %s (source: %s)", destination, source,
+    )
     return destination
 
 
