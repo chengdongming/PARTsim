@@ -178,6 +178,10 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=perf_g.FORMAL_TIMEOUT_SECONDS)
     parser.add_argument("--kappa", default=str(experiment.DEFAULT_KAPPA))
     parser.add_argument("--simulator", type=Path, default=ROOT / "build/rtsim/rtsim")
+    parser.add_argument(
+        "--keep-traces", action="store_true",
+        help="retain complete simulator traces for debugging",
+    )
     parser.add_argument("--resume", action="store_true")
     return parser
 
@@ -214,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
         "release_semantics": "synchronous arrival_offset=0",
         "energy_control": "SERVICE_ONLY_SCALING", "energy_unit": "J/tick exact canonical P",
         "simulator": str(args.simulator), "canonical_taskset_source": "PERF-G TasksetStore",
+        "keep_traces": args.keep_traces,
     }
     run_config = root / "run_config.json"
     if args.resume:
@@ -274,7 +279,9 @@ def main(argv: list[str] | None = None) -> int:
             "simulator_bin": str(args.simulator), "horizon": args.simulation_horizon,
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
             "warmup": 0, "minimum_jobs_per_task": 1, "trace_mode": "semantic",
-            "trace_on_failure": True, "timeout_seconds": args.timeout_seconds,
+            "trace_on_failure": args.keep_traces,
+            "retain_trace": args.keep_traces,
+            "timeout_seconds": args.timeout_seconds,
             "cleanup_transient_artifacts": True,
         }
         energy_config = {

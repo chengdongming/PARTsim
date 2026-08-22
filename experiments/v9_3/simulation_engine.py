@@ -368,6 +368,30 @@ def trace_retention_statuses(
     return set(configured)
 
 
+def should_retain_failure_trace(
+    result: "SimulationResult",
+    simulation_config: Mapping[str, Any],
+) -> bool:
+    """Return whether a parsed result needs a diagnostic failure trace.
+
+    A completed horizon with an observed pass is a normal experiment result,
+    including when release-energy applicability is false.  That condition is
+    reported in the result metrics and must not turn a normal trace into a
+    failure artifact.
+    """
+
+    if (
+        result.status is SimulationStatus.PASS_OBSERVED
+        and result.simulation_completed
+        and result.completion_reason == "reached_horizon"
+    ):
+        return False
+    return bool(
+        simulation_config.get("trace_on_failure", False)
+        and result.status.value in trace_retention_statuses(simulation_config)
+    )
+
+
 @dataclass(frozen=True)
 class SimulationExecution:
     simulation_id: str
@@ -1318,6 +1342,10 @@ def run_paired_simulation(
     stderr_tail = ""
     retained: Optional[Path] = None
     result: Optional[SimulationResult] = None
+    retain_diagnostics = bool(
+        simulation_config.get("trace_on_failure", False)
+        or simulation_config.get("retain_trace", False)
+    )
 
     while True:
         horizons.append(horizon)
@@ -1348,9 +1376,10 @@ def run_paired_simulation(
                 stderr_tail = _record_simulator_failure(
                     command, trace_path, stdout_tail, stderr_tail,
                 )
-                retained = _retain_failed_trace(
-                    trace_path, failure_traces, simulation_id_value,
-                )
+                if retain_diagnostics:
+                    retained = _retain_failed_trace(
+                        trace_path, failure_traces, simulation_id_value,
+                    )
                 result = _failure_result(
                     SimulationStatus.INTERNAL_ERROR,
                     f"simulator_exit_{completed.returncode}", horizon,
@@ -1404,9 +1433,10 @@ def run_paired_simulation(
                 command, trace_path, stdout_tail, stderr_tail,
                 reason="simulator timed out",
             )
-            retained = _retain_failed_trace(
-                trace_path, failure_traces, simulation_id_value,
-            )
+            if retain_diagnostics:
+                retained = _retain_failed_trace(
+                    trace_path, failure_traces, simulation_id_value,
+                )
             result = _failure_result(
                 SimulationStatus.RUNTIME_TIMEOUT, "simulation_timeout", horizon,
                 scheduler_id,
@@ -1414,18 +1444,11 @@ def run_paired_simulation(
 
         assert result is not None
         retain_always = bool(simulation_config.get("retain_trace", False))
-        retain_statuses = trace_retention_statuses(simulation_config)
         should_retain = bool(
             trace_path.is_file()
             and (
                 retain_always
-                or (
-                    simulation_config["trace_on_failure"]
-                    and (
-                        result.status.value in retain_statuses
-                        or not result.release_e0_valid
-                    )
-                )
+                or should_retain_failure_trace(result, simulation_config)
             )
         )
         if should_retain:
