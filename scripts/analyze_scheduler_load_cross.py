@@ -29,6 +29,40 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writeheader(); writer.writerows(rows)
 
 
+def select_scan_rows(
+    summaries: list[dict[str, Any]], fixed_key: str, fixed_value: str,
+) -> list[dict[str, Any]]:
+    return [row for row in summaries if row[fixed_key] == fixed_value]
+
+
+def plot_scan(
+    rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
+    schedulers: list[str], xlabel: str, title: str,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    plt.figure()
+    for scheduler in schedulers:
+        values = [
+            row for row in rows
+            if row["scheduler"] == scheduler and row["acceptance_ratio"] is not None
+        ]
+        values.sort(key=lambda row: Fraction(row[xkey]))
+        plt.plot(
+            [float(Fraction(row[xkey])) for row in values],
+            [row["acceptance_ratio"] for row in values],
+            marker="o", label=scheduler,
+        )
+    plt.xlabel(xlabel)
+    plt.ylabel("Schedulability ratio")
+    plt.title(title)
+    plt.ylim(0, 1.05)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output / filename)
+    plt.close()
+
+
 def analyze(root: Path) -> dict[str, Any]:
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
     tasksets = read_jsonl(root / "tasksets.jsonl")
@@ -105,20 +139,22 @@ def analyze(root: Path) -> dict[str, Any]:
                 "n_internal_error": n_internal, "n_other_technical_error": n_other,
                 "acceptance_ratio": None if technical else n_schedulable / n_total,
             })
+    uc_rows = select_scan_rows(summaries, "target_ue", "2/5")
+    ue_rows = select_scan_rows(summaries, "target_uc", "1/2")
     write_csv(root / "summary.csv", summaries)
-    write_csv(root / "figure_scheduler_uc.csv", [row for row in summaries if row["target_ue"] == "2/5"])
-    write_csv(root / "figure_scheduler_ue.csv", [row for row in summaries if row["target_uc"] == "1/2"])
+    write_csv(root / "figure_scheduler_uc.csv", uc_rows)
+    write_csv(root / "figure_scheduler_ue.csv", ue_rows)
     try:
         import matplotlib
         matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        for filename, xkey in (("figure_scheduler_uc.png", "target_uc"), ("figure_scheduler_ue.png", "target_ue")):
-            plt.figure()
-            for scheduler in schedulers:
-                values = [row for row in summaries if row["scheduler"] == scheduler and row["acceptance_ratio"] is not None]
-                values.sort(key=lambda row: Fraction(row[xkey]))
-                plt.plot([float(Fraction(row[xkey])) for row in values], [row["acceptance_ratio"] for row in values], marker="o", label=scheduler)
-            plt.xlabel(xkey); plt.ylabel("Schedulability ratio"); plt.ylim(0, 1.05); plt.legend(); plt.tight_layout(); plt.savefig(root / filename); plt.close()
+        plot_scan(
+            uc_rows, root, "figure_scheduler_uc.png", "target_uc", schedulers,
+            "U_C", "Schedulability ratio versus U_C (U_E=2/5)",
+        )
+        plot_scan(
+            ue_rows, root, "figure_scheduler_ue.png", "target_ue", schedulers,
+            "U_E", "Schedulability ratio versus U_E (U_C=1/2)",
+        )
     except ImportError:
         pass
     report = {"complete": True, "tasksets": len(tasksets), "requests": len(requests),
