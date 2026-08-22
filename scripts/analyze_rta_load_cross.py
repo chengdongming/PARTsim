@@ -10,6 +10,7 @@ from fractions import Fraction
 import json
 from pathlib import Path
 import sys
+import time
 
 import matplotlib
 matplotlib.use("Agg")
@@ -20,6 +21,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from experiments.v9_3.rta_load_cross import fraction_text  # noqa: E402
+from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_workers
 
 
 def _read_jsonl(path: Path) -> list[dict]:
@@ -77,11 +79,27 @@ def _plot(rows: list[dict], output: Path, *, x_key: str, fixed_key: str, fixed_v
     plt.close(figure)
 
 
+def _plot_job(job: dict) -> None:
+    _plot(
+        job["rows"], Path(job["output"]), x_key=job["x_key"],
+        fixed_key=job["fixed_key"], fixed_values=tuple(job["fixed_values"]),
+        filename=job["filename"], title=job["title"],
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Analyze RTA-LOAD-CROSS JSONL output.")
     parser.add_argument("--input", required=True)
+    parser.add_argument("--analysis-workers", type=int, default=1)
     args = parser.parse_args(argv)
+    try:
+        validate_workers(args.analysis_workers, "analysis-workers")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     output = Path(args.input)
+    analysis_started = time.perf_counter()
+    validation_started = analysis_started
     try:
         run_config = json.loads((output / "run_config.json").read_text(encoding="utf-8"))
         expected = _expected_config(run_config)
@@ -221,13 +239,36 @@ def main(argv: list[str] | None = None) -> int:
         "n_tasksets": len(tasksets),
         "n_results": len(results),
     }
+    validation_summary_seconds = time.perf_counter() - validation_started
+    plot_started = time.perf_counter()
+    plot_jobs = []
+    for e0 in expected["e0_values"]:
+        e0_rows = [row for row in summary if row["e0"] == e0]
+        e0_filename = e0.replace("/", "_").replace("-", "m")
+        plot_jobs.extend([
+            {
+                "rows": e0_rows, "output": str(output), "x_key": "target_uc",
+                "fixed_key": "target_ue", "fixed_values": ("1/2", "4/5", "1"),
+                "filename": f"figure_uc_e0_{e0_filename}.png",
+                "title": f"Acceptance ratio versus U_C, E0={e0}",
+            },
+            {
+                "rows": e0_rows, "output": str(output), "x_key": "target_ue",
+                "fixed_key": "target_uc", "fixed_values": ("3/10", "1/2", "7/10"),
+                "filename": f"figure_ue_e0_{e0_filename}.png",
+                "title": f"Acceptance ratio versus U_E, E0={e0}",
+            },
+        ])
+    run_independent_jobs(plot_jobs, _plot_job, workers=args.analysis_workers)
+    plot_seconds = time.perf_counter() - plot_started
+    invariant["telemetry"] = {
+        "validation_summary_seconds": validation_summary_seconds,
+        "plot_seconds": plot_seconds,
+        "analysis_total_seconds": time.perf_counter() - analysis_started,
+        "analysis_workers": args.analysis_workers,
+    }
     (output / "invariant_report.json").write_text(json.dumps(invariant, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    e0_zero = [row for row in summary if row["e0"] == "0"]
-    _plot(e0_zero, output, x_key="target_uc", fixed_key="target_ue", fixed_values=("1/2", "4/5", "1"), filename="figure_uc_e0_0.png", title="Acceptance ratio versus U_C, E0=0")
-    _plot(e0_zero, output, x_key="target_ue", fixed_key="target_uc", fixed_values=("3/10", "1/2", "7/10"), filename="figure_ue_e0_0.png", title="Acceptance ratio versus U_E, E0=0")
-    _plot([row for row in summary if row["e0"] == "37"], output, x_key="target_uc", fixed_key="target_ue", fixed_values=("1/2", "4/5", "1"), filename="figure_uc_e0_37.png", title="Acceptance ratio versus U_C, E0=37")
-    _plot([row for row in summary if row["e0"] == "37"], output, x_key="target_ue", fixed_key="target_uc", fixed_values=("3/10", "1/2", "7/10"), filename="figure_ue_e0_37.png", title="Acceptance ratio versus U_E, E0=37")
+    (output / "analysis_report.json").write_text(json.dumps(invariant, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(invariant, sort_keys=True))
     return 2 if coverage_errors or denominator_violations or dominance_violations or certification_nesting_violations or monotonicity_violations else 0
 

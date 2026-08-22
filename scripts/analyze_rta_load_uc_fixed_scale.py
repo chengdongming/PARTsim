@@ -10,6 +10,7 @@ from fractions import Fraction
 import json
 from pathlib import Path
 import sys
+import time
 from typing import Any, Iterable
 
 import matplotlib
@@ -19,6 +20,8 @@ import matplotlib.pyplot as plt
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_workers
 
 
 METHOD_ORDER = ("CW", "LOC", "PH", "SEQ")
@@ -344,7 +347,14 @@ def _plot(summary: list[dict[str, Any]], output: Path, config: dict[str, Any], e
     plt.close(figure)
 
 
-def analyze(output: Path) -> tuple[int, dict[str, int]]:
+def _plot_job(job: dict[str, Any]) -> None:
+    _plot(job["summary"], Path(job["output"]), job["config"], Fraction(job["e0"]))
+
+
+def analyze(output: Path, *, analysis_workers: int = 1) -> tuple[int, dict[str, Any]]:
+    validate_workers(analysis_workers, "analysis-workers")
+    analysis_started = time.perf_counter()
+    validation_started = analysis_started
     config = _load_config(output / "run_config.json")
     tasksets = _read_jsonl(output / "tasksets.jsonl")
     results = _read_jsonl(output / "results.jsonl")
@@ -431,11 +441,28 @@ def analyze(output: Path) -> tuple[int, dict[str, int]]:
         writer = csv.DictWriter(handle, fieldnames=SUMMARY_FIELDS)
         writer.writeheader()
         writer.writerows(summary)
+    validation_summary_seconds = time.perf_counter() - validation_started
+    plot_started = time.perf_counter()
+    run_independent_jobs(
+        [
+            {"summary": summary, "output": str(output), "config": config, "e0": e0}
+            for e0 in config["e0_values"]
+        ],
+        _plot_job, workers=analysis_workers,
+    )
+    plot_seconds = time.perf_counter() - plot_started
+    invariants["telemetry"] = {
+        "validation_summary_seconds": validation_summary_seconds,
+        "plot_seconds": plot_seconds,
+        "analysis_total_seconds": time.perf_counter() - analysis_started,
+        "analysis_workers": analysis_workers,
+    }
     (output / "invariant_report.json").write_text(
         json.dumps(invariants, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    for e0 in config["e0_values"]:
-        _plot(summary, output, config, e0)
+    (output / "analysis_report.json").write_text(
+        json.dumps(invariants, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
     errors = (
         invariants["denominator_violation_count"]
@@ -461,9 +488,12 @@ def main(argv: list[str] | None = None) -> int:
         description="Analyze Figure 1 fixed-scale RTA certification output."
     )
     parser.add_argument("--input", required=True)
+    parser.add_argument("--analysis-workers", type=int, default=1)
     args = parser.parse_args(argv)
     try:
-        code, invariants = analyze(Path(args.input))
+        code, invariants = analyze(
+            Path(args.input), analysis_workers=args.analysis_workers,
+        )
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
         print(f"fixed-scale RTA analysis failed: {exc}", file=sys.stderr)
         return 2

@@ -286,6 +286,56 @@ def scale_skeleton_fixed_energy_scale(
     }
 
 
+def prepare_fixed_scale_taskset(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Pure fixed-scale preparation unit used by the runner process pool."""
+    uc = Fraction(job["target_uc"])
+    index = int(job["generation_index"])
+    seed = stable_seed(int(job["seed"]), int(job["processors"]), int(job["tasks"]), uc, index)
+    skeleton = generate_cpu_skeleton(
+        seed=seed, target_uc=uc, processors=int(job["processors"]),
+        tasks=int(job["tasks"]), period_min=int(job["period_min"]),
+        period_max=int(job["period_max"]),
+        min_task_util=Fraction(job["min_task_util"]),
+        max_task_util=Fraction(job["max_task_util"]),
+        tolerance_total=Fraction(job["tolerance"]),
+        system_config=Path(job["system_config"]),
+    )
+    taskset = scale_skeleton_fixed_energy_scale(
+        skeleton, target_uc=uc, generation_index=index, seed=seed,
+        processors=int(job["processors"]), rho=Fraction(job["rho"]),
+        base_energies=job["base_energies"], energy_scale=Fraction(job["energy_scale"]),
+    )
+    return {"target_uc": fraction_text(uc), "generation_index": index, "taskset": taskset}
+
+
+def prepare_load_cross_group(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Generate one skeleton and all its U_E-scaled immutable tasksets."""
+    uc = Fraction(job["target_uc"])
+    index = int(job["generation_index"])
+    seed = stable_seed(int(job["seed"]), int(job["processors"]), int(job["tasks"]), uc, index)
+    skeleton = generate_cpu_skeleton(
+        seed=seed, target_uc=uc, processors=int(job["processors"]),
+        tasks=int(job["tasks"]), period_min=int(job["period_min"]),
+        period_max=int(job["period_max"]),
+        min_task_util=Fraction(job["min_task_util"]),
+        max_task_util=Fraction(job["max_task_util"]),
+        tolerance_total=Fraction(job["tolerance"]),
+        system_config=Path(job["system_config"]),
+    )
+    tasksets = [
+        scale_skeleton(
+            skeleton, target_uc=uc, target_ue=Fraction(ue),
+            generation_index=index, seed=seed, processors=int(job["processors"]),
+            rho=Fraction(job["rho"]), base_energies=job["base_energies"],
+        )
+        for ue in job["target_ues"]
+    ]
+    return {
+        "target_uc": fraction_text(uc), "generation_index": index,
+        "tasksets": tasksets,
+    }
+
+
 def _beta_values(tasks: Sequence[Mapping[str, Any]], rho: Fraction, latency: Fraction) -> tuple[Fraction, ...]:
     horizon = max(int(row["D"]) for row in tasks) - 1
     return tuple(rho * max(Fraction(delta) - latency, Fraction(0)) for delta in range(horizon + 1))
@@ -521,6 +571,7 @@ __all__ = [
     "FROZEN_UC", "FROZEN_WORKLOADS", "METHOD_DISPLAY_TO_ID", "execute_requests",
     "export_core3_tasksets", "fraction_text", "frozen_cells", "generate_cpu_skeleton",
     "fixed_scale_taskset_id", "make_requests", "parse_cells", "parse_fraction",
-    "request_id", "scale_skeleton", "scale_skeleton_fixed_energy_scale",
+    "prepare_fixed_scale_taskset", "prepare_load_cross_group", "request_id",
+    "scale_skeleton", "scale_skeleton_fixed_energy_scale",
     "stable_seed", "static_counts", "taskset_id",
 ]

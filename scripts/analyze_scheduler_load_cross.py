@@ -9,6 +9,7 @@ from fractions import Fraction
 import json
 from pathlib import Path
 import sys
+import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,6 +17,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3 import scheduler_load_cross as experiment
+from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_workers
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -148,7 +150,17 @@ def plot_scan(
     plt.close()
 
 
-def analyze(root: Path) -> dict[str, Any]:
+def _plot_scan_job(job: dict[str, Any]) -> None:
+    plot_scan(
+        job["rows"], Path(job["output"]), job["filename"], job["xkey"],
+        job["schedulers"], job["xlabel"], job["title"],
+    )
+
+
+def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
+    validate_workers(analysis_workers, "analysis-workers")
+    analysis_started = time.perf_counter()
+    validation_started = analysis_started
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
     cells = _configured_cells(config)
     figure_slices = _figure_slices(config, cells)
@@ -245,23 +257,38 @@ def analyze(root: Path) -> dict[str, Any]:
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "figure_scheduler_uc.csv", uc_rows)
     write_csv(root / "figure_scheduler_ue.csv", ue_rows)
+    validation_summary_seconds = time.perf_counter() - validation_started
+    plot_started = time.perf_counter()
     try:
         import matplotlib
         matplotlib.use("Agg")
-        plot_scan(
-            uc_rows, root, "figure_scheduler_uc.png", uc_slice["x_key"], schedulers,
-            "U_C", f"Schedulability ratio versus U_C (U_E={uc_slice['fixed_value']})",
-        )
-        plot_scan(
-            ue_rows, root, "figure_scheduler_ue.png", ue_slice["x_key"], schedulers,
-            "U_E", f"Schedulability ratio versus U_E (U_C={ue_slice['fixed_value']})",
-        )
+        run_independent_jobs([
+            {
+                "rows": uc_rows, "output": str(root),
+                "filename": "figure_scheduler_uc.png", "xkey": uc_slice["x_key"],
+                "schedulers": schedulers, "xlabel": "U_C",
+                "title": f"Schedulability ratio versus U_C (U_E={uc_slice['fixed_value']})",
+            },
+            {
+                "rows": ue_rows, "output": str(root),
+                "filename": "figure_scheduler_ue.png", "xkey": ue_slice["x_key"],
+                "schedulers": schedulers, "xlabel": "U_E",
+                "title": f"Schedulability ratio versus U_E (U_C={ue_slice['fixed_value']})",
+            },
+        ], _plot_scan_job, workers=analysis_workers)
     except ImportError:
         pass
+    plot_seconds = time.perf_counter() - plot_started
     report = {"complete": True, "tasksets": len(tasksets), "requests": len(requests),
               "results": len(results), "duplicate_request_ids": duplicate,
               "missing_request_ids": missing, "summary_rows": len(summaries),
-              "technical_result_count": sum(bool(row.get("technical_error")) for row in results)}
+              "technical_result_count": sum(bool(row.get("technical_error")) for row in results),
+              "telemetry": {
+                  "validation_summary_seconds": validation_summary_seconds,
+                  "plot_seconds": plot_seconds,
+                  "analysis_total_seconds": time.perf_counter() - analysis_started,
+                  "analysis_workers": analysis_workers,
+              }}
     (root / "analysis_report.json").write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return report
 
@@ -269,8 +296,13 @@ def analyze(root: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--analysis-workers", type=int, default=1)
     args = parser.parse_args(argv)
-    print(json.dumps(analyze(args.input), sort_keys=True))
+    try:
+        result = analyze(args.input, analysis_workers=args.analysis_workers)
+    except ValueError as exc:
+        parser.error(str(exc))
+    print(json.dumps(result, sort_keys=True))
     return 0
 
 

@@ -8,6 +8,7 @@ from fractions import Fraction
 import json
 from pathlib import Path
 import sys
+import time
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -23,6 +24,8 @@ from experiments.v9_3.rta_load_cross import (  # noqa: E402
     scale_skeleton_fixed_energy_scale,
     stable_seed,
 )
+from experiments.v9_3.parallel_prepare import run_prepare_jobs, validate_workers
+from experiments.v9_3 import rta_load_cross as rta_experiment
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -153,6 +156,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True)
     parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--prepare-workers", type=int, default=None,
+        help="bounded workers for deterministic preparation (default: --workers)",
+    )
     parser.add_argument("--samples-per-uc", type=int, default=200)
     parser.add_argument("--processors", type=int, default=4)
     parser.add_argument("--tasks", type=int, default=10)
@@ -179,7 +186,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    prepare_workers = args.workers if args.prepare_workers is None else args.prepare_workers
     try:
+        validate_workers(prepare_workers, "prepare-workers")
         if any(value < 1 for value in (
             args.workers, args.processors, args.tasks, args.samples_per_uc,
         )):
@@ -234,26 +243,42 @@ def main(argv: list[str] | None = None) -> int:
         tasksets_path = output / "tasksets.jsonl"
         results_path = output / "results.jsonl"
         base_energies = _load_exact_energy_model(config_path)
+        total_started = time.perf_counter()
         tasksets = _jsonl(tasksets_path) if args.resume and tasksets_path.exists() else []
+        prepare_started = time.perf_counter()
         if not tasksets:
-            tasksets = []
-            for uc in sorted(uc_values):
-                for index in range(args.samples_per_uc):
-                    seed = stable_seed(args.seed, args.processors, args.tasks, uc, index)
-                    skeleton = generate_cpu_skeleton(
-                        seed=seed, target_uc=uc, processors=args.processors,
-                        tasks=args.tasks, period_min=args.period_min,
-                        period_max=args.period_max, min_task_util=min_util,
-                        max_task_util=max_util, tolerance_total=tolerance,
-                        system_config=config_path,
-                    )
-                    tasksets.append(scale_skeleton_fixed_energy_scale(
-                        skeleton, target_uc=uc, generation_index=index, seed=seed,
-                        processors=args.processors, rho=rho,
-                        base_energies=base_energies, energy_scale=energy_scale,
-                    ))
+            jobs = [
+                {
+                    "seed": args.seed, "target_uc": uc, "generation_index": index,
+                    "processors": args.processors, "tasks": args.tasks,
+                    "period_min": args.period_min, "period_max": args.period_max,
+                    "min_task_util": min_util, "max_task_util": max_util,
+                    "tolerance": tolerance, "system_config": str(config_path),
+                    "rho": rho, "base_energies": base_energies,
+                    "energy_scale": energy_scale,
+                }
+                for uc in sorted(uc_values)
+                for index in range(args.samples_per_uc)
+            ]
+            prepared = run_prepare_jobs(
+                jobs, rta_experiment.prepare_fixed_scale_taskset,
+                workers=prepare_workers, phase="rta-load-uc-fixed-scale prepare",
+                key=lambda row: (row["target_uc"], row["generation_index"]),
+            )
+            tasksets = [
+                prepared[(fraction_text(uc), index)]["taskset"]
+                for uc in sorted(uc_values)
+                for index in range(args.samples_per_uc)
+            ]
             _write_jsonl(tasksets_path, tasksets)
+        prepare_seconds = time.perf_counter() - prepare_started
+        print(
+            f"phase=prepare stage=rta-load-uc-fixed-scale prepare "
+            f"elapsed_seconds={prepare_seconds:.3f} workers={prepare_workers} "
+            f"items={len(tasksets)}", flush=True,
+        )
 
+        request_started = time.perf_counter()
         requests = make_requests(
             tasksets, e0_values, method_names, args.processors, rho, latency,
             args.timeout_first,
@@ -264,6 +289,7 @@ def main(argv: list[str] | None = None) -> int:
         if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
             raise ValueError("resume results contain duplicate or unexpected request IDs")
         pending = [row for row in requests if row["request_id"] not in set(existing_ids)]
+        request_build_seconds = time.perf_counter() - request_started
         run_config = {
             "energy_mode": "fixed_scale",
             "energy_scale": fraction_text(energy_scale),
@@ -282,6 +308,10 @@ def main(argv: list[str] | None = None) -> int:
             "system_config": str(config_path), "semantic_config": semantic_config,
             "request_count": len(requests), "taskset_count": len(tasksets),
             "resume": bool(args.resume), "status": "running",
+            "execution": {
+                "workers": args.workers,
+                "prepare_workers": prepare_workers,
+            },
         }
         if not pending and previous_config:
             for key in ("topology", "worker_affinity_bindings", "worker_intervals",
@@ -313,6 +343,12 @@ def main(argv: list[str] | None = None) -> int:
             }
         run_config.update(execution)
         run_config["status"] = "complete"
+        run_config["telemetry"] = {
+            "prepare_tasksets_seconds": prepare_seconds,
+            "request_build_seconds": request_build_seconds,
+            "execution_seconds": run_config.get("total_wall_seconds", 0.0),
+            "total_seconds": time.perf_counter() - total_started,
+        }
         (output / "run_config.json").write_text(
             json.dumps(run_config, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",

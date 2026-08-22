@@ -8,6 +8,7 @@ from fractions import Fraction
 import json
 from pathlib import Path
 import sys
+import time
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -27,6 +28,8 @@ from experiments.v9_3.rta_load_cross import (  # noqa: E402
     stable_seed,
     static_counts,
 )
+from experiments.v9_3.parallel_prepare import run_prepare_jobs, validate_workers
+from experiments.v9_3 import rta_load_cross as rta_experiment
 
 
 def _jsonl(path: Path) -> list[dict]:
@@ -123,6 +126,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True)
     parser.add_argument("--seed", required=True, type=int)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--prepare-workers", type=int, default=None,
+        help="bounded workers for deterministic preparation (default: --workers)",
+    )
     parser.add_argument("--samples-per-uc", type=int, default=500)
     parser.add_argument("--processors", type=int, default=4)
     parser.add_argument("--tasks", type=int, default=10)
@@ -152,7 +159,9 @@ def _parse_fraction_list(text: str, label: str) -> list[Fraction]:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    prepare_workers = args.workers if args.prepare_workers is None else args.prepare_workers
     try:
+        validate_workers(prepare_workers, "prepare-workers")
         if args.workers < 1 or args.processors < 1 or args.tasks < 1 or args.samples_per_uc < 1:
             raise ValueError("workers, processors, tasks, and samples-per-uc must be positive")
         cells = parse_cells(args.cells)
@@ -202,33 +211,50 @@ def main(argv: list[str] | None = None) -> int:
         config_path = Path(args.system_config)
         base_energies = _load_exact_energy_model(config_path)
 
+        total_started = time.perf_counter()
         tasksets = _jsonl(tasksets_path) if args.resume and tasksets_path.exists() else []
+        prepare_started = time.perf_counter()
         if not tasksets:
-            skeletons: dict[tuple[Fraction, int], tuple[dict, ...]] = {}
-            for uc in sorted({cell[0] for cell in cells}):
-                for index in range(args.samples_per_uc):
-                    seed = stable_seed(args.seed, args.processors, args.tasks, uc, index)
-                    skeletons[(uc, index)] = generate_cpu_skeleton(
-                        seed=seed, target_uc=uc, processors=args.processors,
-                        tasks=args.tasks, period_min=args.period_min,
-                        period_max=args.period_max, min_task_util=min_util,
-                        max_task_util=max_util, tolerance_total=tolerance,
-                        system_config=config_path,
-                    )
+            jobs = [
+                {
+                    "seed": args.seed, "target_uc": uc, "generation_index": index,
+                    "target_ues": [ue for cell_uc, ue in cells if cell_uc == uc],
+                    "processors": args.processors, "tasks": args.tasks,
+                    "period_min": args.period_min, "period_max": args.period_max,
+                    "min_task_util": min_util, "max_task_util": max_util,
+                    "tolerance": tolerance, "system_config": str(config_path),
+                    "rho": rho, "base_energies": base_energies,
+                }
+                for uc in sorted({cell[0] for cell in cells})
+                for index in range(args.samples_per_uc)
+            ]
+            prepared = run_prepare_jobs(
+                jobs, rta_experiment.prepare_load_cross_group,
+                workers=prepare_workers, phase="rta-load-cross prepare",
+                key=lambda row: (row["target_uc"], row["generation_index"]),
+            )
+            tasksets = []
             for uc, ue in cells:
                 for index in range(args.samples_per_uc):
-                    seed = stable_seed(args.seed, args.processors, args.tasks, uc, index)
-                    tasksets.append(scale_skeleton(
-                        skeletons[(uc, index)], target_uc=uc, target_ue=ue,
-                        generation_index=index, seed=seed, processors=args.processors, rho=rho,
-                        base_energies=base_energies,
+                    group = prepared[(fraction_text(uc), index)]["tasksets"]
+                    tasksets.append(next(
+                        row for row in group
+                        if row["target_ue"] == fraction_text(ue)
                     ))
             _write_jsonl(tasksets_path, tasksets)
+        prepare_seconds = time.perf_counter() - prepare_started
+        print(
+            f"phase=prepare stage=rta-load-cross prepare "
+            f"elapsed_seconds={prepare_seconds:.3f} workers={prepare_workers} "
+            f"items={len(tasksets)}", flush=True,
+        )
         core3_count = export_core3_tasksets(tasksets, output / "core3_ue08_tasksets.jsonl")
 
+        request_started = time.perf_counter()
         requests = make_requests(tasksets, e0_values, method_names, args.processors, rho, latency, args.timeout_first)
         existing = {row.get("request_id") for row in _jsonl(results_path)} if args.resume else set()
         pending = [row for row in requests if row["request_id"] not in existing]
+        request_build_seconds = time.perf_counter() - request_started
         run_config = {
             "seed": args.seed, "workers": args.workers, "processors": args.processors,
             "tasks": args.tasks, "period_min": args.period_min, "period_max": args.period_max,
@@ -243,6 +269,10 @@ def main(argv: list[str] | None = None) -> int:
             "core3_ue08_taskset_count": core3_count,
             "semantic_config": semantic_config,
             "resume": bool(args.resume), "status": "running",
+            "execution": {
+                "workers": args.workers,
+                "prepare_workers": prepare_workers,
+            },
         }
         for key in ("topology", "worker_affinity_bindings", "worker_intervals", "slot_replacement_count", "timeout_kill_count"):
             if not pending and key in previous_config:
@@ -266,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
             }
         run_config.update(execution)
         run_config["status"] = "complete"
+        run_config["telemetry"] = {
+            "prepare_tasksets_seconds": prepare_seconds,
+            "request_build_seconds": request_build_seconds,
+            "execution_seconds": run_config.get("total_wall_seconds", 0.0),
+            "total_seconds": time.perf_counter() - total_started,
+        }
         (output / "run_config.json").write_text(json.dumps(run_config, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         print(json.dumps({"output": str(output), "tasksets": len(tasksets), "requests": len(requests), "pending": len(pending), "core3_ue08_tasksets": core3_count}, sort_keys=True))
         return 0

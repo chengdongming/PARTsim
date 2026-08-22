@@ -537,6 +537,33 @@ class TasksetStore:
         self._register_pairing_entry(stored)
         return stored
 
+    def commit_candidate(
+        self, cell: Cell, taskset_index: int, document: Mapping[str, Any],
+    ) -> StoredTaskset:
+        """Validate and atomically commit a worker-produced candidate.
+
+        Candidate generation is deliberately separate from this method.  Only
+        the main process calls it, so the canonical taskset file and pairing
+        manifest retain their historical deterministic commit order.
+        """
+        path = self.path_for(cell.generation_id, taskset_index)
+        if path.is_file():
+            stored = self._load(path, cell, taskset_index)
+            candidate = self._from_document(document, path)
+            if self._manifest_entry(stored) != self._manifest_entry(candidate):
+                raise TasksetStoreError("existing taskset differs from preparation candidate")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(f".{path.name}.candidate")
+            _atomic_write(
+                temporary,
+                json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+            )
+            temporary.replace(path)
+            stored = self._load(path, cell, taskset_index)
+        self._register_pairing_entry(stored)
+        return stored
+
     def _generate(self, path: Path, cell: Cell, taskset_index: int) -> StoredTaskset:
         generation = self.config["generation"]
         seed = derive_seed(
