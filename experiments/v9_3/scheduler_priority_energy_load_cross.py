@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -41,8 +42,17 @@ SCHEDULER_CLI = perf_g.SCHEDULER_CLI
 class PriorityTaskset:
     base: Any
     task_payload: tuple[Mapping[str, Any], ...]
-    base_hash: str
+    base_hash: str  # projected all-hash taskset hash; retained as a compatibility alias
     priority_hash: str
+    source_taskset_hash: str = ""
+
+    @property
+    def projected_taskset_hash(self) -> str:
+        return self.base_hash
+
+    @property
+    def source_taskset_id(self) -> str:
+        return str(self.base.taskset_id)
 
 
 def _hash(domain: str, value: Any) -> str:
@@ -79,6 +89,15 @@ def parse_ratios(text: str | None) -> tuple[Fraction, ...]:
 
 def parse_cells(text: str | None) -> tuple[tuple[Fraction, Fraction], ...]:
     return ordinary.parse_cells(text)
+
+
+def resolve_figure_slices(
+    cells: Sequence[tuple[Fraction, Fraction]], *,
+    fixed_ue: Fraction | None = None, fixed_uc: Fraction | None = None,
+) -> dict[str, dict[str, str]]:
+    return ordinary.resolve_figure_slices(
+        cells, fixed_ue=fixed_ue, fixed_uc=fixed_uc,
+    )
 
 
 def parse_schedulers(text: str | None) -> tuple[str, ...]:
@@ -131,7 +150,8 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
         payload = hash_task_payload(base, service.system_path)
         if len(payload) != tasks or any(row["workload"] != "hash" for row in payload):
             raise ValueError("priority-energy base taskset is not all-hash")
-        base_hash = _hash("BASE_TASKSET", {
+        projected_hash = _hash("PROJECTED_TASKSET", {
+            "source_taskset_id": base.taskset_id,
             "source_taskset_hash": base.semantic_hash,
             "tasks": payload,
         })
@@ -140,7 +160,9 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
             [{"task_id": row["task_id"], "priority_rank": row["priority_rank"]}
              for row in payload],
         )
-        result.append(PriorityTaskset(base, payload, base_hash, priority_hash))
+        result.append(PriorityTaskset(
+            base, payload, projected_hash, priority_hash, base.semantic_hash,
+        ))
     return result, service
 
 
@@ -226,6 +248,8 @@ def priority_energy_material(taskset: PriorityTaskset, ratio: Fraction,
         "lp_count": taskset.base.task_count - taskset.base.processors,
         "priority_hash": taskset.priority_hash,
         "base_taskset_hash": taskset.base_hash,
+        "projected_taskset_hash": taskset.projected_taskset_hash,
+        "source_taskset_id": taskset.source_taskset_id,
         "source_taskset_hash": taskset.base.semantic_hash,
         "H_base": fraction_text(high_demand),
         "L_base": fraction_text(low_demand),
@@ -252,12 +276,22 @@ def energy_material(priority_material: Mapping[str, Any], target_ue: Fraction,
     burst = Fraction(priority_material["E_burst_reference"])
     battery = parse_fraction(kappa, "kappa") * burst
     target_supply = demand / ue
+    runtime_demand = Fraction(priority_material.get("P_dem_runtime", demand))
+    runtime_effective_ue = runtime_demand / target_supply
     solar_scale = target_supply / raw_mean
     result = {
         "kappa": fraction_text(kappa),
         "target_ue": fraction_text(ue),
         "eta": fraction_text(eta),
         "P_dem_j_per_tick": fraction_text(demand),
+        "P_dem_conceptual_j_per_tick": fraction_text(demand),
+        "P_dem_runtime_j_per_tick": fraction_text(runtime_demand),
+        "runtime_effective_ue": fraction_text(runtime_effective_ue),
+        "runtime_effective_ue_abs_error": fraction_text(abs(runtime_effective_ue - ue)),
+        "runtime_effective_ue_rel_error": fraction_text(abs(runtime_effective_ue - ue) / ue),
+        "runtime_rounding_bound": priority_material.get("runtime_rounding_bound", "0"),
+        "runtime_conservation_abs_error": priority_material.get("runtime_conservation_abs_error", "0"),
+        "runtime_conservation_rel_error": priority_material.get("runtime_conservation_rel_error", "0"),
         "target_supply_mean_j_per_tick": fraction_text(target_supply),
         "E_burst_reference_j": fraction_text(burst),
         "battery_capacity_j": fraction_text(battery),
@@ -277,7 +311,8 @@ def energy_material(priority_material: Mapping[str, Any], target_ue: Fraction,
 
 
 def request_rows(tasksets: Sequence[PriorityTaskset], cells: Sequence[tuple[Fraction, Fraction]],
-                 ratios: Sequence[Fraction], schedulers: Sequence[str], horizon: int) -> list[dict[str, Any]]:
+                 ratios: Sequence[Fraction], schedulers: Sequence[str], horizon: int,
+                 *, system_path: Path | None = None) -> list[dict[str, Any]]:
     by_uc_index = {(Fraction(item.base.target_utilization, item.base.processors), item.base.taskset_index): item for item in tasksets}
     rows = []
     for uc, ue in cells:
@@ -285,10 +320,15 @@ def request_rows(tasksets: Sequence[PriorityTaskset], cells: Sequence[tuple[Frac
             taskset = by_uc_index[(uc, index)]
             for ratio in ratios:
                 material = priority_energy_material(taskset, ratio)
+                if system_path is not None:
+                    material = runtime_material(
+                        material, taskset.task_payload, system_path,
+                    )
                 for scheduler in schedulers:
                     identity = {
-                        "taskset_id": taskset.base.taskset_id,
-                        "taskset_hash": taskset.base_hash,
+                        "source_taskset_id": taskset.source_taskset_id,
+                        "source_taskset_hash": taskset.source_taskset_hash or taskset.base.semantic_hash,
+                        "projected_taskset_hash": taskset.projected_taskset_hash,
                         "target_ue": fraction_text(ue),
                         "rho": fraction_text(ratio),
                         "scheduler": scheduler,
@@ -296,9 +336,11 @@ def request_rows(tasksets: Sequence[PriorityTaskset], cells: Sequence[tuple[Frac
                     rows.append({
                         "request_id": "scheduler-priority-energy-" + _hash("REQUEST", identity)[:32],
                         "domain": DOMAIN,
-                        "taskset_id": taskset.base.taskset_id,
-                        "base_taskset_hash": taskset.base_hash,
-                        "source_taskset_hash": taskset.base.semantic_hash,
+                        "taskset_id": taskset.source_taskset_id,
+                        "source_taskset_id": taskset.source_taskset_id,
+                        "source_taskset_hash": taskset.source_taskset_hash or taskset.base.semantic_hash,
+                        "projected_taskset_hash": taskset.projected_taskset_hash,
+                        "base_taskset_hash": taskset.projected_taskset_hash,
                         "material_hash": material["material_hash"],
                         "target_uc": fraction_text(uc),
                         "actual_uc": fraction_text(taskset.base.actual_utilization / taskset.base.processors),
@@ -316,11 +358,14 @@ def request_rows(tasksets: Sequence[PriorityTaskset], cells: Sequence[tuple[Frac
 
 
 def taskset_row(taskset: PriorityTaskset) -> dict[str, Any]:
+    source_hash = taskset.source_taskset_hash or taskset.base.semantic_hash
     return {
         **taskset.base.generated_row(),
         "taskset_id": taskset.base.taskset_id,
-        "taskset_hash": taskset.base_hash,
-        "source_taskset_hash": taskset.base.semantic_hash,
+        "source_taskset_id": taskset.source_taskset_id,
+        "source_taskset_hash": source_hash,
+        "projected_taskset_hash": taskset.projected_taskset_hash,
+        "taskset_hash_semantics": "projected_taskset_hash",
         "target_uc": fraction_text(taskset.base.target_utilization / taskset.base.processors),
         "actual_uc": fraction_text(taskset.base.actual_utilization / taskset.base.processors),
         "all_workloads_hash": True,
@@ -334,16 +379,79 @@ def raw_trace_for_service(service: Any) -> tuple[Fraction, ...]:
     return tuple(construct_paired_harvest_trace(service.system_path, NORMALIZATION_HORIZON))
 
 
+def _ulp_fraction(value: float) -> Fraction:
+    if value == 0.0:
+        return Fraction.from_float(5e-324)
+    _mantissa, exponent = math.frexp(abs(value))
+    return Fraction.from_float(math.ldexp(1.0, exponent - 53))
+
+
 def runtime_task_powers(task_payload: Sequence[Mapping[str, Any]],
-                        factors: Mapping[str, str], system_path: Path) -> dict[str, float]:
-    """Reproduce the C++ operation order used by every priority-energy model."""
+                        factors: Mapping[str, str], system_path: Path) -> dict[str, dict[str, Any]]:
+    """Reproduce C++ operation order and preserve the exact binary64 result."""
     system = legacy_rta.load_system_config(str(system_path))
-    result: dict[str, float] = {}
+    result: dict[str, dict[str, Any]] = {}
     for row in task_payload:
         task_id = str(row["task_id"])
         wcet = int(row["C"])
         power = system.base_power * system.workload_coefficient("hash") * system.frequency_ratio()
         total = power * (float(wcet) * 0.001)
         total *= float(factors[task_id])
-        result[task_id] = total / float(wcet)
+        runtime_power = total / float(wcet)
+        result[task_id] = {
+            "task_id": task_id,
+            "runtime_power_float": runtime_power,
+            "runtime_power_binary64_hex": runtime_power.hex(),
+            "runtime_power_exact_fraction": fraction_text(Fraction.from_float(runtime_power)),
+            "runtime_factor_binary64_hex": float(factors[task_id]).hex(),
+        }
+    return result
+
+
+def runtime_material(material: Mapping[str, Any],
+                     task_payload: Sequence[Mapping[str, Any]],
+                     system_path: Path) -> dict[str, Any]:
+    """Attach runtime binary64 provenance without changing conceptual values."""
+    result = {key: value for key, value in material.items() if key != "material_hash"}
+    runtime = runtime_task_powers(
+        task_payload, material["task_energy_factors"], system_path,
+    )
+    task_by_id = {str(row["task_id"]): row for row in task_payload}
+    task_rows = []
+    runtime_demand = Fraction(0)
+    runtime_bound = Fraction(0)
+    for row in material["tasks"]:
+        task = dict(row)
+        info = runtime[str(row["task_id"])]
+        runtime_power = Fraction(info["runtime_power_exact_fraction"])
+        task["runtime_transformed_P_binary64"] = info["runtime_power_float"]
+        task["runtime_transformed_P_binary64_hex"] = info["runtime_power_binary64_hex"]
+        task["runtime_transformed_P_exact_fraction"] = info["runtime_power_exact_fraction"]
+        task["runtime_factor_binary64_hex"] = info["runtime_factor_binary64_hex"]
+        task_spec = task_by_id[str(row["task_id"])]
+        runtime_demand += Fraction(task_spec["C"], task_spec["T"]) * runtime_power
+        factor_rounding = abs(
+            Fraction(row["base_P"]) *
+            (Fraction.from_float(float(row["emitted_factor"])) - Fraction(row["exact_factor"]))
+        )
+        runtime_bound += Fraction(task_spec["C"], task_spec["T"]) * (
+            factor_rounding + 8 * _ulp_fraction(info["runtime_power_float"])
+        )
+        task_rows.append(task)
+    runtime_bound += len(task_rows) * 2 * _ulp_fraction(float(runtime_demand))
+    conceptual_demand = Fraction(material["P_dem_transformed"])
+    runtime_error = abs(runtime_demand - conceptual_demand)
+    if runtime_error > runtime_bound:
+        raise ValueError("runtime binary64 demand exceeded the derived ULP bound")
+    result.update({
+        "tasks": task_rows,
+        "P_dem_runtime": fraction_text(runtime_demand),
+        "runtime_rounding_bound": fraction_text(runtime_bound),
+        "runtime_conservation_abs_error": fraction_text(runtime_error),
+        "runtime_conservation_rel_error": fraction_text(
+            runtime_error / conceptual_demand if conceptual_demand else Fraction(0),
+        ),
+        "runtime_operation_order": "power*wcet_seconds; total*=factor; total/wcet",
+    })
+    result["material_hash"] = _hash("MATERIAL", result)
     return result

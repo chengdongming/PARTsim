@@ -9,6 +9,8 @@ from dataclasses import asdict
 from fractions import Fraction
 import json
 import multiprocessing
+import os
+import re
 from pathlib import Path
 import sys
 import time
@@ -81,6 +83,72 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
         handle.flush()
 
 
+_ATTEMPT_DIR_RE = re.compile(r"^attempt_(\d+)$")
+_NORMAL_SCIENTIFIC_STATUSES = {
+    SimulationStatus.PASS_OBSERVED.value,
+    SimulationStatus.DEADLINE_MISS.value,
+}
+
+
+def _read_pid(path: Path) -> int | None:
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if line.startswith("pid="):
+            try:
+                return int(line[4:])
+            except ValueError:
+                return None
+    return None
+
+
+def _assert_no_live_attempt_lock(request_root: Path) -> None:
+    if not request_root.is_dir():
+        return
+    for lock in request_root.rglob("*.lock"):
+        pid = _read_pid(lock)
+        if pid is None:
+            raise RuntimeError(f"cannot determine lock owner: {lock}")
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            pass
+        raise RuntimeError(f"request has an active execution lock: {lock} (pid={pid})")
+
+
+def _next_attempt_root(root: Path, request_id: str, attempts: list[dict[str, Any]]) -> tuple[int, Path]:
+    request_root = root / "simulations" / request_id
+    _assert_no_live_attempt_lock(request_root)
+    used: set[int] = set()
+    if request_root.is_dir():
+        for child in request_root.iterdir():
+            match = _ATTEMPT_DIR_RE.match(child.name)
+            if match and child.is_dir():
+                used.add(int(match.group(1)))
+    for row in attempts:
+        if str(row.get("request_id")) == request_id:
+            used.add(int(row["attempt_index"]))
+    index = 1
+    while index in used:
+        index += 1
+    path = request_root / f"attempt_{index:04d}"
+    path.mkdir(parents=True, exist_ok=False)
+    return index, path
+
+
+def _is_scientific(status: str) -> bool:
+    return status in _NORMAL_SCIENTIFIC_STATUSES
+
+
+def _scientific_config(config: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in config.items()
+            if key not in {"execution", "status", "telemetry"}}
+
+
+def resume_configuration_matches(stored: dict[str, Any], requested: dict[str, Any]) -> bool:
+    return _scientific_config(stored) == _scientific_config(requested)
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -105,6 +173,8 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--simulator", type=Path, default=ROOT / "build/rtsim/rtsim")
     parser.add_argument("--parse-concurrency", type=int, default=1)
     parser.add_argument("--keep-traces", action="store_true")
+    parser.add_argument("--uc-figure-fixed-ue")
+    parser.add_argument("--ue-figure-fixed-uc")
     parser.add_argument("--resume", action="store_true")
     return parser
 
@@ -139,11 +209,20 @@ def main(argv: list[str] | None = None) -> int:
     kappa = experiment.parse_fraction(args.kappa, "kappa")
     if kappa != experiment.DEFAULT_KAPPA:
         raise SystemExit("priority-energy LOAD-CROSS freezes kappa=10")
+    try:
+        figure_slices = experiment.resolve_figure_slices(
+            cells,
+            fixed_ue=(experiment.parse_fraction(args.uc_figure_fixed_ue, "uc-figure-fixed-ue")
+                      if args.uc_figure_fixed_ue is not None else None),
+            fixed_uc=(experiment.parse_fraction(args.ue_figure_fixed_uc, "ue-figure-fixed-uc")
+                      if args.ue_figure_fixed_uc is not None else None),
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     root = args.output
     config = {
         "experiment": "scheduler-priority-energy-load-cross-v1",
         "domain": experiment.DOMAIN, "seed": args.seed,
-        "workers": args.workers, "prepare_workers": prepare_workers,
         "samples_per_cell": args.samples_per_cell,
         "cells": [[str(uc), str(ue)] for uc, ue in cells],
         "schedulers": list(schedulers),
@@ -154,19 +233,24 @@ def main(argv: list[str] | None = None) -> int:
         "min_task_util": str(min_util), "max_task_util": str(max_util),
         "util_tolerance_total": str(tolerance), "kappa": str(kappa),
         "simulation_horizon_ms": args.simulation_horizon,
-        "simulator": str(args.simulator), "keep_traces": args.keep_traces,
-        "parse_concurrency": args.parse_concurrency,
+        "figure_slices": figure_slices,
         "workload_contract": "all base tasks projected to workload=hash",
         "initial_energy_rule": "fixed reference battery / 2",
         "battery_rule": "kappa * E_burst_ref(rho=2)",
         "energy_control": "SERVICE_ONLY_SCALING",
+        "execution": {
+            "workers": args.workers, "prepare_workers": prepare_workers,
+            "parse_concurrency": args.parse_concurrency,
+            "keep_traces": bool(args.keep_traces),
+            "timeout_seconds": args.timeout_seconds, "simulator": str(args.simulator),
+        },
     }
     run_config = root / "run_config.json"
     if args.resume:
         if not run_config.is_file():
             raise SystemExit("resume requires run_config.json")
         stored = json.loads(run_config.read_text(encoding="utf-8"))
-        if {key: value for key, value in stored.items() if key not in {"status", "telemetry"}} != config:
+        if not resume_configuration_matches(stored, config):
             raise SystemExit("resume configuration mismatch")
     elif run_config.exists() or (root / "results.jsonl").exists():
         raise SystemExit("output exists; use --resume or choose a new output")
@@ -184,21 +268,35 @@ def main(argv: list[str] | None = None) -> int:
     )
     taskset_rows = [experiment.taskset_row(item) for item in tasksets]
     write_jsonl(root / "tasksets.jsonl", taskset_rows)
-    requests = experiment.request_rows(tasksets, cells, ratios, schedulers, args.simulation_horizon)
+    requests = experiment.request_rows(
+        tasksets, cells, ratios, schedulers, args.simulation_horizon,
+        system_path=service.system_path,
+    )
     write_jsonl(root / "requests.jsonl", requests)
     raw_trace = experiment.raw_trace_for_service(service)
     taskset_by_id = {item.base.taskset_id: item for item in tasksets}
     material_by_hash: dict[str, dict[str, Any]] = {}
     for item in tasksets:
         for ratio in ratios:
-            material = experiment.priority_energy_material(item, ratio, reference_ratio=reference_ratio)
+            material = experiment.runtime_material(
+                experiment.priority_energy_material(item, ratio, reference_ratio=reference_ratio),
+                item.task_payload, service.system_path,
+            )
             material_by_hash[material["material_hash"]] = material
 
     existing = read_jsonl(root / "results.jsonl") if args.resume else []
+    attempts_path = root / "attempts.jsonl"
+    attempts = read_jsonl(attempts_path) if args.resume else []
+    for attempt in attempts:
+        if not attempt.get("request_id") or "attempt_index" not in attempt:
+            raise SystemExit("attempt history contains an invalid row")
     results_by_id = {str(row["request_id"]): row for row in existing}
     expected_ids = {str(row["request_id"]) for row in requests}
     if len(results_by_id) != len(existing) or not set(results_by_id) <= expected_ids:
         raise SystemExit("persisted results contain duplicate or unexpected request IDs")
+    if any(_technical(str(row.get("simulation_status")), row.get("technical_error"))
+           for row in existing):
+        raise SystemExit("active results contain a technical row")
     pending = []
     for request in requests:
         request_id = str(request["request_id"])
@@ -207,18 +305,22 @@ def main(argv: list[str] | None = None) -> int:
         taskset = taskset_by_id[str(request["taskset_id"])]
         material = material_by_hash[str(request["material_hash"])]
         energy = experiment.energy_material(material, Fraction(request["target_ue"]), raw_trace, kappa=kappa)
-        attempt_root = root / "simulations" / request_id / "attempt_0001"
-        attempt_root.mkdir(parents=True, exist_ok=True)
+        attempt_index, attempt_root = _next_attempt_root(root, request_id, attempts)
+        runtime_powers = experiment.runtime_task_powers(
+            taskset.task_payload, material["task_energy_factors"], service.system_path,
+        )
         pending.append({
             "request": request, "request_id": request_id,
             "simulation_id": request_id, "run_root": str(attempt_root),
+            "attempt_index": attempt_index,
             "base_system_path": str(service.system_path),
             "task_payload": taskset.task_payload,
             "material_hash": material["material_hash"],
             "task_energy_factors": material["task_energy_factors"],
-            "expected_task_power_j_per_tick": experiment.runtime_task_powers(
-                taskset.task_payload, material["task_energy_factors"], service.system_path,
-            ),
+            "expected_task_power_j_per_tick": {
+                task_id: info["runtime_power_float"]
+                for task_id, info in runtime_powers.items()
+            },
             "processors": args.processors, "exact_e0": energy["initial_energy_j"],
             "energy": energy, "material": material,
             "scheduler_id": request["scheduler_cli"],
@@ -247,7 +349,10 @@ def main(argv: list[str] | None = None) -> int:
         for future in as_completed(future_jobs):
             job = future_jobs[future]
             request = job["request"]
-            execution, technical = future.result()
+            try:
+                execution, technical = future.result()
+            except Exception as exc:
+                execution, technical = None, f"worker failure: {type(exc).__name__}: {exc}"
             task_ids = [str(row["task_id"]) for row in job["task_payload"]]
             if execution is None:
                 status = "TECHNICAL_FAILURE"
@@ -258,10 +363,11 @@ def main(argv: list[str] | None = None) -> int:
                 runtime = 0.0
                 metrics = {}
                 retained = None
+                technical_error = reason
             else:
                 status = execution.result.status.value
                 reason = execution.result.reason
-                technical_error = reason if _technical(status, None) else None
+                technical_error = reason if not _is_scientific(status) else None
                 outcome = evaluate_outcome(
                     [asdict(item) for item in execution.result.jobs], task_ids,
                     horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
@@ -282,8 +388,23 @@ def main(argv: list[str] | None = None) -> int:
                 "runtime_seconds": runtime, "metrics": metrics,
                 "outcome": outcome, "retained_trace_path": retained,
             }
-            _append_jsonl(root / "results.jsonl", row)
-            results_by_id[request["request_id"]] = row
+            attempt_row = {
+                **request, "attempt_index": job["attempt_index"],
+                "attempt_root": str(Path(job["run_root"]).relative_to(root)),
+                "simulation_status": status, "simulation_reason": reason,
+                "technical_error": technical_error, "runtime_seconds": runtime,
+                "metrics": metrics, "retained_trace_path": retained,
+            }
+            _append_jsonl(attempts_path, attempt_row)
+            attempts.append(attempt_row)
+            if _is_scientific(status):
+                _append_jsonl(root / "results.jsonl", row)
+                results_by_id[request["request_id"]] = row
+            else:
+                print(
+                    f"priority-energy technical execution failure for {request['request_id']}: {reason}",
+                    file=sys.stderr,
+                )
 
     if set(results_by_id) == expected_ids and len(results_by_id) == len(requests):
         write_jsonl(root / "results.jsonl", [results_by_id[str(row["request_id"])] for row in requests])
@@ -291,8 +412,9 @@ def main(argv: list[str] | None = None) -> int:
         "complete": set(results_by_id) == expected_ids and len(results_by_id) == len(requests),
         "expected_results": len(requests), "observed_results": len(results_by_id),
         "missing_results": len(expected_ids - set(results_by_id)),
-        "duplicate_request_ids": len(existing) + len(pending) - len(set(results_by_id)),
-        "technical_result_count": sum(_technical(str(row.get("simulation_status")), row.get("technical_error")) for row in results_by_id.values()),
+        "duplicate_request_ids": len(existing) - len(set(str(row["request_id"]) for row in existing)),
+        "technical_attempt_count": sum(not _is_scientific(str(row.get("simulation_status"))) for row in attempts),
+        "technical_result_count": 0,
         "all_hash_workloads": all(row.get("all_workloads_hash") is True for row in taskset_rows),
         "rho_pair_count": len(ratios),
         "elapsed_seconds": time.perf_counter() - started,

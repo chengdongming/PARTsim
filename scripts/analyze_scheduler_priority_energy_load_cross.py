@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3 import scheduler_priority_energy_load_cross as experiment
-from experiments.v9_3.parallel_prepare import validate_workers
+from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_workers
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -24,7 +24,7 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    columns = list(rows[0]) if rows else []
+    columns = list(rows[0]) if rows else ["target_uc", "target_ue", "scheduler", "acceptance_ratio"]
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader()
@@ -54,9 +54,101 @@ def _plot(rows: list[dict[str, Any]], path: Path, x_key: str, title: str) -> Non
     plt.close()
 
 
+def _plot_job(job: tuple[list[dict[str, Any]], str, str, str]) -> str:
+    rows, path, x_key, title = job
+    _plot(rows, Path(path), x_key, title)
+    return path
+
+
+def _configured_cells(config: dict[str, Any]) -> tuple[tuple[Fraction, Fraction], ...]:
+    raw = config.get("cells")
+    if not isinstance(raw, list) or not raw:
+        raise SystemExit("run_config cells are missing")
+    cells = tuple((experiment.parse_fraction(item[0], "cell U_C"),
+                   experiment.parse_fraction(item[1], "cell U_E")) for item in raw)
+    if len(set(cells)) != len(cells):
+        raise SystemExit("run_config cells contain duplicates")
+    return cells
+
+
+def _figure_slices(config: dict[str, Any], cells: tuple[tuple[Fraction, Fraction], ...]):
+    raw = config.get("figure_slices")
+    if raw is None:
+        try:
+            return experiment.resolve_figure_slices(cells)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    if not isinstance(raw, dict):
+        raise SystemExit("run_config figure_slices is invalid")
+    result = {}
+    for name, x_key, fixed_key in (
+        ("uc_scan", "target_uc", "target_ue"),
+        ("ue_scan", "target_ue", "target_uc"),
+    ):
+        entry = raw.get(name)
+        if not isinstance(entry, dict) or entry.get("x_key") != x_key or entry.get("fixed_key") != fixed_key:
+            raise SystemExit(f"run_config figure_slices.{name} is invalid")
+        fixed = experiment.parse_fraction(entry.get("fixed_value"), f"figure_slices.{name}")
+        if entry.get("fixed_value") != str(fixed):
+            raise SystemExit(f"run_config figure_slices.{name}.fixed_value is not canonical")
+        result[name] = {"x_key": x_key, "fixed_key": fixed_key, "fixed_value": str(fixed)}
+    try:
+        experiment.resolve_figure_slices(
+            cells,
+            fixed_ue=Fraction(result["uc_scan"]["fixed_value"]),
+            fixed_uc=Fraction(result["ue_scan"]["fixed_value"]),
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    return result
+
+
+def select_scan_rows(summaries: list[dict[str, Any]], fixed_key: str, fixed_value: str):
+    target = Fraction(fixed_value)
+    return [row for row in summaries if Fraction(row[fixed_key]) == target]
+
+
+def _validate_scan_rows(rows, cells, *, fixed_key, x_key, fixed_value, label):
+    fixed_index = 1 if fixed_key == "target_ue" else 0
+    x_index = 0 if x_key == "target_uc" else 1
+    expected = {str(cell[x_index]) for cell in cells if str(cell[fixed_index]) == fixed_value}
+    observed = {str(Fraction(row[x_key])) for row in rows}
+    if not expected or observed != expected:
+        raise SystemExit(f"{label} slice does not match configured cells")
+    if not rows or not any(row.get("acceptance_ratio") is not None for row in rows):
+        raise SystemExit(f"{label} slice has no valid result rows")
+
+
+def paired_counts(block: list[dict[str, Any]], nonblock: list[dict[str, Any]]) -> dict[str, Any]:
+    b = {str(row["taskset_id"]): row for row in block}
+    n = {str(row["taskset_id"]): row for row in nonblock}
+    if set(b) != set(n):
+        raise SystemExit("BLOCK/NONBLOCK taskset pairing is incomplete")
+    pairs = [(b[key].get("taskset_pass") is True, n[key].get("taskset_pass") is True)
+             for key in sorted(b)]
+    both_pass = sum(bp and np for bp, np in pairs)
+    both_fail = sum(not bp and not np for bp, np in pairs)
+    block_only = sum(bp and not np for bp, np in pairs)
+    nonblock_only = sum(np and not bp for bp, np in pairs)
+    total = len(pairs)
+    return {
+        "n": total, "both_pass": both_pass, "both_fail": both_fail,
+        "block_only": block_only, "nonblock_only": nonblock_only,
+        "block_pass": sum(bp for bp, _ in pairs), "nonblock_pass": sum(np for _, np in pairs),
+        "acceptance_block": sum(bp for bp, _ in pairs) / total if total else None,
+        "acceptance_nonblock": sum(np for _, np in pairs) / total if total else None,
+        "delta_block_minus_nonblock": (sum(bp for bp, _ in pairs) - sum(np for _, np in pairs)) / total if total else None,
+        "n_block": total, "n_nonblock": total,
+        "block_acceptance_ratio": sum(bp for bp, _ in pairs) / total if total else None,
+        "nonblock_acceptance_ratio": sum(np for _, np in pairs) / total if total else None,
+    }
+
+
 def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     validate_workers(analysis_workers, "analysis-workers")
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    cells = _configured_cells(config)
+    figure_slices = _figure_slices(config, cells)
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
@@ -75,6 +167,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     taskset_ids = {str(row["taskset_id"]) for row in tasksets}
     if len(taskset_ids) != len(tasksets):
         raise SystemExit("duplicate base taskset IDs")
+    taskset_by_id = {str(row["taskset_id"]): row for row in tasksets}
 
     material_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     battery_by_pair: dict[tuple[str, str, str], str] = {}
@@ -93,6 +186,21 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             or experiment._hash("MATERIAL", material_without_hash) != material["material_hash"]
         ):
             raise SystemExit("material hash mismatch")
+        if not row.get("source_taskset_id") or not row.get("projected_taskset_hash"):
+            raise SystemExit("invalid source/projected taskset provenance")
+        taskset_row = taskset_by_id.get(str(row["taskset_id"]))
+        if taskset_row is None:
+            raise SystemExit("result references an unknown taskset")
+        if (
+            row["source_taskset_id"] != taskset_row["source_taskset_id"]
+            or row["source_taskset_hash"] != taskset_row["source_taskset_hash"]
+            or row["projected_taskset_hash"] != taskset_row["projected_taskset_hash"]
+            or material.get("source_taskset_id") != taskset_row["source_taskset_id"]
+            or material.get("projected_taskset_hash") != taskset_row["projected_taskset_hash"]
+        ):
+            raise SystemExit("source/projected taskset provenance mismatch")
+        if material.get("source_taskset_hash") != row.get("source_taskset_hash"):
+            raise SystemExit("material source provenance mismatch")
         base = Fraction(material["P_dem_base"])
         transformed = Fraction(material["P_dem_transformed"])
         if base != transformed:
@@ -114,6 +222,12 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             raise SystemExit("eta identity failed")
         if Fraction(energy["P_dem_j_per_tick"]) != transformed:
             raise SystemExit("energy demand is not transformed demand")
+        runtime_error = Fraction(material.get("runtime_conservation_abs_error", "0"))
+        runtime_bound = Fraction(material.get("runtime_rounding_bound", "0"))
+        if runtime_error > runtime_bound:
+            raise SystemExit("runtime conservation bound failed")
+        if Fraction(energy["P_dem_runtime_j_per_tick"]) != Fraction(material.get("P_dem_runtime", energy["P_dem_j_per_tick"])):
+            raise SystemExit("runtime energy provenance mismatch")
         if Fraction(energy["P_dem_j_per_tick"]) / Fraction(energy["target_supply_mean_j_per_tick"]) != ue:
             raise SystemExit("U_E demand/supply identity failed")
         if Fraction(energy["solar_scale"]) * Fraction(energy["raw_reference_mean_j_per_tick"]) != Fraction(energy["target_supply_mean_j_per_tick"]):
@@ -158,19 +272,23 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             })
     write_csv(root / "summary.csv", summaries)
     rho2 = [row for row in summaries if Fraction(row["rho"]) == experiment.REFERENCE_RATIO]
-    write_csv(root / "figure_scheduler_priority_energy_uc_rho2.csv", [row for row in rho2])
-    write_csv(root / "figure_scheduler_priority_energy_ue_rho2.csv", [row for row in rho2])
+    uc_slice = figure_slices["uc_scan"]
+    ue_slice = figure_slices["ue_scan"]
+    uc_rows = select_scan_rows(rho2, uc_slice["fixed_key"], uc_slice["fixed_value"])
+    ue_rows = select_scan_rows(rho2, ue_slice["fixed_key"], ue_slice["fixed_value"])
+    _validate_scan_rows(uc_rows, cells, fixed_key=uc_slice["fixed_key"], x_key=uc_slice["x_key"], fixed_value=uc_slice["fixed_value"], label="U_C")
+    _validate_scan_rows(ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="U_E")
+    write_csv(root / "figure_scheduler_priority_energy_uc.csv", uc_rows)
+    write_csv(root / "figure_scheduler_priority_energy_ue.csv", ue_rows)
+    write_csv(root / "figure_scheduler_priority_energy_uc_rho2.csv", uc_rows)
+    write_csv(root / "figure_scheduler_priority_energy_ue_rho2.csv", ue_rows)
     try:
-        for fixed_ue in sorted({row["target_ue"] for row in rho2}, key=Fraction):
-            rows = [row for row in rho2 if row["target_ue"] == fixed_ue]
-            if rows:
-                _plot(rows, root / "figure_scheduler_priority_energy_uc_rho2.png", "target_uc", f"rho=2, U_E={fixed_ue}")
-                break
-        for fixed_uc in sorted({row["target_uc"] for row in rho2}, key=Fraction):
-            rows = [row for row in rho2 if row["target_uc"] == fixed_uc]
-            if rows:
-                _plot(rows, root / "figure_scheduler_priority_energy_ue_rho2.png", "target_ue", f"rho=2, U_C={fixed_uc}")
-                break
+        run_independent_jobs(
+            [
+                (uc_rows, str(root / "figure_scheduler_priority_energy_uc_rho2.png"), "target_uc", f"rho=2, U_E={uc_slice['fixed_value']}"),
+                (ue_rows, str(root / "figure_scheduler_priority_energy_ue_rho2.png"), "target_ue", f"rho=2, U_C={ue_slice['fixed_value']}"),
+            ], _plot_job, workers=analysis_workers,
+        )
     except ImportError:
         pass
 
@@ -180,19 +298,13 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     for (rho, uc, ue), group in sorted(groups.items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]), Fraction(item[0][2]))):
         block = [row for row in group if row["scheduler"] == "ASAP-BLOCK"]
         nonblock = [row for row in group if row["scheduler"] == "ASAP-NONBLOCK"]
-        if len(block) != len(nonblock):
-            raise SystemExit("BLOCK/NONBLOCK pairing is incomplete")
+        counts = paired_counts(block, nonblock)
         paired.append({
             "rho": rho, "target_uc": uc, "target_ue": ue,
-            "n_block": len(block), "n_nonblock": len(nonblock),
-            "block_acceptance_ratio": sum(row.get("taskset_pass") is True for row in block) / len(block),
-            "nonblock_acceptance_ratio": sum(row.get("taskset_pass") is True for row in nonblock) / len(nonblock),
-            "delta_block_minus_nonblock": (
-                sum(row.get("taskset_pass") is True for row in block) / len(block)
-                - sum(row.get("taskset_pass") is True for row in nonblock) / len(nonblock)
-            ),
+            **counts,
         })
     write_csv(root / "paired_block_nonblock.csv", paired)
+    write_csv(root / "priority_energy_block_nonblock_paired.csv", paired)
 
     ordered = sorted(ratios)
     monotonicity = []
@@ -216,6 +328,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         "control_rows_rho1": len(control), "paired_rows": len(paired),
         "technical_result_count": 0,
         "analysis_workers": analysis_workers,
+        "figure_slices": figure_slices,
     }
     (root / "analysis_report.json").write_text(json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8")
     return report
