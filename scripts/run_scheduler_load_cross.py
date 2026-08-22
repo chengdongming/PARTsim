@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 import json
 from fractions import Fraction
@@ -14,6 +14,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -69,6 +70,34 @@ def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
 
 def _initialize_simulation_worker(parse_semaphore: Any) -> None:
     simulation_engine._set_trace_parse_semaphore(parse_semaphore)
+
+
+def _print_progress(
+    *, completed: int, total: int, outstanding_requests: int,
+    started: float, completed_at_start: int, parse_concurrency: int,
+) -> None:
+    elapsed = max(0.0, time.perf_counter() - started)
+    completed_run = completed - completed_at_start
+    throughput = completed_run / elapsed * 60.0 if elapsed else 0.0
+    print(
+        "scheduler-load-cross progress: "
+        f"completed={completed} total={total} "
+        f"outstanding_requests={outstanding_requests} "
+        f"elapsed_seconds={elapsed:.1f} "
+        f"throughput_requests_per_min={throughput:.2f} "
+        f"parse_concurrency={parse_concurrency}",
+        flush=True,
+    )
+
+
+def _progress_due(
+    *, completed: int, completed_at_start: int, total: int,
+    interval: int,
+) -> bool:
+    completed_run = completed - completed_at_start
+    return completed_run > 0 and (
+        completed_run % interval == 0 or completed == total
+    )
 
 
 _ATTEMPT_DIR_RE = re.compile(r"^attempt_(\d+)$")
@@ -179,6 +208,10 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kappa", default=str(experiment.DEFAULT_KAPPA))
     parser.add_argument("--simulator", type=Path, default=ROOT / "build/rtsim/rtsim")
     parser.add_argument(
+        "--parse-concurrency", type=int, default=1,
+        help="maximum concurrent trace parsers (default: 1)",
+    )
+    parser.add_argument(
         "--keep-traces", action="store_true",
         help="retain complete simulator traces for debugging",
     )
@@ -192,6 +225,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("workers, samples, processors, and tasks must be positive")
     if args.simulation_horizon <= 0 or args.timeout_seconds <= 0:
         raise SystemExit("simulation horizon and timeout must be positive")
+    if args.parse_concurrency < 1:
+        raise SystemExit("parse-concurrency must be positive")
     cells = experiment.parse_cells(args.cells)
     schedulers = experiment.parse_schedulers(args.schedulers)
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
@@ -219,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         "energy_control": "SERVICE_ONLY_SCALING", "energy_unit": "J/tick exact canonical P",
         "simulator": str(args.simulator), "canonical_taskset_source": "PERF-G TasksetStore",
         "keep_traces": args.keep_traces,
+        "parse_concurrency": args.parse_concurrency,
     }
     run_config = root / "run_config.json"
     if args.resume:
@@ -258,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     for attempt in attempts:
         if not attempt.get("request_id") or "attempt_index" not in attempt:
             raise SystemExit("attempt history contains an invalid row")
-    results = list(existing)
+    results_by_id = {str(row["request_id"]): row for row in existing}
     completed_ids = set(existing_ids)
     taskset_by_id = {taskset.taskset_id: taskset for taskset in tasksets}
     pending_jobs: list[dict[str, Any]] = []
@@ -309,15 +345,23 @@ def main(argv: list[str] | None = None) -> int:
         })
 
     mp_context = multiprocessing.get_context("fork")
-    parse_semaphore = mp_context.Semaphore(1)
+    parse_semaphore = mp_context.Semaphore(args.parse_concurrency)
     with ProcessPoolExecutor(
         max_workers=args.workers,
         mp_context=mp_context,
         initializer=_initialize_simulation_worker,
         initargs=(parse_semaphore,),
     ) as executor:
-        futures = [executor.submit(_run_simulation_job, job) for job in pending_jobs]
-        for job, future in zip(pending_jobs, futures):
+        future_to_job = {
+            executor.submit(_run_simulation_job, job): job
+            for job in pending_jobs
+        }
+        progress_started = time.perf_counter()
+        completed_at_start = len(existing)
+        completed_count = completed_at_start
+        progress_interval = max(1, min(50, len(pending_jobs) // 20 or 1))
+        for future in as_completed(future_to_job):
+            job = future_to_job[future]
             request = job["request"]
             request_id = str(job["request_id"])
             task_payload = job["task_payload"]
@@ -386,6 +430,20 @@ def main(argv: list[str] | None = None) -> int:
             }
             _append_jsonl(attempts_path, attempt_row)
             attempts.append(attempt_row)
+            completed_count += 1
+            if _progress_due(
+                completed=completed_count,
+                completed_at_start=completed_at_start,
+                total=len(requests), interval=progress_interval,
+            ):
+                _print_progress(
+                    completed=completed_count, total=len(requests),
+                    outstanding_requests=sum(
+                        not item.done() for item in future_to_job
+                    ), started=progress_started,
+                    completed_at_start=completed_at_start,
+                    parse_concurrency=args.parse_concurrency,
+                )
             if status not in _NORMAL_SCIENTIFIC_STATUSES:
                 print(
                     f"scheduler-load-cross technical execution failure for "
@@ -393,18 +451,21 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
                 return 2
-            results.append(row)
+            _append_jsonl(results_path, row)
+            results_by_id[request_id] = row
             completed_ids.add(request_id)
-            write_jsonl(results_path, results)
-    observed_ids = [str(row["request_id"]) for row in results]
+    observed_ids = list(results_by_id)
+    if len(results_by_id) == len(requests) and set(results_by_id) == expected_ids:
+        canonical_results = [results_by_id[str(request["request_id"])] for request in requests]
+        write_jsonl(results_path, canonical_results)
     report = {
-        "expected_results": len(requests), "observed_results": len(results),
+        "expected_results": len(requests), "observed_results": len(results_by_id),
         "missing_results": len(expected_ids - set(observed_ids)),
         "duplicate_request_ids": len(observed_ids) - len(set(observed_ids)),
-        "actual_ue_exact": all(Fraction(row["energy"]["target_ue"]) * Fraction(row["energy"]["eta"]) == 1 for row in results),
+        "actual_ue_exact": all(Fraction(row["energy"]["target_ue"]) * Fraction(row["energy"]["eta"]) == 1 for row in results_by_id.values()),
         "canonical_task_power": all(row.get("canonical_task_power") for row in rows),
         "scheduler_input_hashes_stable": all(len({row["taskset_hash"] for row in requests if row["taskset_id"] == taskset.taskset_id}) == 1 for taskset in tasksets),
-        "complete": len(results) == len(requests) and len(observed_ids) == len(set(observed_ids)),
+        "complete": len(results_by_id) == len(requests) and len(observed_ids) == len(set(observed_ids)),
     }
     write_json(root / "invariant_report.json", report)
     print(json.dumps(report, sort_keys=True))

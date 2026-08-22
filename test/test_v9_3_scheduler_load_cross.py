@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import Future
 from fractions import Fraction
 import os
 from pathlib import Path
@@ -144,13 +145,36 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
     )
     monkeypatch.setattr(scheduler_runner, "run_paired_simulation", run_simulation)
 
+    class _InlineExecutor:
+        def __init__(self, *args, initializer=None, initargs=(), **kwargs):
+            pass
 
-def _scheduler_runner_args(output, resume=False, keep_traces=False):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def submit(self, function, job):
+            future = Future()
+            try:
+                future.set_result(function(job))
+            except Exception as exc:
+                future.set_exception(exc)
+            return future
+
+    monkeypatch.setattr(scheduler_runner, "ProcessPoolExecutor", _InlineExecutor)
+
+
+def _scheduler_runner_args(
+    output, resume=False, keep_traces=False, parse_concurrency=1,
+):
     return [
         "--output", str(output), "--seed", "710213", "--workers", "1",
         "--samples-per-cell", "1", "--cells", "0.1:0.4",
         "--schedulers", "ASAP-BLOCK", "--simulation-horizon", "20",
         "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
+        "--parse-concurrency", str(parse_concurrency),
         *( ["--keep-traces"] if keep_traces else [] ),
         *( ["--resume"] if resume else [] ),
     ]
@@ -209,6 +233,148 @@ def test_scheduler_runner_disables_trace_retention_by_default(tmp_path, monkeypa
     ) == 0
     assert configs[0]["trace_on_failure"] is True
     assert configs[0]["retain_trace"] is True
+
+
+def test_parse_concurrency_is_configured_and_resume_bound(tmp_path, monkeypatch):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    output = tmp_path / "parse-concurrency"
+    assert scheduler_runner.main(
+        _scheduler_runner_args(output, parse_concurrency=2)
+    ) == 2
+    config = json.loads((output / "run_config.json").read_text())
+    assert config["parse_concurrency"] == 2
+    with pytest.raises(SystemExit, match="resume configuration mismatch"):
+        scheduler_runner.main(
+            _scheduler_runner_args(output, resume=True, parse_concurrency=4)
+        )
+
+
+def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_path, monkeypatch):
+    requests = [
+        {
+            "request_id": "request-1", "taskset_id": "taskset-0",
+            "taskset_hash": "hash-0", "target_uc": "1/10",
+            "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
+            "generation_index": 0, "seed": 710213, "scheduler": "ASAP-BLOCK",
+            "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+        },
+        {
+            "request_id": "request-2", "taskset_id": "taskset-0",
+            "taskset_hash": "hash-0", "target_uc": "1/10",
+            "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
+            "generation_index": 1, "seed": 710214, "scheduler": "ASAP-BLOCK",
+            "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+        },
+    ]
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: SimpleNamespace(
+        result=SimpleNamespace(
+            status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+            metrics={}, simulation_completed=True,
+        ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+        retained_trace_path=None,
+    ))
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows",
+        lambda *args, **kwargs: [dict(row) for row in requests],
+    )
+    monkeypatch.setattr(
+        scheduler_runner, "as_completed",
+        lambda future_to_job: list(reversed(list(future_to_job))),
+    )
+    output = tmp_path / "completion-order"
+    results_path = output / "results.jsonl"
+    appended_ids = []
+    original_append = scheduler_runner._append_jsonl
+
+    def record_append(path, row):
+        if path == results_path:
+            appended_ids.append(row["request_id"])
+        return original_append(path, row)
+
+    monkeypatch.setattr(scheduler_runner, "_append_jsonl", record_append)
+    assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
+    assert appended_ids == ["request-2", "request-1"]
+    final_ids = [
+        json.loads(line)["request_id"]
+        for line in results_path.read_text().splitlines()
+    ]
+    assert final_ids == ["request-1", "request-2"]
+
+
+def test_progress_is_periodic_and_resume_relative():
+    new_run = [completed for completed in range(1, 13) if scheduler_runner._progress_due(
+        completed=completed, completed_at_start=0, total=12, interval=5,
+    )]
+    resumed_run = [completed for completed in range(8, 20) if scheduler_runner._progress_due(
+        completed=completed, completed_at_start=7, total=19, interval=5,
+    )]
+    assert new_run == [5, 10, 12]
+    assert resumed_run == [12, 17, 19]
+
+
+def test_progress_uses_outstanding_request_metric(capsys):
+    scheduler_runner._print_progress(
+        completed=5, total=12, outstanding_requests=7, started=0.0,
+        completed_at_start=0, parse_concurrency=1,
+    )
+    output = capsys.readouterr().out
+    assert "outstanding_requests=7" in output
+    assert "active_workers" not in output
+
+
+def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, monkeypatch):
+    requests = [
+        {
+            "request_id": "request-1", "taskset_id": "taskset-0",
+            "taskset_hash": "hash-0", "target_uc": "1/10",
+            "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
+            "generation_index": 0, "seed": 710213, "scheduler": "ASAP-BLOCK",
+            "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+        },
+        {
+            "request_id": "request-2", "taskset_id": "taskset-0",
+            "taskset_hash": "hash-0", "target_uc": "1/10",
+            "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
+            "generation_index": 1, "seed": 710214, "scheduler": "ASAP-BLOCK",
+            "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+        },
+    ]
+    fail_second = {"value": True}
+
+    def run_simulation(**kwargs):
+        if kwargs["simulation_id_value"] == "request-2" and fail_second["value"]:
+            raise RuntimeError("synthetic technical failure")
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows",
+        lambda *args, **kwargs: [dict(row) for row in requests],
+    )
+    monkeypatch.setattr(
+        scheduler_runner, "as_completed",
+        lambda future_to_job: sorted(
+            future_to_job, key=lambda future: future_to_job[future]["request_id"]
+        ),
+    )
+    output = tmp_path / "partial-resume"
+    assert scheduler_runner.main(_scheduler_runner_args(output)) == 2
+    results_path = output / "results.jsonl"
+    assert [
+        json.loads(line)["request_id"] for line in results_path.read_text().splitlines()
+    ] == ["request-1"]
+
+    fail_second["value"] = False
+    assert scheduler_runner.main(_scheduler_runner_args(output, resume=True)) == 0
+    assert [
+        json.loads(line)["request_id"] for line in results_path.read_text().splitlines()
+    ] == ["request-1", "request-2"]
 
 
 def test_attempt_history_separates_technical_failure_and_retries_in_new_dir(tmp_path, monkeypatch):
