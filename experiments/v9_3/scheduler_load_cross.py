@@ -59,6 +59,50 @@ def parse_cells(text: str | None) -> tuple[tuple[Fraction, Fraction], ...]:
     return tuple(cells)
 
 
+def resolve_figure_slices(
+    cells: Sequence[tuple[Fraction, Fraction]],
+    *, fixed_ue: Fraction | None = None,
+    fixed_uc: Fraction | None = None,
+) -> dict[str, dict[str, str]]:
+    ue_to_ucs: dict[Fraction, set[Fraction]] = {}
+    uc_to_ues: dict[Fraction, set[Fraction]] = {}
+    for uc, ue in cells:
+        ue_to_ucs.setdefault(ue, set()).add(uc)
+        uc_to_ues.setdefault(uc, set()).add(ue)
+
+    def resolve(
+        explicit: Fraction | None, groups: dict[Fraction, set[Fraction]], label: str,
+    ) -> Fraction:
+        if explicit is None:
+            maximum = max((len(values) for values in groups.values()), default=0)
+            candidates = [key for key, values in groups.items() if len(values) == maximum]
+            if maximum == 0 or len(candidates) != 1:
+                raise ValueError(
+                    f"ambiguous {label}; provide an explicit figure slice"
+                )
+            selected = candidates[0]
+        else:
+            selected = parse_fraction(explicit, label)
+        if not 0 < selected <= 1:
+            raise ValueError(f"{label} must be in (0,1]")
+        if selected not in groups or not groups[selected]:
+            raise ValueError(f"{label} {fraction_text(selected)} is absent from cells")
+        return selected
+
+    selected_ue = resolve(fixed_ue, ue_to_ucs, "U_E figure slice")
+    selected_uc = resolve(fixed_uc, uc_to_ues, "U_C figure slice")
+    return {
+        "uc_scan": {
+            "x_key": "target_uc", "fixed_key": "target_ue",
+            "fixed_value": fraction_text(selected_ue),
+        },
+        "ue_scan": {
+            "x_key": "target_ue", "fixed_key": "target_uc",
+            "fixed_value": fraction_text(selected_uc),
+        },
+    }
+
+
 def parse_schedulers(text: str | None) -> tuple[str, ...]:
     values = DEFAULT_SCHEDULERS if not text else tuple(x.strip() for x in text.split(","))
     if not values or any(not x for x in values) or len(set(values)) != len(values):

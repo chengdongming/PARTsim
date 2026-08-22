@@ -1,5 +1,5 @@
-import json
 import csv
+import json
 from concurrent.futures import Future
 from fractions import Fraction
 import os
@@ -158,6 +158,98 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
     assert len(ue_rows) == 4
 
 
+def _write_configured_analyzer_fixture(tmp_path):
+    config = {
+        "cells": [["1/10", "3/7"], ["1/5", "3/7"],
+                  ["2/5", "3/7"], ["2/5", "1/2"], ["2/5", "4/5"]],
+        "samples_per_cell": 1, "schedulers": ["ASAP-BLOCK"],
+        "processors": 4, "util_tolerance_total": "1/100",
+        "figure_slices": {
+            "uc_scan": {
+                "x_key": "target_uc", "fixed_key": "target_ue",
+                "fixed_value": "3/7",
+            },
+            "ue_scan": {
+                "x_key": "target_ue", "fixed_key": "target_uc",
+                "fixed_value": "2/5",
+            },
+        },
+    }
+    tasksets = [
+        {"taskset_id": "t-1", "taskset_hash": "h-1",
+         "canonical_task_power": True, "target_uc": "1/10", "actual_uc": "1/10"},
+        {"taskset_id": "t-2", "taskset_hash": "h-2",
+         "canonical_task_power": True, "target_uc": "1/5", "actual_uc": "1/5"},
+        {"taskset_id": "t-4", "taskset_hash": "h-4", "canonical_task_power": True,
+         "target_uc": "2/5", "actual_uc": "2/5"},
+    ]
+    cells = [("t-1", "1/10", "3/7"), ("t-2", "1/5", "3/7"),
+             ("t-4", "2/5", "3/7"), ("t-4", "2/5", "1/2"),
+             ("t-4", "2/5", "4/5")]
+    requests = []
+    results = []
+    for index, (taskset_id, target_uc, target_ue) in enumerate(cells):
+        taskset_hash = next(row["taskset_hash"] for row in tasksets if row["taskset_id"] == taskset_id)
+        request = {
+            "request_id": f"configured-r-{index}", "taskset_id": taskset_id,
+            "taskset_hash": taskset_hash, "target_uc": target_uc,
+            "target_ue": target_ue, "generation_index": 0,
+            "scheduler": "ASAP-BLOCK",
+        }
+        results.append({
+            **request,
+            "energy": {
+                "target_ue": target_ue, "eta": str(1 / Fraction(target_ue)),
+                "P_dem_j_per_tick": target_ue,
+                "target_supply_mean_j_per_tick": "1",
+                "raw_reference_mean_j_per_tick": "1", "solar_scale": "1",
+            },
+            "schedulable": True, "deadline_miss": False,
+            "simulation_status": "SIM_PASS_OBSERVED", "technical_error": None,
+        })
+        requests.append(request)
+    (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    for name, rows in (("tasksets.jsonl", tasksets), ("requests.jsonl", requests),
+                       ("results.jsonl", results)):
+        (tmp_path / name).write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+        )
+
+
+def test_analyzer_uses_configured_custom_slices_and_dynamic_titles(tmp_path, monkeypatch):
+    _write_configured_analyzer_fixture(tmp_path)
+    plotted = {}
+    monkeypatch.setattr(
+        "scripts.analyze_scheduler_load_cross.plot_scan",
+        lambda rows, output, filename, xkey, schedulers, xlabel, title:
+            plotted.setdefault(filename, (list(rows), title)),
+    )
+    assert analyze(tmp_path)["complete"]
+    uc_rows = list(csv.DictReader((tmp_path / "figure_scheduler_uc.csv").open()))
+    ue_rows = list(csv.DictReader((tmp_path / "figure_scheduler_ue.csv").open()))
+    assert {row["target_ue"] for row in uc_rows} == {"3/7"}
+    assert {row["target_uc"] for row in ue_rows} == {"2/5"}
+    assert [row["target_uc"] for row in uc_rows] == ["1/10", "1/5", "2/5"]
+    assert [row["target_ue"] for row in ue_rows] == ["3/7", "1/2", "4/5"]
+    assert "U_E=3/7" in plotted["figure_scheduler_uc.png"][1]
+    assert "U_C=2/5" in plotted["figure_scheduler_ue.png"][1]
+    assert [row["target_uc"] for row in plotted["figure_scheduler_uc.png"][0]] == [
+        "1/10", "1/5", "2/5",
+    ]
+    assert [row["target_ue"] for row in plotted["figure_scheduler_ue.png"][0]] == [
+        "3/7", "1/2", "4/5",
+    ]
+
+
+def test_analyzer_rejects_configured_slice_absent_from_cells(tmp_path):
+    _write_configured_analyzer_fixture(tmp_path)
+    config = json.loads((tmp_path / "run_config.json").read_text())
+    config["figure_slices"]["uc_scan"]["fixed_value"] = "7/10"
+    (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(SystemExit, match="absent from cells"):
+        analyze(tmp_path)
+
+
 class _FakeTaskset:
     taskset_id = "taskset-0"
     semantic_hash = "hash-0"
@@ -244,16 +336,22 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
 
 def _scheduler_runner_args(
     output, resume=False, keep_traces=False, parse_concurrency=1,
+    cells="0.1:0.4", fixed_ue=None, fixed_uc=None,
 ):
-    return [
+    args = [
         "--output", str(output), "--seed", "710213", "--workers", "1",
-        "--samples-per-cell", "1", "--cells", "0.1:0.4",
+        "--samples-per-cell", "1", "--cells", cells,
         "--schedulers", "ASAP-BLOCK", "--simulation-horizon", "20",
         "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
         "--parse-concurrency", str(parse_concurrency),
         *( ["--keep-traces"] if keep_traces else [] ),
         *( ["--resume"] if resume else [] ),
     ]
+    if fixed_ue is not None:
+        args.extend(["--uc-figure-fixed-ue", fixed_ue])
+    if fixed_uc is not None:
+        args.extend(["--ue-figure-fixed-uc", fixed_uc])
+    return args
 
 
 def test_normal_horizon_pass_never_is_a_failure_trace():
@@ -323,6 +421,119 @@ def test_parse_concurrency_is_configured_and_resume_bound(tmp_path, monkeypatch)
         scheduler_runner.main(
             _scheduler_runner_args(output, resume=True, parse_concurrency=4)
         )
+
+
+def test_runner_persists_explicit_figure_slices_and_infers_unique_defaults(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    cells = "0.1:3/7,0.2:3/7,0.4:2/5,0.4:1/2"
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    explicit = tmp_path / "explicit-slices"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        explicit, cells=cells, fixed_ue="3/7", fixed_uc="2/5",
+    )) == 0
+    config = json.loads((explicit / "run_config.json").read_text())
+    assert config["figure_slices"] == {
+        "uc_scan": {
+            "x_key": "target_uc", "fixed_key": "target_ue",
+            "fixed_value": "3/7",
+        },
+        "ue_scan": {
+            "x_key": "target_ue", "fixed_key": "target_uc",
+            "fixed_value": "2/5",
+        },
+    }
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    inferred = tmp_path / "inferred-slices"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        inferred, cells=cells,
+    )) == 0
+    inferred_config = json.loads((inferred / "run_config.json").read_text())
+    assert inferred_config["figure_slices"] == config["figure_slices"]
+
+
+@pytest.mark.parametrize("option,value", [
+    ("fixed_ue", "4/5"), ("fixed_uc", "3/5"),
+])
+def test_runner_rejects_figure_slice_absent_from_cells(tmp_path, monkeypatch, option, value):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    kwargs = {option: value}
+    with pytest.raises(SystemExit, match="absent from cells"):
+        scheduler_runner.main(_scheduler_runner_args(
+            tmp_path / option, cells="0.1:3/7,0.2:3/7,0.4:2/5,0.4:1/2",
+            **kwargs,
+        ))
+
+
+@pytest.mark.parametrize("value", ["0", "6/5", "not-a-fraction"])
+def test_runner_rejects_invalid_figure_slice_fraction(tmp_path, monkeypatch, value):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    with pytest.raises(SystemExit):
+        scheduler_runner.main(_scheduler_runner_args(
+            tmp_path / value.replace("/", "-"), fixed_ue=value,
+        ))
+
+
+def test_runner_binds_figure_slices_to_resume_configuration(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    cells = "0.1:3/7,0.2:3/7,0.3:4/7,0.4:2/5,0.4:1/2"
+    output = tmp_path / "resume-slices"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, cells=cells, fixed_ue="3/7", fixed_uc="2/5",
+    )) == 0
+    with pytest.raises(SystemExit, match="resume configuration mismatch"):
+        scheduler_runner.main(_scheduler_runner_args(
+            output, resume=True, cells=cells, fixed_ue="4/7", fixed_uc="2/5",
+        ))
+
+
+def test_runner_rejects_ambiguous_automatic_figure_slice_inference(tmp_path, monkeypatch):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    with pytest.raises(SystemExit, match="ambiguous"):
+        scheduler_runner.main(_scheduler_runner_args(
+            tmp_path / "ambiguous",
+            cells="0.1:2/5,0.2:2/5,0.1:3/5,0.2:3/5",
+        ))
+
+
+def test_runner_migrates_legacy_resume_config_with_unambiguous_slices(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    output = tmp_path / "legacy-resume"
+    args = _scheduler_runner_args(output)
+    assert scheduler_runner.main(args) == 0
+    config_path = output / "run_config.json"
+    config = json.loads(config_path.read_text())
+    expected_slices = config.pop("figure_slices")
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    assert scheduler_runner.main(_scheduler_runner_args(output, resume=True)) == 0
+    migrated = json.loads(config_path.read_text())
+    assert migrated["figure_slices"] == expected_slices
 
 
 def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_path, monkeypatch):
