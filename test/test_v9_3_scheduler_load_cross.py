@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from experiments.v9_3 import scheduler_load_cross as experiment
+from experiments.v9_3.simulation_engine import should_retain_failure_trace
 from experiments.v9_3.simulation_result import SimulationStatus
 from scripts.analyze_scheduler_load_cross import analyze
 import scripts.run_scheduler_load_cross as scheduler_runner
@@ -144,14 +145,70 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
     monkeypatch.setattr(scheduler_runner, "run_paired_simulation", run_simulation)
 
 
-def _scheduler_runner_args(output, resume=False):
+def _scheduler_runner_args(output, resume=False, keep_traces=False):
     return [
         "--output", str(output), "--seed", "710213", "--workers", "1",
         "--samples-per-cell", "1", "--cells", "0.1:0.4",
         "--schedulers", "ASAP-BLOCK", "--simulation-horizon", "20",
         "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
+        *( ["--keep-traces"] if keep_traces else [] ),
         *( ["--resume"] if resume else [] ),
     ]
+
+
+def test_normal_horizon_pass_never_is_a_failure_trace():
+    result = SimpleNamespace(
+        status=SimulationStatus.PASS_OBSERVED,
+        simulation_completed=True,
+        completion_reason="reached_horizon",
+        release_e0_valid=False,
+    )
+    assert not should_retain_failure_trace(
+        result, {"trace_on_failure": True}
+    )
+
+
+def test_failure_trace_retention_remains_opt_in_for_diagnostics():
+    result = SimpleNamespace(
+        status=SimulationStatus.DEADLINE_MISS,
+        simulation_completed=True,
+        completion_reason="reached_horizon",
+        release_e0_valid=True,
+    )
+    assert not should_retain_failure_trace(
+        result, {"trace_on_failure": False}
+    )
+    assert should_retain_failure_trace(
+        result, {"trace_on_failure": True}
+    )
+
+
+def test_scheduler_runner_disables_trace_retention_by_default(tmp_path, monkeypatch):
+    configs = []
+
+    def run_simulation(**kwargs):
+        configs.append(kwargs["simulation_config"])
+        result = SimpleNamespace(
+            status=SimulationStatus.PASS_OBSERVED, reason="observed",
+            jobs=(), metrics={}, simulation_completed=True,
+        )
+        return SimpleNamespace(
+            result=result, runtime_seconds=0.1, stdout_tail="",
+            stderr_tail="", retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(tmp_path / "default")) == 0
+    assert configs[0]["trace_on_failure"] is False
+    assert configs[0]["retain_trace"] is False
+
+    configs.clear()
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(
+        _scheduler_runner_args(tmp_path / "debug", keep_traces=True)
+    ) == 0
+    assert configs[0]["trace_on_failure"] is True
+    assert configs[0]["retain_trace"] is True
 
 
 def test_attempt_history_separates_technical_failure_and_retries_in_new_dir(tmp_path, monkeypatch):
