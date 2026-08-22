@@ -22,6 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3 import perf_g, scheduler_load_cross as experiment
+from experiments.v9_3.parallel_prepare import run_prepare_jobs, validate_workers
 from experiments.v9_3 import simulation_engine
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from experiments.v9_3.simulation_engine import SimulationStatus, run_paired_simulation
@@ -191,6 +192,10 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--workers", type=int, default=1)
+    parser.add_argument(
+        "--prepare-workers", type=int, default=None,
+        help="bounded workers for deterministic preparation (default: --workers)",
+    )
     parser.add_argument("--samples-per-cell", type=int, default=1)
     parser.add_argument("--cells")
     parser.add_argument("--schedulers")
@@ -223,6 +228,11 @@ def make_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
+    prepare_workers = args.workers if args.prepare_workers is None else args.prepare_workers
+    try:
+        validate_workers(prepare_workers, "prepare-workers")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     if min(args.workers, args.samples_per_cell, args.processors, args.tasks) < 1:
         raise SystemExit("workers, samples, processors, and tasks must be positive")
     if args.simulation_horizon <= 0 or args.timeout_seconds <= 0:
@@ -272,14 +282,35 @@ def main(argv: list[str] | None = None) -> int:
         "keep_traces": args.keep_traces,
         "parse_concurrency": args.parse_concurrency,
         "figure_slices": figure_slices,
+        "execution": {
+            "workers": args.workers,
+            "prepare_workers": prepare_workers,
+            "parse_concurrency": args.parse_concurrency,
+            "keep_traces": bool(args.keep_traces),
+        },
     }
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
-        legacy_config = {key: value for key, value in config.items() if key != "figure_slices"}
+        runtime_keys = {"execution", "status", "telemetry"}
+        stored_comparable = {
+            key: value for key, value in (stored_config or {}).items()
+            if key not in runtime_keys
+        }
+        requested_comparable = {
+            key: value for key, value in config.items() if key not in runtime_keys
+        }
+        legacy_config = {key: value for key, value in requested_comparable.items() if key != "figure_slices"}
+        stored_legacy_comparable = {
+            key: value for key, value in stored_comparable.items()
+            if key != "figure_slices"
+        }
         legacy_figure_slices = experiment.resolve_figure_slices(cells)
-        legacy_resume = stored_config == legacy_config and figure_slices == legacy_figure_slices
-        if stored_config != config and not legacy_resume:
+        legacy_resume = (
+            stored_legacy_comparable == legacy_config
+            and figure_slices == legacy_figure_slices
+        )
+        if stored_comparable != requested_comparable and not legacy_resume:
             raise SystemExit("resume configuration mismatch")
         if legacy_resume:
             write_json(run_config, config)
@@ -287,21 +318,32 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("output exists; use --resume or choose a new output")
     else:
         write_json(run_config, config)
+    total_started = time.perf_counter()
     material = root / "material"
     unique_ucs = tuple(dict.fromkeys(uc for uc, _ue in cells))
+    prepare_tasksets_started = time.perf_counter()
     tasksets, service = experiment.materialize_tasksets(
         material, seed=args.seed, utilizations=unique_ucs, count=args.samples_per_cell,
         processors=args.processors, tasks=args.tasks, period_min=args.period_min,
         period_max=args.period_max, min_task_util=min_util, max_task_util=max_util,
-        tolerance=tolerance,
+        tolerance=tolerance, prepare_workers=prepare_workers,
+    )
+    prepare_tasksets_seconds = time.perf_counter() - prepare_tasksets_started
+    print(
+        f"phase=prepare stage=scheduler-load-cross prepare-tasksets "
+        f"elapsed_seconds={prepare_tasksets_seconds:.3f} workers={prepare_workers} "
+        f"items={len(tasksets)}", flush=True,
     )
     rows = [experiment.taskset_row(taskset, args.processors) for taskset in tasksets]
     write_jsonl(root / "tasksets.jsonl", rows)
+    request_started = time.perf_counter()
     requests = experiment.request_rows(tasksets, cells, schedulers, args.simulation_horizon)
     write_jsonl(root / "requests.jsonl", requests)
+    request_build_seconds = time.perf_counter() - request_started
     raw_trace = tuple(experiment.construct_paired_harvest_trace(
         service.system_path, experiment.FORMAL_NORMALIZATION_HORIZON,
     ))
+    experiment.set_prepare_raw_trace(raw_trace)
     results_path = root / "results.jsonl"
     attempts_path = root / "attempts.jsonl"
     existing = read_jsonl(results_path) if args.resume else []
@@ -321,6 +363,7 @@ def main(argv: list[str] | None = None) -> int:
     completed_ids = set(existing_ids)
     taskset_by_id = {taskset.taskset_id: taskset for taskset in tasksets}
     pending_jobs: list[dict[str, Any]] = []
+    energy_jobs: dict[tuple[str, str], dict[str, Any]] = {}
     for request in requests:
         request_id = str(request["request_id"])
         if request_id in completed_ids:
@@ -331,9 +374,15 @@ def main(argv: list[str] | None = None) -> int:
         except RuntimeError as exc:
             print(f"scheduler-load-cross resume blocked: {exc}", file=sys.stderr)
             return 2
-        energy = experiment.energy_material(
-            taskset, Fraction(request["target_ue"]), raw_trace, kappa=kappa,
-        )
+        energy_key = (taskset.taskset_id, str(request["target_ue"]))
+        energy_jobs.setdefault(energy_key, {
+            "taskset_id": taskset.taskset_id,
+            "target_ue": request["target_ue"],
+            "task_payload": tuple(taskset.task_payload),
+            "processors": taskset.processors,
+            "task_count": taskset.task_count,
+            "kappa": kappa,
+        })
         simulation = {
             "simulator_bin": str(args.simulator), "horizon": args.simulation_horizon,
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
@@ -342,11 +391,6 @@ def main(argv: list[str] | None = None) -> int:
             "retain_trace": args.keep_traces,
             "timeout_seconds": args.timeout_seconds,
             "cleanup_transient_artifacts": True,
-        }
-        energy_config = {
-            "simulation_initial_battery": energy["initial_energy_j"],
-            "battery_capacity": energy["battery_capacity_j"], "allow_harvest_clipping": True,
-            "service_curve": {"solar_scale": energy["solar_scale"], "use_real_solar_data": True},
         }
         pending_jobs.append({
             "request": request,
@@ -358,15 +402,39 @@ def main(argv: list[str] | None = None) -> int:
             "taskset_id": taskset.taskset_id,
             "taskset_hash": taskset.semantic_hash,
             "task_payload": taskset.task_payload,
-            "energy": energy,
+            "energy_key": energy_key,
             "base_system_path": str(service.system_path),
             "processors": args.processors,
-            "exact_e0": Fraction(energy["initial_energy_j"]),
-            "energy_config": energy_config,
+            "exact_e0": None,
+            "energy_config": None,
             "simulation_config": simulation,
             "scheduler_id": request["scheduler_cli"],
         })
 
+    prepare_energy_started = time.perf_counter()
+    prepared_energy = run_prepare_jobs(
+        energy_jobs.values(), experiment.prepare_energy_material,
+        workers=prepare_workers, phase="scheduler-load-cross prepare-energy",
+        key=lambda row: (row["taskset_id"], row["target_ue"]),
+    )
+    energy_by_key = {
+        key: value["material"] for key, value in prepared_energy.items()
+    }
+    prepare_energy_seconds = time.perf_counter() - prepare_energy_started
+    for job in pending_jobs:
+        job["energy"] = energy_by_key[job.pop("energy_key")]
+        energy = job["energy"]
+        simulation = job["simulation_config"]
+        job["exact_e0"] = Fraction(energy["initial_energy_j"])
+        simulation["trace_on_failure"] = args.keep_traces
+        simulation["retain_trace"] = args.keep_traces
+        job["energy_config"] = {
+            "simulation_initial_battery": energy["initial_energy_j"],
+            "battery_capacity": energy["battery_capacity_j"], "allow_harvest_clipping": True,
+            "service_curve": {"solar_scale": energy["solar_scale"], "use_real_solar_data": True},
+        }
+
+    execution_started = time.perf_counter()
     mp_context = multiprocessing.get_context("fork")
     parse_semaphore = mp_context.Semaphore(args.parse_concurrency)
     with ProcessPoolExecutor(
@@ -481,6 +549,7 @@ def main(argv: list[str] | None = None) -> int:
     if len(results_by_id) == len(requests) and set(results_by_id) == expected_ids:
         canonical_results = [results_by_id[str(request["request_id"])] for request in requests]
         write_jsonl(results_path, canonical_results)
+    execution_seconds = time.perf_counter() - execution_started
     report = {
         "expected_results": len(requests), "observed_results": len(results_by_id),
         "missing_results": len(expected_ids - set(observed_ids)),
@@ -491,6 +560,16 @@ def main(argv: list[str] | None = None) -> int:
         "complete": len(results_by_id) == len(requests) and len(observed_ids) == len(set(observed_ids)),
     }
     write_json(root / "invariant_report.json", report)
+    config_document = json.loads(run_config.read_text(encoding="utf-8"))
+    config_document["status"] = "complete" if report["complete"] else "incomplete"
+    config_document["telemetry"] = {
+        "prepare_tasksets_seconds": prepare_tasksets_seconds,
+        "prepare_energy_seconds": prepare_energy_seconds,
+        "request_build_seconds": request_build_seconds,
+        "execution_seconds": execution_seconds,
+        "total_seconds": time.perf_counter() - total_started,
+    }
+    write_json(run_config, config_document)
     print(json.dumps(report, sort_keys=True))
     return 0 if report["complete"] else 2
 

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from fractions import Fraction
 import hashlib
+import json
 from pathlib import Path
+import tempfile
 from typing import Any, Mapping, Sequence
 
 from . import perf_g
@@ -12,6 +14,7 @@ from .cell_model import expand_cells
 from .config import canonical_json, fraction_text
 from .simulation_engine import construct_paired_harvest_trace
 from .taskset_store import TasksetStore, prepare_service_curve
+from .parallel_prepare import run_prepare_jobs
 
 
 DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v2"
@@ -27,6 +30,7 @@ DEFAULT_CELLS = tuple(
 )
 DEFAULT_SCHEDULERS = tuple(perf_g.CAL_SCHEDULERS)
 ALL_SCHEDULERS = tuple(perf_g.FORMAL_SCHEDULERS)
+_PREPARE_RAW_TRACE: tuple[Fraction, ...] | None = None
 
 
 def parse_fraction(value: Any, label: str, *, positive: bool = True) -> Fraction:
@@ -140,11 +144,32 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
     return config
 
 
+def prepare_taskset_candidate(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Generate one taskset in an isolated directory; never touch shared state."""
+    config = job["config"]
+    service = job["service"]
+    generation_id = str(job["generation_id"])
+    taskset_index = int(job["taskset_index"])
+    with tempfile.TemporaryDirectory(prefix="scheduler_load_cross_candidate_") as directory:
+        worker_store = TasksetStore(Path(directory) / "tasksets", config, service)
+        cell = next(
+            cell for cell in expand_cells(config)
+            if cell.generation_id == generation_id
+        )
+        candidate_path = worker_store.path_for(generation_id, taskset_index)
+        worker_store._generate(candidate_path, cell, taskset_index)
+        return {
+            "generation_id": generation_id,
+            "taskset_index": taskset_index,
+            "document": json.loads(candidate_path.read_text(encoding="utf-8")),
+        }
+
+
 def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fraction],
                          count: int, processors: int, tasks: int,
                          period_min: int, period_max: int,
                          min_task_util: Fraction, max_task_util: Fraction,
-                         tolerance: Fraction) -> tuple[list[Any], Any]:
+                         tolerance: Fraction, prepare_workers: int = 1) -> tuple[list[Any], Any]:
     config = _config(
         seed, utilizations=utilizations, count=count, processors=processors,
         tasks=tasks, period_min=period_min, period_max=period_max,
@@ -154,16 +179,46 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
     service = prepare_service_curve(config, root / "service")
     store = TasksetStore(root / "tasksets", config, service)
     cells = expand_cells(config)
-    tasksets = []
+    tasksets_by_key: dict[tuple[str, int], Any] = {}
+    missing: list[dict[str, Any]] = []
     for cell in cells:
         for index in range(count):
-            taskset = store.get_or_create(cell, index)
+            if prepare_workers == 1 or store.path_for(cell.generation_id, index).is_file():
+                taskset = store.get_or_create(cell, index)
+            else:
+                missing.append({
+                    "config": config, "service": service,
+                    "generation_id": cell.generation_id,
+                    "taskset_index": index,
+                })
+                continue
             if taskset.processors != processors or taskset.task_count != tasks:
                 raise ValueError("canonical taskset dimensions mismatch")
             if any(int(row.get("arrival_offset", 0)) != 0 for row in taskset.task_payload):
                 raise ValueError("scheduler LOAD-CROSS requires synchronous release")
-            tasksets.append(taskset)
+            tasksets_by_key[(cell.generation_id, index)] = taskset
+    if missing:
+        candidates = run_prepare_jobs(
+            missing, prepare_taskset_candidate, workers=prepare_workers,
+            phase="scheduler-load-cross prepare-tasksets",
+            key=lambda row: (row["generation_id"], row["taskset_index"]),
+        )
+        for cell in cells:
+            for index in range(count):
+                key = (cell.generation_id, index)
+                if key in candidates:
+                    candidate = candidates[key]
+                    taskset = store.commit_candidate(cell, index, candidate["document"])
+                elif store.path_for(*key).is_file():
+                    taskset = store.get_or_create(cell, index)
+                else:
+                    raise RuntimeError(f"missing prepared taskset candidate {key!r}")
+                tasksets_by_key[key] = taskset
     store.verify_pairing_manifest(require_complete=True)
+    tasksets = [
+        tasksets_by_key[(cell.generation_id, index)]
+        for cell in cells for index in range(count)
+    ]
     return tasksets, service
 
 
@@ -251,3 +306,30 @@ def energy_material(taskset: Any, target_ue: Fraction, raw_trace: Sequence[Fract
         "normalization_horizon_ms": str(normalization_horizon),
         "energy_control": "SERVICE_ONLY_SCALING",
     }
+
+
+def prepare_energy_material(job: Mapping[str, Any]) -> dict[str, Any]:
+    """Compute one immutable energy material for one (taskset, U_E) pair."""
+    class _TasksetView:
+        task_payload = tuple(job["task_payload"])
+        processors = int(job["processors"])
+        task_count = int(job["task_count"])
+
+    raw_trace = _PREPARE_RAW_TRACE
+    if raw_trace is None:
+        raw_trace = tuple(job["raw_trace"])
+    material = energy_material(
+        _TasksetView(), Fraction(job["target_ue"]), raw_trace,
+        kappa=Fraction(job["kappa"]),
+    )
+    return {
+        "taskset_id": str(job["taskset_id"]),
+        "target_ue": fraction_text(Fraction(job["target_ue"])),
+        "material": material,
+    }
+
+
+def set_prepare_raw_trace(raw_trace: Sequence[Fraction]) -> None:
+    """Publish one read-only trace for forked preparation workers."""
+    global _PREPARE_RAW_TRACE
+    _PREPARE_RAW_TRACE = tuple(raw_trace)
