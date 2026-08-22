@@ -1,4 +1,5 @@
 import json
+import csv
 from concurrent.futures import Future
 from fractions import Fraction
 import os
@@ -80,6 +81,81 @@ def test_analyzer_writes_both_figure_csvs(tmp_path):
     assert analyze(tmp_path)["complete"]
     assert (tmp_path / "figure_scheduler_uc.csv").is_file()
     assert (tmp_path / "figure_scheduler_ue.csv").is_file()
+    assert (tmp_path / "figure_scheduler_uc.png").is_file()
+    assert (tmp_path / "figure_scheduler_ue.png").is_file()
+
+
+def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monkeypatch):
+    config = {"cells": [
+        ["1/10", "2/5"], ["1/5", "2/5"],
+        ["1/2", "1/5"], ["1/2", "3/10"],
+        ["1/2", "2/5"], ["1/2", "1/2"],
+    ], "samples_per_cell": 1, "schedulers": ["ASAP-BLOCK"],
+       "processors": 4, "util_tolerance_total": "1/100"}
+    tasksets = [
+        {"taskset_id": "t-1", "taskset_hash": "h-1",
+         "canonical_task_power": True, "target_uc": "1/10", "actual_uc": "1/10"},
+        {"taskset_id": "t-2", "taskset_hash": "h-2",
+         "canonical_task_power": True, "target_uc": "1/5", "actual_uc": "1/5"},
+        {"taskset_id": "t-5", "taskset_hash": "h-5",
+         "canonical_task_power": True, "target_uc": "1/2", "actual_uc": "1/2"},
+    ]
+    cells = [("t-1", "1/10", "2/5"), ("t-2", "1/5", "2/5"),
+             ("t-5", "1/2", "1/5"), ("t-5", "1/2", "3/10"),
+             ("t-5", "1/2", "2/5"), ("t-5", "1/2", "1/2")]
+    requests = []
+    results = []
+    for index, (taskset_id, target_uc, target_ue) in enumerate(cells):
+        request = {
+            "request_id": f"r-{index}", "taskset_id": taskset_id,
+            "taskset_hash": next(row["taskset_hash"] for row in tasksets if row["taskset_id"] == taskset_id),
+            "target_uc": target_uc, "target_ue": target_ue,
+            "generation_index": 0, "scheduler": "ASAP-BLOCK",
+        }
+        eta = str(1 / Fraction(target_ue))
+        energy = {
+            "target_ue": target_ue, "eta": eta,
+            "P_dem_j_per_tick": target_ue, "target_supply_mean_j_per_tick": "1",
+            "raw_reference_mean_j_per_tick": "1", "solar_scale": "1",
+        }
+        requests.append(request)
+        results.append({
+            **request, "energy": energy, "schedulable": True,
+            "deadline_miss": False, "simulation_status": "SIM_PASS_OBSERVED",
+            "technical_error": None,
+        })
+    (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / "tasksets.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in tasksets), encoding="utf-8"
+    )
+    (tmp_path / "requests.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in requests), encoding="utf-8"
+    )
+    (tmp_path / "results.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in results), encoding="utf-8"
+    )
+    plotted = {}
+    monkeypatch.setattr(
+        "scripts.analyze_scheduler_load_cross.plot_scan",
+        lambda rows, output, filename, xkey, schedulers, xlabel, title:
+            plotted.setdefault(filename, list(rows)),
+    )
+    assert analyze(tmp_path)["complete"]
+
+    uc_rows = list(csv.DictReader((tmp_path / "figure_scheduler_uc.csv").open()))
+    ue_rows = list(csv.DictReader((tmp_path / "figure_scheduler_ue.csv").open()))
+    assert {row["target_ue"] for row in uc_rows} == {"2/5"}
+    assert {row["target_uc"] for row in ue_rows} == {"1/2"}
+    assert [row["target_uc"] for row in uc_rows] == ["1/10", "1/5", "1/2"]
+    assert [row["target_ue"] for row in ue_rows] == ["1/5", "3/10", "2/5", "1/2"]
+    assert [row["target_uc"] for row in plotted["figure_scheduler_uc.png"]] == [
+        "1/10", "1/5", "1/2",
+    ]
+    assert [row["target_ue"] for row in plotted["figure_scheduler_ue.png"]] == [
+        "1/5", "3/10", "2/5", "1/2",
+    ]
+    assert len(uc_rows) == 3
+    assert len(ue_rows) == 4
 
 
 class _FakeTaskset:
