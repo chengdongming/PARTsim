@@ -129,6 +129,40 @@ def test_hash_projection_contract_is_explicit():
     assert all(row["workload"] == "hash" for row in taskset.task_payload)
 
 
+def test_taskset_provenance_semantics_are_unambiguous():
+    taskset = make_taskset()
+    row = experiment.taskset_row(taskset)
+    assert row["taskset_id"] == row["source_taskset_id"]
+    assert row["source_taskset_hash"] == taskset.base.semantic_hash
+    assert row["projected_taskset_hash"] == taskset.base_hash
+    assert row["taskset_hash"] == row["projected_taskset_hash"]
+    assert row["taskset_hash_semantics"] == "projected_taskset_hash"
+    assert row["projected_workload"] == "hash"
+
+
+def test_rho_identity_provenance_and_material_identity():
+    taskset = make_taskset()
+    rho1 = experiment.priority_energy_material(taskset, Fraction(1))
+    rho2 = experiment.priority_energy_material(taskset, Fraction(2))
+    for field in ("source_taskset_hash", "projected_taskset_hash", "projected_priority_hash"):
+        assert rho1[field] == rho2[field]
+    assert rho1["material_hash"] != rho2["material_hash"]
+
+
+def test_analyzer_fails_closed_on_provenance_mismatch():
+    taskset = make_taskset()
+    taskset_row = experiment.taskset_row(taskset)
+    material = experiment.priority_energy_material(taskset, Fraction(1))
+    result = {
+        "source_taskset_id": taskset_row["source_taskset_id"],
+        "taskset_hash": taskset_row["taskset_hash"],
+        "source_taskset_hash": "wrong",
+        "projected_taskset_hash": taskset_row["projected_taskset_hash"],
+    }
+    with pytest.raises(SystemExit, match="provenance"):
+        analyzer.validate_provenance(result, taskset_row, material)
+
+
 def test_runtime_power_reproduces_scheduler_operation_order():
     payload = ({
         "task_id": "0", "priority_rank": 0, "C": 5, "D": 10,
@@ -156,6 +190,18 @@ def test_figure_slices_are_exact_and_fail_closed():
         experiment.resolve_figure_slices(cells, fixed_ue=Fraction(1, 2))
 
 
+def test_control_slices_reuse_exact_fixed_axes():
+    rows = [
+        {"rho": "1", "target_uc": "1/5", "target_ue": "7/10", "acceptance_ratio": 1},
+        {"rho": "1", "target_uc": "3/10", "target_ue": "7/10", "acceptance_ratio": 1},
+        {"rho": "1", "target_uc": "3/10", "target_ue": "1/2", "acceptance_ratio": 1},
+    ]
+    uc = analyzer.select_scan_rows(rows, "target_ue", "7/10")
+    ue = analyzer.select_scan_rows(rows, "target_uc", "3/10")
+    assert {row["target_uc"] for row in uc} == {"1/5", "3/10"}
+    assert {row["target_ue"] for row in ue} == {"7/10", "1/2"}
+
+
 def test_paired_counts_use_taskset_identity_not_row_position():
     block = [
         {"taskset_id": "b", "taskset_pass": True},
@@ -179,3 +225,11 @@ def test_resume_ignores_execution_only_changes():
     requested = {"seed": 1, "cells": [["1/5", "1/2"]], "execution": {"workers": 1}}
     assert runner.resume_configuration_matches(stored, requested)
     assert not runner.resume_configuration_matches(stored, {"seed": 2, "cells": [["1/5", "1/2"]]})
+
+
+def test_execution_history_records_monotonic_invocations():
+    first = runner.execution_record({"workers": 8, "prepare_workers": 8, "parse_concurrency": 2}, run_index=1, mode="initial")
+    second = runner.execution_record({"workers": 4, "prepare_workers": 4, "parse_concurrency": 1}, run_index=2, mode="resume")
+    assert [first["run_index"], second["run_index"]] == [1, 2]
+    assert first["workers"] == 8
+    assert second["workers"] == 4

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
+from datetime import datetime, timezone
 from fractions import Fraction
 import json
 import multiprocessing
@@ -142,11 +143,21 @@ def _is_scientific(status: str) -> bool:
 
 def _scientific_config(config: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in config.items()
-            if key not in {"execution", "status", "telemetry"}}
+            if key not in {"execution", "execution_history", "status", "telemetry"}}
 
 
 def resume_configuration_matches(stored: dict[str, Any], requested: dict[str, Any]) -> bool:
     return _scientific_config(stored) == _scientific_config(requested)
+
+
+def execution_record(execution: dict[str, Any], *, run_index: int, mode: str) -> dict[str, Any]:
+    return {
+        "run_index": run_index,
+        "mode": mode,
+        **execution,
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "completed_or_interrupted": "in_progress",
+    }
 
 
 def make_parser() -> argparse.ArgumentParser:
@@ -252,10 +263,23 @@ def main(argv: list[str] | None = None) -> int:
         stored = json.loads(run_config.read_text(encoding="utf-8"))
         if not resume_configuration_matches(stored, config):
             raise SystemExit("resume configuration mismatch")
+        history = stored.get("execution_history", [])
+        if not isinstance(history, list):
+            raise SystemExit("run_config execution_history is invalid")
+        run_index = len(history) + 1
+        mode = "resume"
     elif run_config.exists() or (root / "results.jsonl").exists():
         raise SystemExit("output exists; use --resume or choose a new output")
     else:
-        write_json(run_config, config)
+        stored = config
+        history = []
+        run_index = 1
+        mode = "initial"
+    current_execution = execution_record(config["execution"], run_index=run_index, mode=mode)
+    history = [*history, current_execution]
+    stored["execution"] = dict(config["execution"])
+    stored["execution_history"] = history
+    write_json(run_config, stored)
 
     started = time.perf_counter()
     unique_ucs = tuple(dict.fromkeys(uc for uc, _ in cells))
@@ -423,6 +447,8 @@ def main(argv: list[str] | None = None) -> int:
     stored = json.loads(run_config.read_text(encoding="utf-8"))
     stored["status"] = "complete" if report["complete"] else "incomplete"
     stored["telemetry"] = {"elapsed_seconds": report["elapsed_seconds"], "requests": len(requests)}
+    stored["execution"] = dict(config["execution"])
+    stored["execution_history"][-1]["completed_or_interrupted"] = stored["status"]
     write_json(run_config, stored)
     print(json.dumps(report, sort_keys=True))
     return 0 if report["complete"] else 2

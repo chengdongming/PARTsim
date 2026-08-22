@@ -144,6 +144,24 @@ def paired_counts(block: list[dict[str, Any]], nonblock: list[dict[str, Any]]) -
     }
 
 
+def validate_provenance(result: dict[str, Any], taskset: dict[str, Any], material: dict[str, Any]) -> None:
+    if not result.get("source_taskset_id") or not result.get("projected_taskset_hash"):
+        raise SystemExit("invalid source/projected taskset provenance")
+    if (
+        result["source_taskset_id"] != taskset["source_taskset_id"]
+        or result.get("taskset_hash") != taskset["taskset_hash"]
+        or result["source_taskset_hash"] != taskset["source_taskset_hash"]
+        or result["projected_taskset_hash"] != taskset["projected_taskset_hash"]
+        or taskset.get("taskset_hash") != taskset["projected_taskset_hash"]
+        or taskset.get("taskset_hash_semantics") != "projected_taskset_hash"
+        or material.get("source_taskset_id") != taskset["source_taskset_id"]
+        or material.get("source_taskset_hash") != taskset["source_taskset_hash"]
+        or material.get("projected_taskset_hash") != taskset["projected_taskset_hash"]
+        or material.get("projected_priority_hash") != taskset.get("projected_priority_hash")
+    ):
+        raise SystemExit("source/projected taskset provenance mismatch")
+
+
 def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     validate_workers(analysis_workers, "analysis-workers")
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
@@ -171,6 +189,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
 
     material_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     battery_by_pair: dict[tuple[str, str, str], str] = {}
+    energy_by_pair: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in results:
         if row.get("technical_error") is not None or row.get("simulation_status") not in {
             "SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS",
@@ -186,21 +205,10 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             or experiment._hash("MATERIAL", material_without_hash) != material["material_hash"]
         ):
             raise SystemExit("material hash mismatch")
-        if not row.get("source_taskset_id") or not row.get("projected_taskset_hash"):
-            raise SystemExit("invalid source/projected taskset provenance")
         taskset_row = taskset_by_id.get(str(row["taskset_id"]))
         if taskset_row is None:
             raise SystemExit("result references an unknown taskset")
-        if (
-            row["source_taskset_id"] != taskset_row["source_taskset_id"]
-            or row["source_taskset_hash"] != taskset_row["source_taskset_hash"]
-            or row["projected_taskset_hash"] != taskset_row["projected_taskset_hash"]
-            or material.get("source_taskset_id") != taskset_row["source_taskset_id"]
-            or material.get("projected_taskset_hash") != taskset_row["projected_taskset_hash"]
-        ):
-            raise SystemExit("source/projected taskset provenance mismatch")
-        if material.get("source_taskset_hash") != row.get("source_taskset_hash"):
-            raise SystemExit("material source provenance mismatch")
+        validate_provenance(row, taskset_row, material)
         base = Fraction(material["P_dem_base"])
         transformed = Fraction(material["P_dem_transformed"])
         if base != transformed:
@@ -235,6 +243,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         key = (str(row["taskset_id"]), str(row["target_ue"]))
         material_by_key[(str(row["taskset_id"]), str(rho))] = material
         battery_by_pair[(str(row["taskset_id"]), str(row["target_ue"]), str(rho))] = energy["battery_capacity_j"]
+        energy_by_pair[(str(row["taskset_id"]), str(row["target_ue"]), str(rho))] = energy
 
     for taskset_id in taskset_ids:
         reference = None
@@ -246,9 +255,28 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             reference = current if reference is None else reference
             if current != reference:
                 raise SystemExit("reference E_burst differs across rho")
+        identities = {
+            (
+                material_by_key[(taskset_id, str(rho))]["source_taskset_hash"],
+                material_by_key[(taskset_id, str(rho))]["projected_taskset_hash"],
+                material_by_key[(taskset_id, str(rho))]["projected_priority_hash"],
+            ) for rho in ratios
+        }
+        if len(identities) != 1:
+            raise SystemExit("taskset provenance changed across rho")
     for taskset_id, ue, rho in list(battery_by_pair):
         if battery_by_pair[(taskset_id, ue, str(rho))] != battery_by_pair[(taskset_id, ue, str(experiment.REFERENCE_RATIO))]:
             raise SystemExit("battery is not fixed to rho=2 reference")
+    for taskset_id, ue in {(key[0], key[1]) for key in energy_by_pair}:
+        pair = [energy_by_pair.get((taskset_id, ue, str(rho))) for rho in ratios]
+        if any(item is None for item in pair):
+            raise SystemExit("missing energy rho pair")
+        first = pair[0]
+        for field in ("target_supply_mean_j_per_tick", "solar_scale", "battery_capacity_j", "initial_energy_j"):
+            if any(item[field] != first[field] for item in pair[1:]):
+                raise SystemExit(f"{field} is not fixed across rho")
+        if len({material_by_key[(taskset_id, str(rho))]["P_dem_transformed"] for rho in ratios}) != 1:
+            raise SystemExit("conceptual demand changed across rho")
 
     schedulers = list(config["schedulers"])
     groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
@@ -282,23 +310,38 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     write_csv(root / "figure_scheduler_priority_energy_ue.csv", ue_rows)
     write_csv(root / "figure_scheduler_priority_energy_uc_rho2.csv", uc_rows)
     write_csv(root / "figure_scheduler_priority_energy_ue_rho2.csv", ue_rows)
+    control = [row for row in summaries if Fraction(row["rho"]) == 1]
+    control_uc_rows = select_scan_rows(control, uc_slice["fixed_key"], uc_slice["fixed_value"])
+    control_ue_rows = select_scan_rows(control, ue_slice["fixed_key"], ue_slice["fixed_value"])
+    _validate_scan_rows(control_uc_rows, cells, fixed_key=uc_slice["fixed_key"], x_key=uc_slice["x_key"], fixed_value=uc_slice["fixed_value"], label="control U_C")
+    _validate_scan_rows(control_ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="control U_E")
     try:
         run_independent_jobs(
             [
                 (uc_rows, str(root / "figure_scheduler_priority_energy_uc_rho2.png"), "target_uc", f"rho=2, U_E={uc_slice['fixed_value']}"),
                 (ue_rows, str(root / "figure_scheduler_priority_energy_ue_rho2.png"), "target_ue", f"rho=2, U_C={ue_slice['fixed_value']}"),
+                (control_uc_rows, str(root / "figure_scheduler_priority_energy_control_uc.png"), "target_uc", f"rho=1, U_E={uc_slice['fixed_value']}"),
+                (control_ue_rows, str(root / "figure_scheduler_priority_energy_control_ue.png"), "target_ue", f"rho=1, U_C={ue_slice['fixed_value']}"),
             ], _plot_job, workers=analysis_workers,
         )
     except ImportError:
         pass
 
-    control = [row for row in summaries if Fraction(row["rho"]) == 1]
     write_csv(root / "control_rho1.csv", control)
+    write_csv(root / "figure_scheduler_priority_energy_control_uc.csv", control_uc_rows)
+    write_csv(root / "figure_scheduler_priority_energy_control_ue.csv", control_ue_rows)
     paired = []
     for (rho, uc, ue), group in sorted(groups.items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]), Fraction(item[0][2]))):
         block = [row for row in group if row["scheduler"] == "ASAP-BLOCK"]
         nonblock = [row for row in group if row["scheduler"] == "ASAP-NONBLOCK"]
         counts = paired_counts(block, nonblock)
+        if (
+            counts["both_pass"] + counts["both_fail"]
+            + counts["block_only"] + counts["nonblock_only"] != counts["n"]
+            or counts["block_pass"] != counts["both_pass"] + counts["block_only"]
+            or counts["nonblock_pass"] != counts["both_pass"] + counts["nonblock_only"]
+        ):
+            raise SystemExit("BLOCK/NONBLOCK paired count identity failed")
         paired.append({
             "rho": rho, "target_uc": uc, "target_ue": ue,
             **counts,
