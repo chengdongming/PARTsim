@@ -9,6 +9,8 @@ import pytest
 
 from experiments.v9_3 import scheduler_priority_energy_load_cross as experiment
 from experiments.v9_3.simulation_engine import _render_taskset_yaml
+from scripts import analyze_scheduler_priority_energy_load_cross as analyzer
+from scripts import run_scheduler_priority_energy_load_cross as runner
 
 
 @dataclass(frozen=True)
@@ -135,4 +137,45 @@ def test_runtime_power_reproduces_scheduler_operation_order():
     powers = experiment.runtime_task_powers(
         payload, {"0": "2"}, Path("v9_3_b4_priority_energy_system_template.yml"),
     )
-    assert powers["0"] == pytest.approx(0.0008)
+    assert powers["0"]["runtime_power_float"] == pytest.approx(0.0008)
+    assert powers["0"]["runtime_power_binary64_hex"] == powers["0"]["runtime_power_float"].hex()
+    assert Fraction(powers["0"]["runtime_power_exact_fraction"]) == Fraction.from_float(
+        powers["0"]["runtime_power_float"]
+    )
+
+
+def test_figure_slices_are_exact_and_fail_closed():
+    cells = ((Fraction(1, 5), Fraction(2, 5)), (Fraction(2, 5), Fraction(2, 5)))
+    slices = experiment.resolve_figure_slices(cells, fixed_uc=Fraction(1, 5))
+    assert slices["uc_scan"]["fixed_value"] == "2/5"
+    assert analyzer.select_scan_rows(
+        [{"target_uc": "1/5", "target_ue": "2/5", "acceptance_ratio": 1}],
+        "target_ue", "2/5",
+    )[0]["target_uc"] == "1/5"
+    with pytest.raises(ValueError, match="absent"):
+        experiment.resolve_figure_slices(cells, fixed_ue=Fraction(1, 2))
+
+
+def test_paired_counts_use_taskset_identity_not_row_position():
+    block = [
+        {"taskset_id": "b", "taskset_pass": True},
+        {"taskset_id": "a", "taskset_pass": False},
+    ]
+    nonblock = [
+        {"taskset_id": "a", "taskset_pass": True},
+        {"taskset_id": "b", "taskset_pass": True},
+    ]
+    counts = analyzer.paired_counts(block, nonblock)
+    assert counts["n"] == 2
+    assert counts["both_pass"] == 1
+    assert counts["block_only"] == 0
+    assert counts["nonblock_only"] == 1
+    with pytest.raises(SystemExit, match="pairing"):
+        analyzer.paired_counts(block, nonblock[:-1])
+
+
+def test_resume_ignores_execution_only_changes():
+    stored = {"seed": 1, "cells": [["1/5", "1/2"]], "execution": {"workers": 2}}
+    requested = {"seed": 1, "cells": [["1/5", "1/2"]], "execution": {"workers": 1}}
+    assert runner.resume_configuration_matches(stored, requested)
+    assert not runner.resume_configuration_matches(stored, {"seed": 2, "cells": [["1/5", "1/2"]]})
