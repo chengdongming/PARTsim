@@ -29,10 +29,95 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writeheader(); writer.writerows(rows)
 
 
+def _configured_cells(config: dict[str, Any]) -> tuple[tuple[Fraction, Fraction], ...]:
+    raw_cells = config.get("cells")
+    if not isinstance(raw_cells, list) or not raw_cells:
+        raise SystemExit("run_config cells are missing or invalid")
+    cells = []
+    for index, raw_cell in enumerate(raw_cells):
+        if not isinstance(raw_cell, list) or len(raw_cell) != 2:
+            raise SystemExit(f"run_config cell {index} is invalid")
+        try:
+            cell = (
+                experiment.parse_fraction(raw_cell[0], f"cells[{index}].U_C"),
+                experiment.parse_fraction(raw_cell[1], f"cells[{index}].U_E"),
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        if not all(0 < value <= 1 for value in cell):
+            raise SystemExit(f"run_config cell {index} is outside (0,1]")
+        if cell not in cells:
+            cells.append(cell)
+    if len(cells) != len(raw_cells):
+        raise SystemExit("run_config cells contain duplicates")
+    return tuple(cells)
+
+
+def _figure_slices(config: dict[str, Any], cells: tuple[tuple[Fraction, Fraction], ...]) -> dict[str, dict[str, str]]:
+    raw_slices = config.get("figure_slices")
+    if raw_slices is None:
+        try:
+            return experiment.resolve_figure_slices(cells)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    if not isinstance(raw_slices, dict):
+        raise SystemExit("run_config figure_slices is invalid")
+    expected = {
+        "uc_scan": ("target_uc", "target_ue"),
+        "ue_scan": ("target_ue", "target_uc"),
+    }
+    normalized: dict[str, dict[str, str]] = {}
+    for name, (x_key, fixed_key) in expected.items():
+        entry = raw_slices.get(name)
+        if not isinstance(entry, dict):
+            raise SystemExit(f"run_config figure_slices.{name} is missing")
+        if entry.get("x_key") != x_key or entry.get("fixed_key") != fixed_key:
+            raise SystemExit(f"run_config figure_slices.{name} has invalid axes")
+        try:
+            fixed_value = experiment.parse_fraction(
+                entry.get("fixed_value"), f"figure_slices.{name}.fixed_value",
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        canonical = experiment.fraction_text(fixed_value)
+        if entry.get("fixed_value") != canonical:
+            raise SystemExit(f"run_config figure_slices.{name}.fixed_value is not canonical")
+        normalized[name] = {
+            "x_key": x_key, "fixed_key": fixed_key, "fixed_value": canonical,
+        }
+    try:
+        experiment.resolve_figure_slices(
+            cells,
+            fixed_ue=experiment.parse_fraction(normalized["uc_scan"]["fixed_value"], "fixed U_E"),
+            fixed_uc=experiment.parse_fraction(normalized["ue_scan"]["fixed_value"], "fixed U_C"),
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    return normalized
+
+
 def select_scan_rows(
     summaries: list[dict[str, Any]], fixed_key: str, fixed_value: str,
 ) -> list[dict[str, Any]]:
-    return [row for row in summaries if row[fixed_key] == fixed_value]
+    target = Fraction(fixed_value)
+    return [row for row in summaries if Fraction(row[fixed_key]) == target]
+
+
+def _validate_scan_rows(
+    rows: list[dict[str, Any]], cells: tuple[tuple[Fraction, Fraction], ...],
+    *, fixed_key: str, x_key: str, fixed_value: str, label: str,
+) -> None:
+    fixed_index = 1 if fixed_key == "target_ue" else 0
+    x_index = 0 if x_key == "target_uc" else 1
+    expected_x = {
+        experiment.fraction_text(cell[x_index]) for cell in cells
+        if experiment.fraction_text(cell[fixed_index]) == fixed_value
+    }
+    observed_x = {experiment.fraction_text(Fraction(row[x_key])) for row in rows}
+    if not expected_x or observed_x != expected_x:
+        raise SystemExit(f"{label} slice does not match configured cells")
+    if not any(row["acceptance_ratio"] is not None for row in rows):
+        raise SystemExit(f"{label} slice has no valid result rows")
 
 
 def plot_scan(
@@ -65,6 +150,8 @@ def plot_scan(
 
 def analyze(root: Path) -> dict[str, Any]:
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    cells = _configured_cells(config)
+    figure_slices = _figure_slices(config, cells)
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
@@ -139,8 +226,22 @@ def analyze(root: Path) -> dict[str, Any]:
                 "n_internal_error": n_internal, "n_other_technical_error": n_other,
                 "acceptance_ratio": None if technical else n_schedulable / n_total,
             })
-    uc_rows = select_scan_rows(summaries, "target_ue", "2/5")
-    ue_rows = select_scan_rows(summaries, "target_uc", "1/2")
+    uc_slice = figure_slices["uc_scan"]
+    ue_slice = figure_slices["ue_scan"]
+    uc_rows = select_scan_rows(
+        summaries, uc_slice["fixed_key"], uc_slice["fixed_value"],
+    )
+    ue_rows = select_scan_rows(
+        summaries, ue_slice["fixed_key"], ue_slice["fixed_value"],
+    )
+    _validate_scan_rows(
+        uc_rows, cells, fixed_key=uc_slice["fixed_key"], x_key=uc_slice["x_key"],
+        fixed_value=uc_slice["fixed_value"], label="U_C",
+    )
+    _validate_scan_rows(
+        ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"],
+        fixed_value=ue_slice["fixed_value"], label="U_E",
+    )
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "figure_scheduler_uc.csv", uc_rows)
     write_csv(root / "figure_scheduler_ue.csv", ue_rows)
@@ -148,12 +249,12 @@ def analyze(root: Path) -> dict[str, Any]:
         import matplotlib
         matplotlib.use("Agg")
         plot_scan(
-            uc_rows, root, "figure_scheduler_uc.png", "target_uc", schedulers,
-            "U_C", "Schedulability ratio versus U_C (U_E=2/5)",
+            uc_rows, root, "figure_scheduler_uc.png", uc_slice["x_key"], schedulers,
+            "U_C", f"Schedulability ratio versus U_C (U_E={uc_slice['fixed_value']})",
         )
         plot_scan(
-            ue_rows, root, "figure_scheduler_ue.png", "target_ue", schedulers,
-            "U_E", "Schedulability ratio versus U_E (U_C=1/2)",
+            ue_rows, root, "figure_scheduler_ue.png", ue_slice["x_key"], schedulers,
+            "U_E", f"Schedulability ratio versus U_E (U_C={ue_slice['fixed_value']})",
         )
     except ImportError:
         pass

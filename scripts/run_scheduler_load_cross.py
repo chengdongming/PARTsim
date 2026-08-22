@@ -207,6 +207,8 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=perf_g.FORMAL_TIMEOUT_SECONDS)
     parser.add_argument("--kappa", default=str(experiment.DEFAULT_KAPPA))
     parser.add_argument("--simulator", type=Path, default=ROOT / "build/rtsim/rtsim")
+    parser.add_argument("--uc-figure-fixed-ue")
+    parser.add_argument("--ue-figure-fixed-uc")
     parser.add_argument(
         "--parse-concurrency", type=int, default=1,
         help="maximum concurrent trace parsers (default: 1)",
@@ -229,6 +231,20 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("parse-concurrency must be positive")
     cells = experiment.parse_cells(args.cells)
     schedulers = experiment.parse_schedulers(args.schedulers)
+    try:
+        figure_slices = experiment.resolve_figure_slices(
+            cells,
+            fixed_ue=(
+                experiment.parse_fraction(args.uc_figure_fixed_ue, "uc-figure-fixed-ue")
+                if args.uc_figure_fixed_ue is not None else None
+            ),
+            fixed_uc=(
+                experiment.parse_fraction(args.ue_figure_fixed_uc, "ue-figure-fixed-uc")
+                if args.ue_figure_fixed_uc is not None else None
+            ),
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
     max_util = experiment.parse_fraction(args.max_task_util, "max-task-util")
     tolerance = experiment.parse_fraction(args.util_tolerance_total, "util-tolerance-total")
@@ -255,11 +271,18 @@ def main(argv: list[str] | None = None) -> int:
         "simulator": str(args.simulator), "canonical_taskset_source": "PERF-G TasksetStore",
         "keep_traces": args.keep_traces,
         "parse_concurrency": args.parse_concurrency,
+        "figure_slices": figure_slices,
     }
     run_config = root / "run_config.json"
     if args.resume:
-        if not run_config.is_file() or json.loads(run_config.read_text(encoding="utf-8")) != config:
+        stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
+        legacy_config = {key: value for key, value in config.items() if key != "figure_slices"}
+        legacy_figure_slices = experiment.resolve_figure_slices(cells)
+        legacy_resume = stored_config == legacy_config and figure_slices == legacy_figure_slices
+        if stored_config != config and not legacy_resume:
             raise SystemExit("resume configuration mismatch")
+        if legacy_resume:
+            write_json(run_config, config)
     elif run_config.exists() or (root / "results.jsonl").exists():
         raise SystemExit("output exists; use --resume or choose a new output")
     else:
