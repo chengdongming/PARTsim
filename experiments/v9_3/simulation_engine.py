@@ -743,6 +743,7 @@ def materialize_simulation_inputs(
     scheduler_id: str = "gpfp_asap_block",
     service_curve: Optional[Mapping[str, Any]] = None,
     release_horizon: Optional[int] = None,
+    task_energy_factors: Optional[Mapping[str, str]] = None,
 ) -> tuple[Path, Path]:
     """Write a scheduler-only projection without changing frozen semantics."""
 
@@ -765,7 +766,9 @@ def materialize_simulation_inputs(
     atomic_write_text(
         taskset_path,
         _render_taskset_yaml(
-            task_payload, release_horizon=release_horizon
+            task_payload,
+            release_horizon=release_horizon,
+            task_energy_factors=task_energy_factors,
         ),
     )
     return system_path, taskset_path
@@ -1288,6 +1291,8 @@ def run_paired_simulation(
     energy_config: Mapping[str, Any],
     simulation_config: Mapping[str, Any],
     scheduler_id: str = "gpfp_asap_block",
+    task_energy_factors: Optional[Mapping[str, str]] = None,
+    expected_task_power_j_per_tick: Optional[Mapping[str, float]] = None,
 ) -> SimulationExecution:
     try:
         initial = exact_energy.exact_e0_lower_bound(
@@ -1305,6 +1310,7 @@ def run_paired_simulation(
         processors=processors, initial_battery=initial,
         battery_capacity=capacity, scheduler_id=scheduler_id,
         service_curve=energy_config.get("service_curve"),
+        task_energy_factors=task_energy_factors,
     )
     # CORE-3's proof-oriented runs forbid harvest clipping.  EXT-1B's
     # SLACK_LIMITED_CHARGING micro-mechanism intentionally observes the ST
@@ -1404,11 +1410,27 @@ def run_paired_simulation(
                             task_row = _task_payload_for_trace_id(
                                 task_payload, task_id,
                             )
-                            expected = float(exact_energy.parse_persisted_fraction(
-                                task_row["P"],
-                                f"simulation task {task_id} P",
-                            ))
-                            if not math.isclose(observed, expected, rel_tol=1e-9, abs_tol=1e-12):
+                            if expected_task_power_j_per_tick is not None:
+                                try:
+                                    expected = float(expected_task_power_j_per_tick[str(task_id)])
+                                except (KeyError, TypeError, ValueError) as exc:
+                                    raise SimulationTraceError(
+                                        f"missing expected runtime task power for {task_id}"
+                                    ) from exc
+                            else:
+                                expected = float(exact_energy.parse_persisted_fraction(
+                                    task_row["P"],
+                                    f"simulation task {task_id} P",
+                                ))
+                            if task_energy_factors is not None and expected_task_power_j_per_tick is None:
+                                try:
+                                    expected *= float(task_energy_factors[str(task_id)])
+                                except (KeyError, TypeError, ValueError) as exc:
+                                    raise SimulationTraceError(
+                                        f"missing runtime task energy factor for {task_id}"
+                                    ) from exc
+                            power_abs_tol = 1e-9 if expected_task_power_j_per_tick is not None else 1e-12
+                            if not math.isclose(observed, expected, rel_tol=1e-9, abs_tol=power_abs_tol):
                                 raise SimulationTraceError(
                                     f"task {task_id} RTA/simulation power mismatch"
                                 )
