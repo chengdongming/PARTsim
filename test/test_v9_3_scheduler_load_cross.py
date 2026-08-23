@@ -13,8 +13,20 @@ from experiments.v9_3 import scheduler_load_cross as experiment
 from experiments.v9_3.simulation_engine import should_retain_failure_trace
 from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
-from scripts.analyze_scheduler_load_cross import analyze, wilson_ci
+from scripts.analyze_scheduler_load_cross import (
+    analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
+)
 import scripts.run_scheduler_load_cross as scheduler_runner
+
+
+def _available_outcome(adjudicable_jobs=1, deadline_miss_jobs=0, wholepass=True):
+    return {
+        "outcome_status": "AVAILABLE",
+        "adjudicable_jobs": adjudicable_jobs,
+        "deadline_miss_jobs": deadline_miss_jobs,
+        "wholepass": wholepass,
+        "taskset_pass": wholepass,
+    }
 
 
 def test_exact_ue_eta_mapping_and_deduplicated_cells():
@@ -114,6 +126,66 @@ def test_wilson_ci_handles_zero_one_and_middle():
     assert middle[0] < 0.5 < middle[1]
 
 
+@pytest.mark.parametrize("adjudicable,misses,expected", [
+    (100, 0, 1.0), (100, 1, 0.99), (100, 100, 0.0),
+])
+def test_dmr_uses_job_weighted_taskset_counts(adjudicable, misses, expected):
+    row = {
+        "outcome": _available_outcome(adjudicable, misses, misses == 0),
+        "wholepass": misses == 0,
+    }
+    summary = summarize_dmr(
+        [row], target_uc="1/10", target_ue="7/10",
+        scheduler="ASAP-BLOCK", campaign_seed=710213,
+    )
+    assert summary["total_on_time_jobs"] == adjudicable - misses
+    assert summary["dmr"] == expected
+    assert summary["dmr_ci95_low"] is None
+    assert summary["dmr_ci95_high"] is None
+
+
+def test_dmr_is_job_weighted_not_mean_of_taskset_ratios():
+    rows = [
+        {"outcome": _available_outcome(100, 0), "wholepass": True},
+        {"outcome": _available_outcome(10, 5, False), "wholepass": False},
+    ]
+    summary = summarize_dmr(
+        rows, target_uc="3/10", target_ue="7/10",
+        scheduler="ASAP-BLOCK", campaign_seed=710213,
+    )
+    assert summary["total_adjudicable_jobs"] == 110
+    assert summary["total_deadline_miss_jobs"] == 5
+    assert summary["total_on_time_jobs"] == 105
+    assert summary["dmr"] == 105 / 110
+    assert summary["dmr"] != 0.75
+
+
+@pytest.mark.parametrize("rows", [
+    [{"outcome": _available_outcome(100, 1), "wholepass": True}],
+    [{"outcome": _available_outcome(0, 0), "wholepass": True}],
+    [{"outcome": _available_outcome(10, 11, False), "wholepass": False}],
+    [{"outcome": {"outcome_status": "TECHNICAL_FAILURE"}, "wholepass": None}],
+])
+def test_dmr_cross_checks_fail_closed(rows):
+    with pytest.raises(ValueError):
+        summarize_dmr(
+            rows, target_uc="1/10", target_ue="7/10",
+            scheduler="ASAP-BLOCK", campaign_seed=710213,
+        )
+
+
+def test_dmr_cluster_bootstrap_is_reproducible_and_bounded():
+    counts = [(100, 0), (10, 5), (30, 3)]
+    first = dmr_cluster_bootstrap_ci(counts, seed=1234, replicates=200)
+    second = dmr_cluster_bootstrap_ci(counts, seed=1234, replicates=200)
+    assert first == second
+    assert 0 <= first[0] <= first[1] <= 1
+
+
+def test_dmr_cluster_bootstrap_is_unavailable_for_one_taskset():
+    assert dmr_cluster_bootstrap_ci([(100, 1)], seed=1234) == (None, None)
+
+
 def test_requests_pair_two_energy_cells_and_five_schedulers():
     class Taskset:
         taskset_id = "t"
@@ -189,8 +261,10 @@ def test_analyzer_writes_both_figure_csvs(tmp_path):
     energy = {"target_ue": "2/5", "eta": "5/2", "P_dem_j_per_tick": "3/5",
               "target_supply_mean_j_per_tick": "3/2", "raw_reference_mean_j_per_tick": "1",
               "solar_scale": "3/2"}
-    result = {**request, "energy": energy, "schedulable": True, "deadline_miss": False,
-              "simulation_status": "SIM_PASS_OBSERVED", "technical_error": None}
+    result = {**request, "energy": energy, "outcome": _available_outcome(),
+              "schedulable": True, "deadline_miss": False,
+              "simulation_status": "SIM_PASS_OBSERVED", "technical_error": None,
+              "wholepass": True, "taskset_pass": True}
     (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
     (tmp_path / "tasksets.jsonl").write_text(json.dumps(taskset) + "\n", encoding="utf-8")
     (tmp_path / "requests.jsonl").write_text(json.dumps(request) + "\n", encoding="utf-8")
@@ -200,6 +274,11 @@ def test_analyzer_writes_both_figure_csvs(tmp_path):
     assert (tmp_path / "figure_scheduler_ue.csv").is_file()
     assert (tmp_path / "figure_scheduler_uc.png").is_file()
     assert (tmp_path / "figure_scheduler_ue.png").is_file()
+    assert (tmp_path / "summary_dmr.csv").is_file()
+    assert (tmp_path / "figure_scheduler_uc_dmr.csv").is_file()
+    assert (tmp_path / "figure_scheduler_ue_dmr.csv").is_file()
+    assert (tmp_path / "figure_scheduler_uc_dmr.png").is_file()
+    assert (tmp_path / "figure_scheduler_ue_dmr.png").is_file()
 
 
 def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monkeypatch):
@@ -243,7 +322,8 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
         results.append({
             **request, "energy": energy, "schedulable": True,
             "deadline_miss": False, "simulation_status": "SIM_PASS_OBSERVED",
-            "technical_error": None,
+            "technical_error": None, "outcome": _available_outcome(),
+            "wholepass": True, "taskset_pass": True,
         })
     (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
     (tmp_path / "tasksets.jsonl").write_text(
@@ -261,6 +341,11 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
         lambda rows, output, filename, xkey, schedulers, xlabel, title:
             plotted.setdefault(filename, list(rows)),
     )
+    monkeypatch.setattr(
+        "scripts.analyze_scheduler_load_cross.plot_dmr_scan",
+        lambda rows, output, filename, xkey, schedulers, xlabel, title:
+            plotted.setdefault("dmr:" + filename, list(rows)),
+    )
     assert analyze(tmp_path)["complete"]
 
     uc_rows = list(csv.DictReader((tmp_path / "figure_scheduler_uc.csv").open()))
@@ -277,6 +362,16 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
     ]
     assert len(uc_rows) == 3
     assert len(ue_rows) == 4
+    dmr_uc_rows = list(csv.DictReader((tmp_path / "figure_scheduler_uc_dmr.csv").open()))
+    dmr_ue_rows = list(csv.DictReader((tmp_path / "figure_scheduler_ue_dmr.csv").open()))
+    assert [row["target_uc"] for row in dmr_uc_rows] == ["1/10", "1/5", "1/2"]
+    assert [row["target_ue"] for row in dmr_ue_rows] == ["1/5", "3/10", "2/5", "1/2"]
+    assert [row["target_uc"] for row in plotted["dmr:figure_scheduler_uc_dmr.png"]] == [
+        "1/10", "1/5", "1/2",
+    ]
+    assert [row["target_ue"] for row in plotted["dmr:figure_scheduler_ue_dmr.png"]] == [
+        "1/5", "3/10", "2/5", "1/2",
+    ]
 
 
 def _write_configured_analyzer_fixture(tmp_path):
@@ -328,8 +423,10 @@ def _write_configured_analyzer_fixture(tmp_path):
                 "solar_scale": str(1 / Fraction(target_ue)),
                 "harvest_trace_id": "fixture-trace",
             },
+            "outcome": _available_outcome(),
             "schedulable": True, "deadline_miss": False,
             "simulation_status": "SIM_PASS_OBSERVED", "technical_error": None,
+            "wholepass": True, "taskset_pass": True,
         })
         requests.append(request)
     (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")

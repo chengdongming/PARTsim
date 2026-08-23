@@ -6,8 +6,10 @@ from __future__ import annotations
 import argparse
 import csv
 from fractions import Fraction
+import hashlib
 import json
 from pathlib import Path
+import random
 import sys
 import time
 from typing import Any
@@ -18,6 +20,9 @@ if str(ROOT) not in sys.path:
 
 from experiments.v9_3 import scheduler_load_cross as experiment
 from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_workers
+
+
+DMR_BOOTSTRAP_REPLICATES = 10000
 
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -45,6 +50,101 @@ def wilson_ci(k: int, n: int, *, z: float = 1.959963984540054) -> tuple[float, f
 
 # Short alias used by analysis-focused callers.
 wilson_interval = wilson_ci
+
+
+def _dmr_bootstrap_seed(
+    campaign_seed: int, target_uc: str, target_ue: str, scheduler: str,
+) -> int:
+    material = f"DMR_CLUSTER_BOOTSTRAP\0{campaign_seed}\0{target_uc}\0{target_ue}\0{scheduler}"
+    return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big")
+
+
+def dmr_cluster_bootstrap_ci(
+    taskset_counts: list[tuple[int, int]], *, seed: int,
+    replicates: int = DMR_BOOTSTRAP_REPLICATES,
+) -> tuple[float | None, float | None]:
+    """Return a reproducible taskset-cluster bootstrap CI for DMR.
+
+    Each pair is (adjudicable_jobs, deadline_miss_jobs).  Resampling is done
+    at taskset level, and each replicate recomputes the job-weighted ratio.
+    """
+    if len(taskset_counts) < 2:
+        return None, None
+    if replicates <= 0:
+        raise ValueError("DMR bootstrap replicates must be positive")
+    rng = random.Random(seed)
+    estimates: list[float] = []
+    n_tasksets = len(taskset_counts)
+    for _ in range(replicates):
+        adjudicable = 0
+        misses = 0
+        for _ in range(n_tasksets):
+            jobs, task_misses = taskset_counts[rng.randrange(n_tasksets)]
+            adjudicable += jobs
+            misses += task_misses
+        estimates.append(1.0 - misses / adjudicable)
+    estimates.sort()
+
+    def percentile(probability: float) -> float:
+        position = (len(estimates) - 1) * probability
+        lower = int(position)
+        upper = min(lower + 1, len(estimates) - 1)
+        weight = position - lower
+        return estimates[lower] * (1.0 - weight) + estimates[upper] * weight
+
+    low = percentile(0.025)
+    high = percentile(0.975)
+    return max(0.0, low), min(1.0, high)
+
+
+def summarize_dmr(
+    rows: list[dict[str, Any]], *, target_uc: str, target_ue: str,
+    scheduler: str, campaign_seed: int,
+    bootstrap_replicates: int = DMR_BOOTSTRAP_REPLICATES,
+) -> dict[str, Any]:
+    """Aggregate DMR from valid taskset outcomes using job-weighted counts."""
+    taskset_counts: list[tuple[int, int]] = []
+    for row in rows:
+        outcome = row.get("outcome")
+        if not isinstance(outcome, dict) or outcome.get("outcome_status") != "AVAILABLE":
+            raise ValueError("DMR outcome unavailable")
+        try:
+            adjudicable = int(outcome["adjudicable_jobs"])
+            misses = int(outcome["deadline_miss_jobs"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("DMR outcome job counts are missing or invalid") from exc
+        if adjudicable <= 0:
+            raise ValueError("DMR requires adjudicable_jobs > 0")
+        if misses < 0 or misses > adjudicable:
+            raise ValueError("DMR requires 0 <= deadline_miss_jobs <= adjudicable_jobs")
+        wholepass = row.get("wholepass", outcome.get("wholepass"))
+        if wholepass is True and misses != 0:
+            raise ValueError("WholePass=True is inconsistent with deadline misses")
+        if misses > 0 and wholepass is not False:
+            raise ValueError("deadline misses require WholePass=False")
+        taskset_counts.append((adjudicable, misses))
+
+    total_adjudicable = sum(jobs for jobs, _misses in taskset_counts)
+    total_misses = sum(misses for _jobs, misses in taskset_counts)
+    total_on_time = total_adjudicable - total_misses
+    dmr = total_on_time / total_adjudicable
+    ci_low, ci_high = dmr_cluster_bootstrap_ci(
+        taskset_counts,
+        seed=_dmr_bootstrap_seed(campaign_seed, target_uc, target_ue, scheduler),
+        replicates=bootstrap_replicates,
+    )
+    return {
+        "target_uc": target_uc,
+        "target_ue": target_ue,
+        "scheduler": scheduler,
+        "n_tasksets": len(taskset_counts),
+        "total_adjudicable_jobs": total_adjudicable,
+        "total_deadline_miss_jobs": total_misses,
+        "total_on_time_jobs": total_on_time,
+        "dmr": dmr,
+        "dmr_ci95_low": ci_low,
+        "dmr_ci95_high": ci_high,
+    }
 
 
 def _configured_cells(config: dict[str, Any]) -> tuple[tuple[Fraction, Fraction], ...]:
@@ -138,6 +238,30 @@ def _validate_scan_rows(
         raise SystemExit(f"{label} slice has no valid result rows")
 
 
+def _validate_dmr_scan_rows(
+    rows: list[dict[str, Any]], cells: tuple[tuple[Fraction, Fraction], ...],
+    *, fixed_key: str, x_key: str, fixed_value: str, label: str,
+) -> None:
+    fixed_index = 1 if fixed_key == "target_ue" else 0
+    x_index = 0 if x_key == "target_uc" else 1
+    expected_x = {
+        experiment.fraction_text(cell[x_index]) for cell in cells
+        if experiment.fraction_text(cell[fixed_index]) == fixed_value
+    }
+    observed_x = {experiment.fraction_text(Fraction(row[x_key])) for row in rows}
+    if not expected_x or observed_x != expected_x:
+        raise SystemExit(f"{label} slice does not match configured cells")
+    if not rows:
+        raise SystemExit(f"{label} slice has no valid result rows")
+    for row in rows:
+        if not 0 <= row["dmr"] <= 1:
+            raise SystemExit(f"{label} contains DMR outside [0,1]")
+        low = row["dmr_ci95_low"]
+        high = row["dmr_ci95_high"]
+        if low is not None and high is not None and not 0 <= low <= row["dmr"] <= high <= 1:
+            raise SystemExit(f"{label} contains invalid DMR bootstrap bounds")
+
+
 def plot_scan(
     rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
     schedulers: list[str], xlabel: str, title: str,
@@ -185,6 +309,69 @@ def _plot_scan_job(job: dict[str, Any]) -> None:
         job["rows"], Path(job["output"]), job["filename"], job["xkey"],
         job["schedulers"], job["xlabel"], job["title"],
     )
+
+
+def plot_dmr_scan(
+    rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
+    schedulers: list[str], xlabel: str, title: str,
+) -> None:
+    import matplotlib.pyplot as plt
+
+    figure, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
+    for axis, (panel, panel_schedulers) in zip(axes, experiment.PANEL_GROUPS.items()):
+        for scheduler in panel_schedulers:
+            if scheduler not in schedulers:
+                continue
+            values = [
+                row for row in rows
+                if row["scheduler"] == scheduler and row["dmr"] is not None
+            ]
+            values.sort(key=lambda row: Fraction(row[xkey]))
+            if not values:
+                continue
+            prefix = scheduler.split("-", 1)[0]
+            style = experiment.SCHEDULER_STYLES[prefix]
+            lower_errors = [
+                row["dmr"] - row["dmr_ci95_low"]
+                if row["dmr_ci95_low"] is not None else 0.0
+                for row in values
+            ]
+            upper_errors = [
+                row["dmr_ci95_high"] - row["dmr"]
+                if row["dmr_ci95_high"] is not None else 0.0
+                for row in values
+            ]
+            axis.errorbar(
+                [float(Fraction(row[xkey])) for row in values],
+                [row["dmr"] for row in values],
+                yerr=[lower_errors, upper_errors],
+                marker=style["marker"], linestyle=style["linestyle"],
+                capsize=2, label=scheduler,
+            )
+        axis.set_xlabel(xlabel)
+        axis.set_title(panel)
+        axis.set_ylim(0, 1)
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize="small")
+    axes[0].set_ylabel("Deadline-Meeting Ratio (DMR)")
+    figure.suptitle(title)
+    figure.tight_layout()
+    figure.savefig(output / filename)
+    plt.close(figure)
+
+
+def _plot_dmr_scan_job(job: dict[str, Any]) -> None:
+    plot_dmr_scan(
+        job["rows"], Path(job["output"]), job["filename"], job["xkey"],
+        job["schedulers"], job["xlabel"], job["title"],
+    )
+
+
+def _plot_any_scan_job(job: dict[str, Any]) -> None:
+    if job.get("metric") == "dmr":
+        _plot_dmr_scan_job(job)
+    else:
+        _plot_scan_job(job)
 
 
 def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
@@ -325,6 +512,8 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     for row in results:
         groups.setdefault((str(row["target_uc"]), str(row["target_ue"])), []).append(row)
     summaries = []
+    dmr_summaries = []
+    campaign_seed = int(config.get("seed", 0))
     for (uc, ue), group in sorted(groups.items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]))):
         for scheduler in schedulers:
             selected = [row for row in group if row["scheduler"] == scheduler]
@@ -350,6 +539,13 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 "n_deadline_miss": n_miss,
                 "acceptance_ratio": n_wholepass / n_total,
             })
+            dmr_summaries.append(summarize_dmr(
+                selected,
+                target_uc=uc,
+                target_ue=ue,
+                scheduler=scheduler,
+                campaign_seed=campaign_seed,
+            ))
     uc_slice = figure_slices["uc_scan"]
     ue_slice = figure_slices["ue_scan"]
     uc_rows = select_scan_rows(
@@ -366,9 +562,26 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"],
         fixed_value=ue_slice["fixed_value"], label="U_E",
     )
+    dmr_uc_rows = select_scan_rows(
+        dmr_summaries, uc_slice["fixed_key"], uc_slice["fixed_value"],
+    )
+    dmr_ue_rows = select_scan_rows(
+        dmr_summaries, ue_slice["fixed_key"], ue_slice["fixed_value"],
+    )
+    _validate_dmr_scan_rows(
+        dmr_uc_rows, cells, fixed_key=uc_slice["fixed_key"],
+        x_key=uc_slice["x_key"], fixed_value=uc_slice["fixed_value"], label="U_C DMR",
+    )
+    _validate_dmr_scan_rows(
+        dmr_ue_rows, cells, fixed_key=ue_slice["fixed_key"],
+        x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="U_E DMR",
+    )
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "figure_scheduler_uc.csv", uc_rows)
     write_csv(root / "figure_scheduler_ue.csv", ue_rows)
+    write_csv(root / "summary_dmr.csv", dmr_summaries)
+    write_csv(root / "figure_scheduler_uc_dmr.csv", dmr_uc_rows)
+    write_csv(root / "figure_scheduler_ue_dmr.csv", dmr_ue_rows)
     validation_summary_seconds = time.perf_counter() - validation_started
     plot_started = time.perf_counter()
     try:
@@ -387,7 +600,21 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 "schedulers": schedulers, "xlabel": "U_E",
                 "title": f"Schedulability ratio versus U_E (U_C={ue_slice['fixed_value']})",
             },
-        ], _plot_scan_job, workers=analysis_workers)
+            {
+                "rows": dmr_uc_rows, "output": str(root),
+                "filename": "figure_scheduler_uc_dmr.png", "xkey": uc_slice["x_key"],
+                "schedulers": schedulers, "xlabel": "U_C",
+                "title": f"Deadline-Meeting Ratio versus U_C (U_E={uc_slice['fixed_value']})",
+                "metric": "dmr",
+            },
+            {
+                "rows": dmr_ue_rows, "output": str(root),
+                "filename": "figure_scheduler_ue_dmr.png", "xkey": ue_slice["x_key"],
+                "schedulers": schedulers, "xlabel": "U_E",
+                "title": f"Deadline-Meeting Ratio versus U_E (U_C={ue_slice['fixed_value']})",
+                "metric": "dmr",
+            },
+        ], _plot_any_scan_job, workers=analysis_workers)
     except ImportError:
         pass
     plot_seconds = time.perf_counter() - plot_started
@@ -395,6 +622,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
               "results": len(results), "duplicate_request_ids": duplicate,
               "missing_request_ids": missing, "unexpected_request_ids": unexpected,
               "summary_rows": len(summaries),
+              "dmr_summary_rows": len(dmr_summaries),
               "technical_result_count": len(technical_rows),
               "missing": missing, "duplicate": duplicate,
               "unexpected": unexpected, "technical": len(technical_rows),
