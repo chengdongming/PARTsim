@@ -144,6 +144,7 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
         period_max=period_max, min_task_util=min_task_util,
         max_task_util=max_task_util, tolerance=tolerance,
         prepare_workers=prepare_workers,
+        system_template=perf_g.BASE_SYSTEM_TEMPLATE,
     )
     result = []
     for base in base_sets:

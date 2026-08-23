@@ -58,6 +58,26 @@ def test_nine_scheduler_mapping_is_complete_and_unique():
     )
 
 
+def test_system_templates_are_scoped_to_their_experiment_paths():
+    ordinary = experiment._config(
+        1, utilizations=[Fraction(1, 10)], count=1, processors=4, tasks=10,
+        period_min=perf_g.PERIOD_MIN_MS, period_max=perf_g.PERIOD_MAX_MS,
+        min_task_util=perf_g.MIN_TASK_UTILIZATION,
+        max_task_util=perf_g.MAX_TASK_UTILIZATION,
+        tolerance=perf_g.UTILIZATION_TOLERANCE,
+    )
+    perf_g_default = perf_g._task_generation_config(
+        "FORMAL", [Fraction(1, 10)], 1,
+    )
+    assert ordinary["energy"]["service_curve"]["system_template"] == (
+        experiment.ORDINARY_SYSTEM_TEMPLATE
+    )
+    assert perf_g_default["energy"]["service_curve"]["system_template"] == (
+        perf_g.BASE_SYSTEM_TEMPLATE
+    )
+    assert perf_g.BASE_SYSTEM_TEMPLATE != experiment.ORDINARY_SYSTEM_TEMPLATE
+
+
 def test_strict_wholepass_and_technical_outcome_contract():
     on_time = evaluate_outcome(
         [{"task_id": "0", "release": 0, "absolute_deadline": 9, "completion": 9}],
@@ -210,10 +230,14 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
             "generation_index": 0, "scheduler": "ASAP-BLOCK",
         }
         eta = str(1 / Fraction(target_ue))
+        target_supply = str(1 / Fraction(target_ue))
         energy = {
             "target_ue": target_ue, "eta": eta,
-            "P_dem_j_per_tick": target_ue, "target_supply_mean_j_per_tick": "1",
-            "raw_reference_mean_j_per_tick": "1", "solar_scale": "1",
+            "P_dem_j_per_tick": "1", "E_burst_j": "10",
+            "battery_capacity_j": "100", "initial_energy_j": "50",
+            "target_supply_mean_j_per_tick": target_supply,
+            "raw_reference_mean_j_per_tick": "1", "solar_scale": target_supply,
+            "harvest_trace_id": "fixture-trace",
         }
         requests.append(request)
         results.append({
@@ -297,9 +321,12 @@ def _write_configured_analyzer_fixture(tmp_path):
             **request,
             "energy": {
                 "target_ue": target_ue, "eta": str(1 / Fraction(target_ue)),
-                "P_dem_j_per_tick": target_ue,
-                "target_supply_mean_j_per_tick": "1",
-                "raw_reference_mean_j_per_tick": "1", "solar_scale": "1",
+                "P_dem_j_per_tick": "1", "E_burst_j": "10",
+                "battery_capacity_j": "100", "initial_energy_j": "50",
+                "target_supply_mean_j_per_tick": str(1 / Fraction(target_ue)),
+                "raw_reference_mean_j_per_tick": "1",
+                "solar_scale": str(1 / Fraction(target_ue)),
+                "harvest_trace_id": "fixture-trace",
             },
             "schedulable": True, "deadline_miss": False,
             "simulation_status": "SIM_PASS_OBSERVED", "technical_error": None,

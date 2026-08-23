@@ -19,6 +19,7 @@ from .parallel_prepare import run_prepare_jobs
 
 DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v2"
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
+ORDINARY_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 DEFAULT_KAPPA = Fraction(10)
 FORMAL_UC_SCAN = tuple(Fraction(value) for value in (
     "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
@@ -195,8 +196,11 @@ def eta_for_ue(target_ue: Fraction) -> Fraction:
 def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
             processors: int, tasks: int, period_min: int, period_max: int,
             min_task_util: Fraction, max_task_util: Fraction,
-            tolerance: Fraction) -> dict[str, Any]:
-    config = perf_g._task_generation_config("FORMAL", utilizations, count)
+            tolerance: Fraction,
+            system_template: str = ORDINARY_SYSTEM_TEMPLATE) -> dict[str, Any]:
+    config = perf_g._task_generation_config(
+        "FORMAL", utilizations, count, system_template=system_template,
+    )
     config["grid"]["base_seed"] = int(seed)
     config["platform"] = {"cores": [processors], "task_count": [tasks]}
     config["generation"].update({
@@ -233,12 +237,13 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
                          count: int, processors: int, tasks: int,
                          period_min: int, period_max: int,
                          min_task_util: Fraction, max_task_util: Fraction,
-                         tolerance: Fraction, prepare_workers: int = 1) -> tuple[list[Any], Any]:
+                         tolerance: Fraction, prepare_workers: int = 1,
+                         system_template: str = ORDINARY_SYSTEM_TEMPLATE) -> tuple[list[Any], Any]:
     config = _config(
         seed, utilizations=utilizations, count=count, processors=processors,
         tasks=tasks, period_min=period_min, period_max=period_max,
         min_task_util=min_task_util, max_task_util=max_task_util,
-        tolerance=tolerance,
+        tolerance=tolerance, system_template=system_template,
     )
     service = prepare_service_curve(config, root / "service")
     store = TasksetStore(root / "tasksets", config, service)
@@ -384,11 +389,17 @@ def prepare_energy_material(job: Mapping[str, Any]) -> dict[str, Any]:
     raw_trace = _PREPARE_RAW_TRACE
     if raw_trace is None:
         raw_trace = tuple(job["raw_trace"])
-    material = energy_material(
-        _TasksetView(), Fraction(job["target_ue"]), raw_trace,
-        kappa=Fraction(job["kappa"]),
-        raw_trace_id=job.get("raw_trace_id"),
-    )
+    if job.get("raw_trace_id") is None:
+        material = energy_material(
+            _TasksetView(), Fraction(job["target_ue"]), raw_trace,
+            kappa=Fraction(job["kappa"]),
+        )
+    else:
+        material = energy_material(
+            _TasksetView(), Fraction(job["target_ue"]), raw_trace,
+            kappa=Fraction(job["kappa"]),
+            raw_trace_id=str(job["raw_trace_id"]),
+        )
     return {
         "taskset_id": str(job["taskset_id"]),
         "target_ue": fraction_text(Fraction(job["target_ue"])),

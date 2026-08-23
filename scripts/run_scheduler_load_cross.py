@@ -299,7 +299,9 @@ def main(argv: list[str] | None = None) -> int:
             "wholepass": "all_adjudicable_jobs_on_time_taskset_level",
             "frozen_main_figure": is_frozen_main_figure,
             "unique_cell_count": len(set(cells)),
-            "panel_groups": experiment.PANEL_GROUPS,
+            "panel_groups": {
+                name: list(group) for name, group in experiment.PANEL_GROUPS.items()
+            },
         },
         "execution": {
             "workers": args.workers,

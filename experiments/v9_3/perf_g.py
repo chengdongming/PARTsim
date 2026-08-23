@@ -71,9 +71,7 @@ SMOKE_CONDITIONS = (
 CAL_SEED = 410731
 FORMAL_SEED = 910427
 SMOKE_SEED = 710213
-# Ordinary/general random Scheduler LOAD-CROSS service material.  This is
-# deliberately independent of the B4 priority-energy experiment template.
-BASE_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
+BASE_SYSTEM_TEMPLATE = "v9_3_b4_priority_energy_system_template.yml"
 
 
 class PerfGError(ValueError):
@@ -303,7 +301,10 @@ def _plan_summary(tasksets, conditions, schedulers, requests, kind):
     }
 
 
-def _task_generation_config(namespace: str, utilizations: Sequence[Fraction], count: int) -> dict[str, Any]:
+def _task_generation_config(
+    namespace: str, utilizations: Sequence[Fraction], count: int, *,
+    system_template: str = BASE_SYSTEM_TEMPLATE,
+) -> dict[str, Any]:
     raw = {
         "experiment_id": f"perf-g-{namespace.lower()}", "core": "CORE-3",
         "platform": {"cores": [PROCESSORS], "task_count": [TASK_COUNT]},
@@ -328,7 +329,7 @@ def _task_generation_config(namespace: str, utilizations: Sequence[Fraction], co
             "simulation_initial_battery": "1",
             "service_curve": {
                 "id": f"perf-g-raw-{namespace.lower()}", "horizon": FORMAL_HORIZON_MS,
-                "system_template": BASE_SYSTEM_TEMPLATE, "solar_scale": "1",
+                "system_template": system_template, "solar_scale": "1",
                 "require_real_solar_data": True,
             },
         },
