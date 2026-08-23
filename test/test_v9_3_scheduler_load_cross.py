@@ -15,6 +15,7 @@ from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
+    plot_scan,
 )
 import scripts.run_scheduler_load_cross as scheduler_runner
 
@@ -115,15 +116,45 @@ def test_strict_wholepass_and_technical_outcome_contract():
 
 
 def test_wilson_ci_handles_zero_one_and_middle():
-    low = wilson_ci(0, 10)
-    high = wilson_ci(10, 10)
+    low = wilson_ci(0, 100)
+    high = wilson_ci(100, 100)
     middle = wilson_ci(5, 10)
     assert 0 <= low[0] <= low[1] <= 1
     assert 0 <= high[0] <= high[1] <= 1
     assert 0 <= middle[0] <= middle[1] <= 1
-    assert low[0] == 0
-    assert high[1] < 1
+    assert low[0] == 0.0
+    assert low[0] <= 0 <= low[1]
+    assert high[0] <= 1 <= high[1]
+    assert high[1] == 1.0
     assert middle[0] < 0.5 < middle[1]
+
+    for k in range(101):
+        p = k / 100
+        interval = wilson_ci(k, 100)
+        assert 0 <= interval[0] <= p <= interval[1] <= 1
+
+
+def test_plot_scan_accepts_zero_wholepass_ratio(tmp_path):
+    rows = [{
+        "target_uc": "1/10",
+        "target_ue": "7/10",
+        "scheduler": "ASAP-BLOCK",
+        "wholepass_ratio": 0.0,
+        "ci95_low": wilson_ci(0, 100)[0],
+        "ci95_high": wilson_ci(0, 100)[1],
+    }]
+
+    plot_scan(
+        rows,
+        tmp_path,
+        "zero-wholepass.png",
+        "target_uc",
+        ["ASAP-BLOCK"],
+        "U_C",
+        "test",
+    )
+
+    assert (tmp_path / "zero-wholepass.png").is_file()
 
 
 @pytest.mark.parametrize("adjudicable,misses,expected", [
