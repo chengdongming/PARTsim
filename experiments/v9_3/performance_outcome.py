@@ -15,6 +15,7 @@ def evaluate_outcome(
     minimum_adjudicable_jobs: int = 100,
     simulation_completed: bool = True,
     technical_error: str | None = None,
+    strict_wholepass: bool = False,
 ) -> dict[str, Any]:
     """Recompute pass/fail on the half-open observation window [0, horizon)."""
 
@@ -27,6 +28,7 @@ def evaluate_outcome(
             "completion_ratio": None, "adjudicable_jobs": 0,
             "deadline_miss_jobs": 0, "censored_jobs": 0,
             "completed_jobs": 0, "released_jobs": 0,
+            "wholepass": None, "technical_failure": True,
         }
 
     per_task: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
@@ -63,12 +65,22 @@ def evaluate_outcome(
     ]
     completed = sum(job.get("completion") is not None for job in all_jobs)
     denominator = adjudicable
-    taskset_pass = None if not denominator or task_failures else True
-    if denominator and task_failures:
-        taskset_pass = False
+    if strict_wholepass:
+        # Paper WholePass is a taskset-level hard-real-time predicate over
+        # every non-censored job, not a job completion ratio or a per-task
+        # average.  A zero denominator is unavailable/technical and never a
+        # scientific failure.
+        taskset_pass = None if not denominator else misses == 0
+    else:
+        taskset_pass = None if not denominator or task_failures else True
+        if denominator and task_failures:
+            taskset_pass = False
+    available = bool(denominator)
     return {
-        "outcome_status": "AVAILABLE" if denominator else "UNAVAILABLE",
+        "outcome_status": "AVAILABLE" if available else "UNAVAILABLE",
         "taskset_pass": taskset_pass,
+        "wholepass": taskset_pass if strict_wholepass else None,
+        "technical_failure": not available,
         "reason": "all_adjudicable_jobs_on_time" if taskset_pass is True else (
             "zero_adjudicable_jobs" if not denominator else "deadline_or_coverage_failure"
         ),

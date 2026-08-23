@@ -8,10 +8,12 @@ from types import SimpleNamespace
 
 import pytest
 
+from experiments.v9_3 import perf_g
 from experiments.v9_3 import scheduler_load_cross as experiment
 from experiments.v9_3.simulation_engine import should_retain_failure_trace
 from experiments.v9_3.simulation_result import SimulationStatus
-from scripts.analyze_scheduler_load_cross import analyze
+from experiments.v9_3.performance_outcome import evaluate_outcome
+from scripts.analyze_scheduler_load_cross import analyze, wilson_ci
 import scripts.run_scheduler_load_cross as scheduler_runner
 
 
@@ -24,9 +26,72 @@ def test_exact_ue_eta_mapping_and_deduplicated_cells():
     assert len(experiment.DEFAULT_CELLS) == 12
 
 
+def test_frozen_main_figure_has_exactly_16_cells_and_two_slices():
+    assert len(experiment.FORMAL_CELLS) == 16
+    assert len(set(experiment.FORMAL_CELLS)) == 16
+    assert (Fraction(3, 10), Fraction(7, 10)) in experiment.FORMAL_CELLS
+    assert experiment.FORMAL_CELLS.count((Fraction(3, 10), Fraction(7, 10))) == 1
+    slices = experiment.resolve_figure_slices(
+        experiment.FORMAL_CELLS,
+        fixed_ue=Fraction(7, 10), fixed_uc=Fraction(3, 10),
+    )
+    assert slices["uc_scan"]["fixed_value"] == "7/10"
+    assert slices["ue_scan"]["fixed_value"] == "3/10"
+    experiment.validate_frozen_main_figure(
+        experiment.FORMAL_CELLS, experiment.ALL_SCHEDULERS, horizon_ms=60000,
+    )
+
+
 def test_default_and_explicit_nine_scheduler_lists():
     assert experiment.parse_schedulers(None) == experiment.DEFAULT_SCHEDULERS
     assert experiment.parse_schedulers(",".join(experiment.ALL_SCHEDULERS)) == experiment.ALL_SCHEDULERS
+
+
+def test_nine_scheduler_mapping_is_complete_and_unique():
+    assert tuple(perf_g.FORMAL_SCHEDULERS) == experiment.ALL_SCHEDULERS
+    assert len(perf_g.FORMAL_SCHEDULERS) == 9
+    assert len(perf_g.SCHEDULER_CLI) == 9
+    assert len(set(perf_g.SCHEDULER_CLI.values())) == 9
+    assert all(
+        perf_g.SCHEDULER_CLI[name].startswith("gpfp_")
+        for name in perf_g.FORMAL_SCHEDULERS
+    )
+
+
+def test_strict_wholepass_and_technical_outcome_contract():
+    on_time = evaluate_outcome(
+        [{"task_id": "0", "release": 0, "absolute_deadline": 9, "completion": 9}],
+        ["0"], horizon=10, minimum_adjudicable_jobs=1, strict_wholepass=True,
+    )
+    assert on_time["wholepass"] is True
+    miss = evaluate_outcome(
+        [{"task_id": "0", "release": 0, "absolute_deadline": 9, "completion": 10}],
+        ["0"], horizon=20, minimum_adjudicable_jobs=1, strict_wholepass=True,
+    )
+    assert miss["wholepass"] is False
+    unfinished = evaluate_outcome(
+        [{"task_id": "0", "release": 0, "absolute_deadline": 9, "completion": None}],
+        ["0"], horizon=20, minimum_adjudicable_jobs=1, strict_wholepass=True,
+    )
+    assert unfinished["wholepass"] is False
+    technical = evaluate_outcome(
+        [], ["0"], horizon=20, minimum_adjudicable_jobs=1,
+        simulation_completed=False, technical_error="timeout", strict_wholepass=True,
+    )
+    assert technical["wholepass"] is None
+    assert technical["technical_failure"] is True
+
+
+def test_wilson_ci_handles_zero_one_and_middle():
+    low = wilson_ci(0, 10)
+    high = wilson_ci(10, 10)
+    middle = wilson_ci(5, 10)
+    assert 0 <= low[0] <= low[1] <= 1
+    assert 0 <= high[0] <= high[1] <= 1
+    assert 0 <= middle[0] <= middle[1] <= 1
+    assert low[0] == 0
+    assert high[1] < 1
+    assert middle[0] < 0.5 < middle[1]
 
 
 def test_requests_pair_two_energy_cells_and_five_schedulers():
@@ -46,6 +111,38 @@ def test_requests_pair_two_energy_cells_and_five_schedulers():
     assert len({row["request_id"] for row in rows}) == 10
     assert len({row["taskset_id"] for row in rows}) == 1
     assert {row["target_ue"] for row in rows} == {"1/5", "2/5"}
+
+
+def test_frozen_grid_plans_nine_paired_requests_per_cell_taskset():
+    class Taskset:
+        processors = 4
+        actual_utilization = Fraction(1)
+        seed = 123
+
+        def __init__(self, uc, index):
+            self.target_utilization = uc * self.processors
+            self.taskset_index = index
+            self.taskset_id = f"taskset-{uc}-{index}"
+            self.semantic_hash = f"hash-{uc}-{index}"
+
+    tasksets = [Taskset(uc, 0) for uc in experiment.FORMAL_UC_SCAN]
+    rows = experiment.request_rows(
+        tasksets, experiment.FORMAL_CELLS, experiment.ALL_SCHEDULERS, 60000,
+    )
+    assert len(rows) == 16 * 9
+    groups = {}
+    for row in rows:
+        groups.setdefault((row["target_uc"], row["target_ue"], row["generation_index"]), []).append(row)
+    assert len(groups) == 16
+    assert all(len(group) == 9 for group in groups.values())
+    assert all({row["scheduler"] for row in group} == set(experiment.ALL_SCHEDULERS)
+               for group in groups.values())
+    for uc in experiment.FORMAL_UC_SCAN:
+        ids = {
+            row["taskset_id"] for row in rows
+            if Fraction(row["target_uc"]) == uc
+        }
+        assert len(ids) == 1
 
 
 def test_service_only_energy_material_preserves_canonical_power():

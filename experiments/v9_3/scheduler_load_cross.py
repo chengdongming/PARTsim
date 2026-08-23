@@ -20,7 +20,35 @@ from .parallel_prepare import run_prepare_jobs
 DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v2"
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
 DEFAULT_KAPPA = Fraction(10)
-DEFAULT_CELLS = tuple(
+FORMAL_UC_SCAN = tuple(Fraction(value) for value in (
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
+))
+FORMAL_UE_SCAN = tuple(Fraction(value) for value in (
+    "2/5", "9/20", "1/2", "11/20", "3/5", "13/20", "7/10", "3/4", "4/5",
+))
+FORMAL_CELLS = tuple(
+    (uc, Fraction("7/10")) for uc in FORMAL_UC_SCAN
+) + tuple(
+    (Fraction("3/10"), ue) for ue in FORMAL_UE_SCAN if ue != Fraction("7/10")
+)
+PANEL_GROUPS = {
+    "BLOCK": ("ASAP-BLOCK", "ALAP-BLOCK", "ST-BLOCK"),
+    "NONBLOCK": ("ASAP-NONBLOCK", "ALAP-NONBLOCK", "ST-NONBLOCK"),
+    "SYNC": ("ASAP-SYNC", "ALAP-SYNC", "ST-SYNC"),
+}
+SCHEDULER_STYLES = {
+    "ASAP": {"marker": "o", "linestyle": "-"},
+    "ALAP": {"marker": "s", "linestyle": "--"},
+    "ST": {"marker": "^", "linestyle": ":"},
+}
+FROZEN_MAIN_FIGURE = {
+    "cells": FORMAL_CELLS,
+    "uc_fixed_ue": Fraction("7/10"),
+    "ue_fixed_uc": Fraction("3/10"),
+    "horizon_ms": perf_g.FORMAL_HORIZON_MS,
+    "schedulers": tuple(perf_g.FORMAL_SCHEDULERS),
+}
+LEGACY_PILOT_CELLS = tuple(
     (Fraction(uc), Fraction(ue)) for uc, ue in (
         ("1/10", "2/5"), ("2/10", "2/5"), ("3/10", "2/5"),
         ("4/10", "2/5"), ("5/10", "2/5"), ("6/10", "2/5"),
@@ -28,6 +56,7 @@ DEFAULT_CELLS = tuple(
         ("5/10", "3/10"), ("5/10", "1/2"), ("5/10", "3/5"),
     )
 )
+DEFAULT_CELLS = LEGACY_PILOT_CELLS
 DEFAULT_SCHEDULERS = tuple(perf_g.CAL_SCHEDULERS)
 ALL_SCHEDULERS = tuple(perf_g.FORMAL_SCHEDULERS)
 _PREPARE_RAW_TRACE: tuple[Fraction, ...] | None = None
@@ -47,7 +76,7 @@ def parse_fraction(value: Any, label: str, *, positive: bool = True) -> Fraction
 
 def parse_cells(text: str | None) -> tuple[tuple[Fraction, Fraction], ...]:
     if not text:
-        return DEFAULT_CELLS
+        return FORMAL_CELLS
     cells: list[tuple[Fraction, Fraction]] = []
     for item in text.split(","):
         parts = item.strip().split(":")
@@ -56,6 +85,9 @@ def parse_cells(text: str | None) -> tuple[tuple[Fraction, Fraction], ...]:
         cell = (parse_fraction(parts[0], "U_C"), parse_fraction(parts[1], "U_E"))
         if not (0 < cell[0] <= 1 and 0 < cell[1] <= 1):
             raise ValueError("U_C and U_E must be in (0, 1]")
+        # Generic/custom grids retain the historical deduplication behavior;
+        # the frozen campaign validator below still requires the exact 16-cell
+        # ordered contract before it is treated as a paper run.
         if cell not in cells:
             cells.append(cell)
     if not cells:
@@ -117,10 +149,42 @@ def parse_schedulers(text: str | None) -> tuple[str, ...]:
     return values
 
 
+def validate_frozen_main_figure(
+    cells: Sequence[tuple[Fraction, Fraction]],
+    schedulers: Sequence[str],
+    *,
+    horizon_ms: int,
+) -> None:
+    """Fail closed when the paper campaign is presented as the frozen one."""
+    if tuple(cells) != tuple(FORMAL_CELLS):
+        raise ValueError(
+            "frozen main-figure campaign must contain exactly the 16 canonical cells"
+        )
+    if tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
+        raise ValueError(
+            "frozen main-figure campaign must contain all 9 schedulers in canonical order"
+        )
+    if int(horizon_ms) != perf_g.FORMAL_HORIZON_MS:
+        raise ValueError(
+            "frozen main-figure campaign requires simulation horizon 60000 ms"
+        )
+
+
 def _hash(value: Any) -> str:
     return hashlib.sha256(
         DOMAIN.encode("ascii") + b"\0" + canonical_json(value).encode("utf-8")
     ).hexdigest()
+
+
+def harvest_trace_identity(raw_trace: Sequence[Fraction]) -> str:
+    """Stable identity for the one paired raw solar trace used by a run."""
+    if not raw_trace:
+        raise ValueError("raw solar trace must not be empty")
+    digest = hashlib.sha256()
+    for value in raw_trace:
+        digest.update(fraction_text(value).encode("ascii"))
+        digest.update(b"\0")
+    return "raw-trace-" + digest.hexdigest()[:32]
 
 
 def eta_for_ue(target_ue: Fraction) -> Fraction:
@@ -262,7 +326,8 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
 
 
 def energy_material(taskset: Any, target_ue: Fraction, raw_trace: Sequence[Fraction], *, kappa: Fraction,
-                    normalization_horizon: int = FORMAL_NORMALIZATION_HORIZON) -> dict[str, str]:
+                    normalization_horizon: int = FORMAL_NORMALIZATION_HORIZON,
+                    raw_trace_id: str | None = None) -> dict[str, str]:
     """Reuse PERF-G's exact demand/burst arithmetic with eta=1/U_E."""
     if len(raw_trace) != normalization_horizon:
         raise ValueError("raw trace must cover the normalization horizon")
@@ -305,6 +370,7 @@ def energy_material(taskset: Any, target_ue: Fraction, raw_trace: Sequence[Fract
         "solar_scale": fraction_text(solar_scale),
         "normalization_horizon_ms": str(normalization_horizon),
         "energy_control": "SERVICE_ONLY_SCALING",
+        "harvest_trace_id": raw_trace_id or harvest_trace_identity(raw_trace),
     }
 
 
@@ -321,6 +387,7 @@ def prepare_energy_material(job: Mapping[str, Any]) -> dict[str, Any]:
     material = energy_material(
         _TasksetView(), Fraction(job["target_ue"]), raw_trace,
         kappa=Fraction(job["kappa"]),
+        raw_trace_id=job.get("raw_trace_id"),
     )
     return {
         "taskset_id": str(job["taskset_id"]),

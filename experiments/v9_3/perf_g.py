@@ -71,7 +71,9 @@ SMOKE_CONDITIONS = (
 CAL_SEED = 410731
 FORMAL_SEED = 910427
 SMOKE_SEED = 710213
-BASE_SYSTEM_TEMPLATE = "v9_3_b4_priority_energy_system_template.yml"
+# Ordinary/general random Scheduler LOAD-CROSS service material.  This is
+# deliberately independent of the B4 priority-energy experiment template.
+BASE_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 
 
 class PerfGError(ValueError):
