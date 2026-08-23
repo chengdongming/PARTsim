@@ -240,7 +240,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.parse_concurrency < 1:
         raise SystemExit("parse-concurrency must be positive")
     cells = experiment.parse_cells(args.cells)
-    schedulers = experiment.parse_schedulers(args.schedulers)
+    schedulers = experiment.parse_schedulers(
+        args.schedulers if args.schedulers is not None
+        else ",".join(perf_g.FORMAL_SCHEDULERS)
+    )
+    is_frozen_main_figure = tuple(cells) == tuple(experiment.FORMAL_CELLS)
     try:
         figure_slices = experiment.resolve_figure_slices(
             cells,
@@ -261,6 +265,13 @@ def main(argv: list[str] | None = None) -> int:
     kappa = experiment.parse_fraction(args.kappa, "kappa")
     if kappa != experiment.DEFAULT_KAPPA:
         raise SystemExit("scheduler LOAD-CROSS freezes kappa=10")
+    if is_frozen_main_figure:
+        try:
+            experiment.validate_frozen_main_figure(
+                cells, schedulers, horizon_ms=args.simulation_horizon,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     # rho/latency are retained as explicit provenance controls for parity with
     # the RTA generation interface; simulator P remains canonical and untouched.
     rho = experiment.parse_fraction(args.rho, "rho")
@@ -282,6 +293,16 @@ def main(argv: list[str] | None = None) -> int:
         "keep_traces": args.keep_traces,
         "parse_concurrency": args.parse_concurrency,
         "figure_slices": figure_slices,
+        "campaign_contract": {
+            "name": "ordinary-general-random-nine-scheduler-main-figures-v1"
+            if is_frozen_main_figure else "scheduler-load-cross-custom",
+            "wholepass": "all_adjudicable_jobs_on_time_taskset_level",
+            "frozen_main_figure": is_frozen_main_figure,
+            "unique_cell_count": len(set(cells)),
+            "panel_groups": {
+                name: list(group) for name, group in experiment.PANEL_GROUPS.items()
+            },
+        },
         "execution": {
             "workers": args.workers,
             "prepare_workers": prepare_workers,
@@ -343,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
     raw_trace = tuple(experiment.construct_paired_harvest_trace(
         service.system_path, experiment.FORMAL_NORMALIZATION_HORIZON,
     ))
+    raw_trace_id = experiment.harvest_trace_identity(raw_trace)
     experiment.set_prepare_raw_trace(raw_trace)
     results_path = root / "results.jsonl"
     attempts_path = root / "attempts.jsonl"
@@ -382,6 +404,7 @@ def main(argv: list[str] | None = None) -> int:
             "processors": taskset.processors,
             "task_count": taskset.task_count,
             "kappa": kappa,
+            "raw_trace_id": raw_trace_id,
         })
         simulation = {
             "simulator_bin": str(args.simulator), "horizon": args.simulation_horizon,
@@ -466,6 +489,7 @@ def main(argv: list[str] | None = None) -> int:
                     [], [str(row["task_id"]) for row in task_payload],
                     horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
                     simulation_completed=False, technical_error=technical,
+                    strict_wholepass=True,
                 )
                 status = "TECHNICAL_FAILURE"
                 reason = technical
@@ -484,9 +508,13 @@ def main(argv: list[str] | None = None) -> int:
                     horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
                     simulation_completed=execution.result.simulation_completed,
                     technical_error=technical_error,
+                    strict_wholepass=True,
                 )
                 reason = execution.result.reason
                 status = status.value
+                if outcome.get("technical_failure"):
+                    technical_error = outcome.get("reason") or "wholepass_outcome_unavailable"
+                    status = "TECHNICAL_FAILURE"
                 runtime_seconds = execution.runtime_seconds
                 metrics = dict(execution.result.metrics)
                 stdout_tail = execution.stdout_tail
@@ -499,7 +527,8 @@ def main(argv: list[str] | None = None) -> int:
                        "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
                        "runtime_seconds": runtime_seconds,
                        "metrics": metrics, "outcome": outcome,
-                       "taskset_pass": outcome.get("taskset_pass")}
+                       "taskset_pass": outcome.get("taskset_pass"),
+                       "wholepass": outcome.get("wholepass", outcome.get("taskset_pass"))}
             attempt_row = {
                 **request,
                 "request_id": request_id,
@@ -554,6 +583,10 @@ def main(argv: list[str] | None = None) -> int:
         "expected_results": len(requests), "observed_results": len(results_by_id),
         "missing_results": len(expected_ids - set(observed_ids)),
         "duplicate_request_ids": len(observed_ids) - len(set(observed_ids)),
+        "missing": len(expected_ids - set(observed_ids)),
+        "duplicate": len(observed_ids) - len(set(observed_ids)),
+        "unexpected": len(set(observed_ids) - expected_ids),
+        "technical": 0,
         "actual_ue_exact": all(Fraction(row["energy"]["target_ue"]) * Fraction(row["energy"]["eta"]) == 1 for row in results_by_id.values()),
         "canonical_task_power": all(row.get("canonical_task_power") for row in rows),
         "scheduler_input_hashes_stable": all(len({row["taskset_hash"] for row in requests if row["taskset_id"] == taskset.taskset_id}) == 1 for taskset in tasksets),

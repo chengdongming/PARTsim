@@ -31,6 +31,22 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writeheader(); writer.writerows(rows)
 
 
+def wilson_ci(k: int, n: int, *, z: float = 1.959963984540054) -> tuple[float, float]:
+    """Return the two-sided Wilson score interval for a binomial proportion."""
+    if n <= 0 or k < 0 or k > n:
+        raise ValueError("Wilson interval requires 0 <= k <= n and n > 0")
+    p = k / n
+    z2 = z * z
+    denominator = 1.0 + z2 / n
+    centre = (p + z2 / (2.0 * n)) / denominator
+    radius = z / denominator * ((p * (1.0 - p) / n) + z2 / (4.0 * n * n)) ** 0.5
+    return max(0.0, centre - radius), min(1.0, centre + radius)
+
+
+# Short alias used by analysis-focused callers.
+wilson_interval = wilson_ci
+
+
 def _configured_cells(config: dict[str, Any]) -> tuple[tuple[Fraction, Fraction], ...]:
     raw_cells = config.get("cells")
     if not isinstance(raw_cells, list) or not raw_cells:
@@ -118,7 +134,7 @@ def _validate_scan_rows(
     observed_x = {experiment.fraction_text(Fraction(row[x_key])) for row in rows}
     if not expected_x or observed_x != expected_x:
         raise SystemExit(f"{label} slice does not match configured cells")
-    if not any(row["acceptance_ratio"] is not None for row in rows):
+    if not any(row["wholepass_ratio"] is not None for row in rows):
         raise SystemExit(f"{label} slice has no valid result rows")
 
 
@@ -128,26 +144,40 @@ def plot_scan(
 ) -> None:
     import matplotlib.pyplot as plt
 
-    plt.figure()
-    for scheduler in schedulers:
-        values = [
-            row for row in rows
-            if row["scheduler"] == scheduler and row["acceptance_ratio"] is not None
-        ]
-        values.sort(key=lambda row: Fraction(row[xkey]))
-        plt.plot(
-            [float(Fraction(row[xkey])) for row in values],
-            [row["acceptance_ratio"] for row in values],
-            marker="o", label=scheduler,
-        )
-    plt.xlabel(xlabel)
-    plt.ylabel("Schedulability ratio")
-    plt.title(title)
-    plt.ylim(0, 1.05)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(output / filename)
-    plt.close()
+    figure, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
+    for axis, (panel, panel_schedulers) in zip(axes, experiment.PANEL_GROUPS.items()):
+        for scheduler in panel_schedulers:
+            if scheduler not in schedulers:
+                continue
+            values = [
+                row for row in rows
+                if row["scheduler"] == scheduler and row["wholepass_ratio"] is not None
+            ]
+            values.sort(key=lambda row: Fraction(row[xkey]))
+            if not values:
+                continue
+            prefix = scheduler.split("-", 1)[0]
+            style = experiment.SCHEDULER_STYLES[prefix]
+            axis.errorbar(
+                [float(Fraction(row[xkey])) for row in values],
+                [row["wholepass_ratio"] for row in values],
+                yerr=[
+                    [row["wholepass_ratio"] - row["ci95_low"] for row in values],
+                    [row["ci95_high"] - row["wholepass_ratio"] for row in values],
+                ],
+                marker=style["marker"], linestyle=style["linestyle"],
+                capsize=2, label=scheduler,
+            )
+        axis.set_xlabel(xlabel)
+        axis.set_title(panel)
+        axis.set_ylim(0, 1)
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize="small")
+    axes[0].set_ylabel("WholePass ratio")
+    figure.suptitle(title)
+    figure.tight_layout()
+    figure.savefig(output / filename)
+    plt.close(figure)
 
 
 def _plot_scan_job(job: dict[str, Any]) -> None:
@@ -164,6 +194,20 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
     cells = _configured_cells(config)
     figure_slices = _figure_slices(config, cells)
+    schedulers = list(config.get("schedulers", ()))
+    try:
+        parsed_schedulers = experiment.parse_schedulers(",".join(schedulers))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if tuple(parsed_schedulers) != tuple(schedulers):
+        raise SystemExit("run_config schedulers are not canonical and unique")
+    if tuple(cells) == tuple(experiment.FORMAL_CELLS):
+        try:
+            experiment.validate_frozen_main_figure(
+                cells, schedulers, horizon_ms=int(config.get("simulation_horizon_ms", 0)),
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
@@ -174,6 +218,19 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     unexpected = len(set(observed) - expected)
     if duplicate or missing or unexpected:
         raise SystemExit(f"incomplete campaign: duplicate={duplicate} missing={missing} unexpected={unexpected}")
+    request_by_id = {str(row["request_id"]): row for row in requests}
+    if len(request_by_id) != len(requests):
+        raise SystemExit("requests contain duplicate request IDs")
+    for row in results:
+        request = request_by_id.get(str(row.get("request_id")))
+        if request is None:
+            raise SystemExit("result request identity is unexpected")
+        for key in (
+            "taskset_id", "taskset_hash", "target_uc", "target_ue",
+            "generation_index", "scheduler", "scheduler_cli",
+        ):
+            if row.get(key) != request.get(key):
+                raise SystemExit(f"result/request identity mismatch for {key}")
     expected_tasksets = len({row["taskset_id"] for row in requests})
     taskset_by_id = {str(row["taskset_id"]): row for row in tasksets}
     if len(taskset_by_id) != expected_tasksets:
@@ -186,6 +243,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         for row in tasksets
     ):
         raise SystemExit("actual U_C exceeds configured tolerance")
+    technical_rows = []
     for row in results:
         if (
             row.get("technical_error") is not None
@@ -193,7 +251,16 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 "SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS",
             }
         ):
-            raise SystemExit("active results contain a technical or non-terminal row")
+            technical_rows.append(row)
+            continue
+        outcome = row.get("outcome", {})
+        if outcome.get("outcome_status") not in (None, "AVAILABLE"):
+            technical_rows.append(row)
+            continue
+        if "wholepass" in outcome and row.get("wholepass") != outcome.get("wholepass"):
+            raise SystemExit("row WholePass does not match evaluate_outcome(...).wholepass")
+        if "wholepass" in outcome and row.get("taskset_pass") != outcome.get("wholepass"):
+            raise SystemExit("schedulable/taskset_pass is not evaluate_outcome(...).taskset_pass")
         taskset = taskset_by_id[str(row["taskset_id"])]
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("scheduler changed taskset identity")
@@ -206,7 +273,46 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         raw = Fraction(energy["raw_reference_mean_j_per_tick"])
         if demand / supply != ue or Fraction(energy["solar_scale"]) * raw != supply:
             raise SystemExit("U_E service identity mismatch")
-    schedulers = list(config["schedulers"])
+        if Fraction(energy["eta"]) * ue != 1:
+            raise SystemExit("eta * U_E != 1")
+    if technical_rows:
+        raise SystemExit(f"technical failures are not scientific WholePass rows: {len(technical_rows)}")
+
+    # Requests are the authority for the pairing grid.  Every cell/taskset
+    # must have exactly one result for every requested scheduler.
+    request_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for request in requests:
+        request_groups.setdefault(
+            (str(request["target_uc"]), str(request["target_ue"]), str(request["generation_index"])),
+            [],
+        ).append(request)
+    for key, group in request_groups.items():
+        if len(group) != len(schedulers):
+            raise SystemExit(f"cell/taskset does not contain exactly {len(schedulers)} scheduler requests: {key}")
+        if {row["scheduler"] for row in group} != set(schedulers):
+            raise SystemExit(f"cell/taskset scheduler coverage is incomplete: {key}")
+
+    # Same taskset + U_E must share immutable energy material across all nine
+    # schedulers; across U_E, only service scaling may vary.
+    by_taskset_ue: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    by_taskset: dict[str, list[dict[str, Any]]] = {}
+    for row in results:
+        by_taskset_ue.setdefault((str(row["taskset_id"]), str(row["target_ue"])), []).append(row)
+        by_taskset.setdefault(str(row["taskset_id"]), []).append(row)
+    for key, group in by_taskset_ue.items():
+        if len(group) != len(schedulers) or len({str(row["energy"].get("harvest_trace_id")) for row in group}) != 1:
+            raise SystemExit(f"energy material is not paired across schedulers: {key}")
+    invariant_fields = (
+        "P_dem_j_per_tick", "E_burst_j", "battery_capacity_j",
+        "initial_energy_j", "raw_reference_mean_j_per_tick", "harvest_trace_id",
+    )
+    for taskset_id, group in by_taskset.items():
+        invariants = {
+            field: {str(row["energy"].get(field)) for row in group}
+            for field in invariant_fields
+        }
+        if any(len(values) != 1 for values in invariants.values()):
+            raise SystemExit(f"battery/E0/task demand/trace invariant changed across U_E: {taskset_id}")
     paired_tasksets: dict[tuple[str, str], set[str]] = {}
     for request in requests:
         paired_tasksets.setdefault(
@@ -225,18 +331,24 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             if len(selected) != int(config["samples_per_cell"]):
                 raise SystemExit("missing scheduler result in cell")
             n_total = len(selected)
-            n_schedulable = sum(row.get("schedulable") is True for row in selected)
+            wholepass_values = [
+                row.get("wholepass", row.get("taskset_pass")) is True
+                for row in selected
+            ]
+            n_wholepass = sum(wholepass_values)
             n_miss = sum(row.get("deadline_miss") is True for row in selected)
-            n_timeout = sum(row.get("simulation_status") == "SIM_RUNTIME_TIMEOUT" for row in selected)
-            n_internal = sum(row.get("simulation_status") == "SIM_INTERNAL_ERROR" for row in selected)
-            n_other = sum(row.get("technical_error") is not None for row in selected) - n_timeout - n_internal
-            technical = n_timeout + n_internal + n_other
+            ci_low, ci_high = wilson_ci(n_wholepass, n_total)
             summaries.append({
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
-                "n_total": n_total, "n_schedulable": n_schedulable,
-                "n_deadline_miss": n_miss, "n_timeout": n_timeout,
-                "n_internal_error": n_internal, "n_other_technical_error": n_other,
-                "acceptance_ratio": None if technical else n_schedulable / n_total,
+                "n_total": n_total, "n_valid_tasksets": n_total,
+                "n_technical": 0, "n_wholepass": n_wholepass,
+                "wholepass_ratio": n_wholepass / n_total,
+                "ci95_low": ci_low, "ci95_high": ci_high,
+                # Compatibility diagnostics; these are not used as the
+                # scientific y-axis.
+                "n_schedulable": n_wholepass,
+                "n_deadline_miss": n_miss,
+                "acceptance_ratio": n_wholepass / n_total,
             })
     uc_slice = figure_slices["uc_scan"]
     ue_slice = figure_slices["ue_scan"]
@@ -281,8 +393,11 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     plot_seconds = time.perf_counter() - plot_started
     report = {"complete": True, "tasksets": len(tasksets), "requests": len(requests),
               "results": len(results), "duplicate_request_ids": duplicate,
-              "missing_request_ids": missing, "summary_rows": len(summaries),
-              "technical_result_count": sum(bool(row.get("technical_error")) for row in results),
+              "missing_request_ids": missing, "unexpected_request_ids": unexpected,
+              "summary_rows": len(summaries),
+              "technical_result_count": len(technical_rows),
+              "missing": missing, "duplicate": duplicate,
+              "unexpected": unexpected, "technical": len(technical_rows),
               "telemetry": {
                   "validation_summary_seconds": validation_summary_seconds,
                   "plot_seconds": plot_seconds,
