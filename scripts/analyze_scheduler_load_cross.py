@@ -45,7 +45,9 @@ def wilson_ci(k: int, n: int, *, z: float = 1.959963984540054) -> tuple[float, f
     denominator = 1.0 + z2 / n
     centre = (p + z2 / (2.0 * n)) / denominator
     radius = z / denominator * ((p * (1.0 - p) / n) + z2 / (4.0 * n * n)) ** 0.5
-    return max(0.0, centre - radius), min(1.0, centre + radius)
+    low = max(0.0, centre - radius)
+    high = min(1.0, centre + radius)
+    return min(low, p), max(high, p)
 
 
 # Short alias used by analysis-focused callers.
