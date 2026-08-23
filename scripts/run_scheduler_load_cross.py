@@ -187,6 +187,13 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
         os.fsync(handle.fileno())
 
 
+def _persisted_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
+    """Return the compact result metrics without mutating the execution result."""
+    persisted = dict(metrics)
+    persisted.pop("battery_trajectory", None)
+    return persisted
+
+
 def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
@@ -475,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
         completed_count = completed_at_start
         progress_interval = max(1, min(50, len(pending_jobs) // 20 or 1))
         for future in as_completed(future_to_job):
-            job = future_to_job[future]
+            job = future_to_job.pop(future)
             request = job["request"]
             request_id = str(job["request_id"])
             task_payload = job["task_payload"]
@@ -516,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
                     technical_error = outcome.get("reason") or "wholepass_outcome_unavailable"
                     status = "TECHNICAL_FAILURE"
                 runtime_seconds = execution.runtime_seconds
-                metrics = dict(execution.result.metrics)
+                metrics = _persisted_metrics(execution.result.metrics)
                 stdout_tail = execution.stdout_tail
                 stderr_tail = execution.stderr_tail
                 retained_trace_path = str(execution.retained_trace_path) if execution.retained_trace_path else None

@@ -785,10 +785,14 @@ def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_pat
         scheduler_runner.experiment, "request_rows",
         lambda *args, **kwargs: [dict(row) for row in requests],
     )
-    monkeypatch.setattr(
-        scheduler_runner, "as_completed",
-        lambda future_to_job: list(reversed(list(future_to_job))),
-    )
+    def reverse_as_completed(future_to_job):
+        futures = list(reversed(list(future_to_job)))
+        for future in futures:
+            yield future
+            assert future not in future_to_job
+        assert not future_to_job
+
+    monkeypatch.setattr(scheduler_runner, "as_completed", reverse_as_completed)
     output = tmp_path / "completion-order"
     results_path = output / "results.jsonl"
     appended_ids = []
@@ -828,6 +832,28 @@ def test_progress_uses_outstanding_request_metric(capsys):
     output = capsys.readouterr().out
     assert "outstanding_requests=7" in output
     assert "active_workers" not in output
+
+
+def test_persisted_metrics_drop_only_battery_trajectory_without_mutation():
+    metrics = {
+        "battery_trajectory": [{"time": 0, "energy_j": "1"}],
+        "missed_jobs": 3,
+        "energy_blocked_ticks": 7,
+        "battery_minimum_j": "1/2",
+        "battery_maximum_j": "3/2",
+    }
+    original = dict(metrics)
+    persisted = scheduler_runner._persisted_metrics(metrics)
+    assert "battery_trajectory" not in persisted
+    assert persisted == {
+        "missed_jobs": 3,
+        "energy_blocked_ticks": 7,
+        "battery_minimum_j": "1/2",
+        "battery_maximum_j": "3/2",
+    }
+    assert metrics == original
+    assert "battery_trajectory" in metrics
+    assert persisted is not metrics
 
 
 def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, monkeypatch):
