@@ -380,6 +380,86 @@ TEST(ALAPSyncScheduler, BatchInsufficientEnergyStartsNone) {
     simulation.endSingleRun();
 }
 
+TEST(ALAPSyncScheduler, WholeTopMAtomicityRejectsAffordableContinuation) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu0("alap-sync-atomic-cpu0", nullptr);
+    CPU cpu1("alap-sync-atomic-cpu1", nullptr);
+    CPU cpu2("alap-sync-atomic-cpu2", nullptr);
+    CPU cpu3("alap-sync-atomic-cpu3", nullptr);
+    TestMRTKernel kernel(
+        &scheduler, std::set<CPU *>{&cpu0, &cpu1, &cpu2, &cpu3});
+    FakeALAPSyncTask continuation1(1, 10, 1, 1.0);
+    FakeALAPSyncTask continuation2(2, 20, 1, 1.0);
+    FakeALAPSyncTask ready3(3, 30, 1, 1.0);
+    FakeALAPSyncTask ready4(4, 40, 1, 1.0);
+
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation1, 10, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation2, 20, 1, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &ready3, 30, 1, 2.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &ready4, 40, 1, 2.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPSyncSchedulerTestPeer::setEnergy(scheduler, 3.0);
+    for (FakeALAPSyncTask *task : {&continuation1, &continuation2,
+                                   &ready3, &ready4}) {
+        task->releaseAt(Tick(0));
+    }
+    continuation1.schedule();
+    continuation2.schedule();
+    kernel.setRunning(&cpu0, &continuation1);
+    kernel.setRunning(&cpu1, &continuation2);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &ready3);
+    ALAPSyncSchedulerTestPeer::enqueue(scheduler, &ready4);
+
+    ALAPSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_EQ(continuation1.getScheduleCount(), 1);
+    EXPECT_EQ(continuation2.getScheduleCount(), 1);
+    EXPECT_EQ(ready3.getScheduleCount(), 0);
+    EXPECT_EQ(ready4.getScheduleCount(), 0);
+    EXPECT_FALSE(continuation1.isExecuting());
+    EXPECT_FALSE(continuation2.isExecuting());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 3.0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(ALAPSyncScheduler, ArrivalAtTickIsVisibleBeforeRegularTick) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu("alap-sync-arrival-order-cpu", nullptr);
+    TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeALAPSyncTask task(1, 10, 1, 1.0);
+
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &task, 10, 1, 1.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    ALAPSyncTestActionEvent arrival([&scheduler, &task]() {
+        task.releaseAt(Tick(1));
+        ALAPSyncSchedulerTestPeer::arrive(scheduler, &task);
+    });
+    arrival.post(Tick(1));
+
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(task.getScheduleCount(), 1);
+    EXPECT_TRUE(task.isExecuting());
+    EXPECT_EQ(kernel.getTask(&cpu), &task);
+
+    simulation.endSingleRun();
+}
+
 TEST(ALAPSyncScheduler, ExactBatchEnergyChargedOnce) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestALAPSyncScheduler scheduler;

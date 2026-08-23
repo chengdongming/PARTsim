@@ -823,6 +823,56 @@ TEST(STSyncScheduler, NoFreeFirstTick) {
     simulation.endSingleRun();
 }
 
+TEST(STSyncScheduler, WholeTopMAtomicityRejectsAffordableContinuation) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-atomic-cpu0", nullptr);
+    CPU cpu1("st-sync-atomic-cpu1", nullptr);
+    CPU cpu2("st-sync-atomic-cpu2", nullptr);
+    CPU cpu3("st-sync-atomic-cpu3", nullptr);
+    TestSTSyncMRTKernel kernel(
+        &scheduler, std::set<CPU *>{&cpu0, &cpu1, &cpu2, &cpu3});
+    FakeSTSyncTask continuation1(1, 10, 1, 1.0);
+    FakeSTSyncTask continuation2(2, 20, 1, 1.0);
+    FakeSTSyncTask ready3(3, 30, 1, 1.0);
+    FakeSTSyncTask ready4(4, 40, 1, 1.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation1, 10, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation2, 20, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &ready3, 30, 1, 2.0);
+    STSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &ready4, 40, 1, 2.0);
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 3.0);
+    continuation1.releaseAt(Tick(0));
+    continuation2.releaseAt(Tick(0));
+    ready3.releaseAt(Tick(0));
+    ready4.releaseAt(Tick(0));
+    continuation1.markRunningWithoutScheduleCount();
+    continuation2.markRunningWithoutScheduleCount();
+    kernel.setRunning(&cpu0, &continuation1);
+    kernel.setRunning(&cpu1, &continuation2);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &ready3);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &ready4);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_EQ(ready3.getScheduleCount(), 0);
+    EXPECT_EQ(ready4.getScheduleCount(), 0);
+    EXPECT_FALSE(continuation1.isExecuting());
+    EXPECT_FALSE(continuation2.isExecuting());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 3.0);
+    EXPECT_DOUBLE_EQ(scheduler._stats.total_energy_consumed, 0.0);
+
+    simulation.endSingleRun();
+}
+
 TEST(STSyncScheduler, NoPartialBatchExecution) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTSyncScheduler scheduler;

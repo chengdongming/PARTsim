@@ -594,11 +594,13 @@ namespace RTSim {
                    !idle_core_batch_affordable) {
             _energy_depleted = true;
             _stats.total_batch_skipped++;
-            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 空闲核批次组级验资失败，continuation保持运行: K=") +
+            SCHEDULER_LOG_WARNING(std::string("❌ [ASAP-Sync] 整个Top-M同步组级验资失败，全部挂起: K=") +
                                   std::to_string(idle_core_batch.size()) +
                                   " 批次需要=" + std::to_string(idle_core_batch_energy * 1000.0) + " mJ" +
                                   " continuation需要=" + std::to_string(continuation_energy * 1000.0) + " mJ" +
                                   " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+            selected_tasks.clear();
+            required_batch_energy = 0.0;
         } else {
             _energy_depleted = false;
             selected_tasks = desired_tasks;
