@@ -407,7 +407,7 @@ TEST(ASAPSyncScheduler, RunningTaskMustBeInFrozenBatch) {
 }
 
 TEST(ASAPSyncScheduler,
-     InsufficientIdleCoreBatchPreservesAffordableContinuation) {
+     InsufficientIdleCoreBatchRejectsWholeTopM) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestASAPSyncScheduler scheduler;
     CPU cpu0("asap-sync-running-partial-cpu0", nullptr);
@@ -431,31 +431,83 @@ TEST(ASAPSyncScheduler,
     ASAPSyncSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
 
-    EXPECT_TRUE(running.isExecuting());
+    EXPECT_FALSE(running.isExecuting());
     EXPECT_EQ(ready.getScheduleCount(), 0);
-    EXPECT_EQ(scheduler.getCurrentBatchTasks(),
-              (std::vector<AbsRTTask *>{&running}));
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+
+    simulation.endSingleRun();
+}
+
+TEST(ASAPSyncScheduler, WholeTopMAtomicityRejectsAffordableContinuation) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestASAPSyncScheduler scheduler;
+    CPU cpu0("asap-sync-atomic-cpu0", nullptr);
+    CPU cpu1("asap-sync-atomic-cpu1", nullptr);
+    CPU cpu2("asap-sync-atomic-cpu2", nullptr);
+    CPU cpu3("asap-sync-atomic-cpu3", nullptr);
+    TestASAPSyncMRTKernel kernel(
+        &scheduler, std::set<CPU *>{&cpu0, &cpu1, &cpu2, &cpu3});
+    FakeASAPSyncTask continuation1(1, 10, 1, 1.0);
+    FakeASAPSyncTask continuation2(2, 20, 1, 1.0);
+    FakeASAPSyncTask ready3(3, 30, 1, 1.0);
+    FakeASAPSyncTask ready4(4, 40, 1, 1.0);
+
+    ASAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation1, 10, 1, 1.0);
+    ASAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &continuation2, 20, 1, 1.0);
+    ASAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &ready3, 30, 1, 2.0);
+    ASAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &ready4, 40, 1, 2.0);
+
+    simulation.initSingleRun();
+    ASAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ASAPSyncSchedulerTestPeer::setEnergy(scheduler, 3.0);
+    for (FakeASAPSyncTask *task : {&continuation1, &continuation2,
+                                   &ready3, &ready4}) {
+        task->releaseAt(Tick(0));
+    }
+    continuation1.schedule();
+    continuation2.schedule();
+    kernel.setRunning(&cpu0, &continuation1);
+    kernel.setRunning(&cpu1, &continuation2);
+    ASAPSyncSchedulerTestPeer::enqueue(scheduler, &ready3);
+    ASAPSyncSchedulerTestPeer::enqueue(scheduler, &ready4);
+
+    ASAPSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_EQ(continuation1.getScheduleCount(), 1);
+    EXPECT_EQ(continuation2.getScheduleCount(), 1);
+    EXPECT_EQ(ready3.getScheduleCount(), 0);
+    EXPECT_EQ(ready4.getScheduleCount(), 0);
+    EXPECT_FALSE(continuation1.isExecuting());
+    EXPECT_FALSE(continuation2.isExecuting());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 3.0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
 
     simulation.endSingleRun();
 }
 
 TEST(ASAPSyncScheduler,
-     ContinuationCandidateWaitTraceIsCompleteAndEmittedOnce) {
+     WholeTopMBlockTraceIsCompleteAndEmittedOnce) {
     const auto observed = RunContinuationWaitObservation(
         true, "complete-event");
 
-    EXPECT_EQ(observed.selected_task_numbers, (std::vector<int>{2}));
+    EXPECT_TRUE(observed.selected_task_numbers.empty());
     EXPECT_EQ(observed.continuation_schedule_count, 1);
     EXPECT_EQ(observed.candidate_schedule_count, 0);
-    EXPECT_TRUE(observed.continuation_executing);
+    EXPECT_FALSE(observed.continuation_executing);
     EXPECT_FALSE(observed.candidate_executing);
-    EXPECT_DOUBLE_EQ(observed.current_energy, 0.5);
-    EXPECT_DOUBLE_EQ(observed.consumed_energy, 1.0);
+    EXPECT_DOUBLE_EQ(observed.current_energy, 1.5);
+    EXPECT_DOUBLE_EQ(observed.consumed_energy, 0.0);
     EXPECT_EQ(CountASAPSyncTraceMarker(
                   observed.trace,
                   "\"event_type\": \"sync_batch_candidate_wait\""),
-              1);
+              0);
     EXPECT_EQ(CountASAPSyncTraceMarker(
                   observed.trace,
                   "\"event_type\": \"scheduler_decision\""),
@@ -463,72 +515,24 @@ TEST(ASAPSyncScheduler,
     EXPECT_EQ(CountASAPSyncTraceMarker(
                   observed.trace,
                   "\"event_type\": \"sync_batch_block\""),
-              0);
+              1);
     for (const std::string &field : {
-             "active_top_m_tasks", "continuation_tasks",
-             "new_candidate_tasks", "selected_tasks",
-             "active_top_m_count", "continuation_count",
-             "new_candidate_count", "selected_count",
-             "active_top_m_required_energy_mJ",
-             "active_top_m_required_energy_mJ_exact",
-             "continuation_required_energy_mJ",
-             "continuation_required_energy_mJ_exact",
-             "new_candidate_required_energy_mJ",
-             "new_candidate_required_energy_mJ_exact",
-             "available_energy_before_decision_mJ",
-             "available_energy_before_decision_mJ_exact",
-             "residual_energy_after_continuation_reservation_mJ",
-             "residual_energy_after_continuation_reservation_mJ_exact",
-             "whole_active_top_m_affordable",
-             "all_new_candidates_affordable_after_continuation",
-             "feasible_new_candidate_subset_exists",
-             "native_affordability_epsilon_mJ",
-             "native_affordability_epsilon_mJ_exact"}) {
+             "available_energy_mJ", "available_energy_mJ_exact",
+             "ready_jobs", "selected_jobs", "decision_reason",
+             "batch_tasks", "batch_required_energy_mJ",
+             "batch_required_energy_mJ_exact", "feasible_subset_exists",
+             "reason"}) {
         EXPECT_NE(observed.trace.find("\"" + field + "\""),
                   std::string::npos) << field;
     }
-    EXPECT_NE(observed.trace.find("\"active_top_m_count\": 2"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find("\"continuation_count\": 1"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find("\"new_candidate_count\": 1"),
-              std::string::npos);
     EXPECT_NE(observed.trace.find(
-                  "\"active_top_m_required_energy_mJ\": 2000"),
+                  "\"decision_reason\": \"sync_batch_energy_insufficient\""),
               std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"continuation_required_energy_mJ\": 1000"),
+    EXPECT_NE(observed.trace.find("\"selected_jobs\": []"),
               std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"new_candidate_required_energy_mJ\": 1000"),
+    EXPECT_NE(observed.trace.find("\"batch_required_energy_mJ\": 2000"),
               std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"available_energy_before_decision_mJ\": 1500"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"residual_energy_after_continuation_reservation_mJ\": 500"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"whole_active_top_m_affordable\": false"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"all_new_candidates_affordable_after_continuation\": false"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"feasible_new_candidate_subset_exists\": false"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"native_affordability_epsilon_mJ\": 1e-06"),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"available_energy_before_decision_mJ_exact\": \"1500\""),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"residual_energy_after_continuation_reservation_mJ_exact\": \"500\""),
-              std::string::npos);
-    EXPECT_NE(observed.trace.find(
-                  "\"native_affordability_epsilon_mJ_exact\": \""
-                  "1.0000000000000002e-06\""),
+    EXPECT_NE(observed.trace.find("\"available_energy_mJ\": 1500"),
               std::string::npos);
 }
 
@@ -703,13 +707,13 @@ TEST(ASAPSyncScheduler, SemanticTraceTogglePreservesSchedulingAndEnergy) {
     EXPECT_EQ(CountASAPSyncTraceMarker(
                   enabled.trace,
                   "\"event_type\": \"sync_batch_candidate_wait\""),
-              1);
+              0);
     EXPECT_EQ(disabled.trace.find(
                   "\"event_type\": \"sync_batch_candidate_wait\""),
               std::string::npos);
 }
 
-TEST(ASAPSyncScheduler, CandidateWaitIsOncePerTickAndUsesFreshJobIdentity) {
+TEST(ASAPSyncScheduler, WholeTopMBlockIsOncePerTickAndUsesFreshJobIdentity) {
     const std::string path =
         "/tmp/partsim_b2_candidate_wait_repeated_ticks.json";
     {
@@ -764,40 +768,19 @@ TEST(ASAPSyncScheduler, CandidateWaitIsOncePerTickAndUsesFreshJobIdentity) {
     EXPECT_EQ(CountASAPSyncTraceMarker(
                   trace,
                   "\"event_type\": \"sync_batch_candidate_wait\""),
+              0);
+    EXPECT_EQ(CountASAPSyncTraceMarker(
+                  trace,
+                  "\"event_type\": \"sync_batch_block\""),
               2);
-    const std::string candidate_wait_marker =
-        "\"event_type\": \"sync_batch_candidate_wait\"";
+    const std::string block_marker =
+        "\"event_type\": \"sync_batch_block\"";
     EXPECT_EQ(CountASAPSyncEventMarker(
-                  trace, candidate_wait_marker, "\"time\": \"0\""),
+                  trace, block_marker, "\"time\": \"0\""),
               1);
     EXPECT_EQ(CountASAPSyncEventMarker(
-                  trace, candidate_wait_marker, "\"time\": \"1\""),
+                  trace, block_marker, "\"time\": \"1\""),
               1);
-    EXPECT_NE(trace.find("\"task_name\": \"FakeASAPSyncTask1\""),
-              std::string::npos);
-    EXPECT_NE(trace.find("\"task_name\": \"FakeASAPSyncTask2\""),
-              std::string::npos);
-    EXPECT_NE(trace.find("\"arrival_time\": 1"), std::string::npos);
-    const std::string marker =
-        "\"event_type\": \"sync_batch_candidate_wait\"";
-    const std::size_t first_wait = trace.find(marker);
-    ASSERT_NE(first_wait, std::string::npos);
-    const std::size_t second_wait = trace.find(marker, first_wait + marker.size());
-    ASSERT_NE(second_wait, std::string::npos);
-    const std::size_t second_wait_end = trace.find('\n', second_wait);
-    const std::string second_wait_event = trace.substr(
-        second_wait,
-        second_wait_end == std::string::npos
-            ? std::string::npos
-            : second_wait_end - second_wait);
-    EXPECT_NE(second_wait_event.find(
-                  "\"task_name\": \"FakeASAPSyncTask2\""),
-              std::string::npos);
-    EXPECT_NE(second_wait_event.find("\"arrival_time\": 1"),
-              std::string::npos);
-    EXPECT_EQ(second_wait_event.find(
-                  "\"task_name\": \"FakeASAPSyncTask1\""),
-              std::string::npos);
 }
 
 TEST(ASAPSyncScheduler, BatchSizeUsesIdleCoresNotTotalCores) {

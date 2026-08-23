@@ -54,10 +54,9 @@ namespace RTSim {
     // =====================================================
 
     ALAPSyncTickEvent::ALAPSyncTickEvent(ALAPSyncScheduler *scheduler)
-        : MetaSim::Event("ALAPSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY - 1),
+        : MetaSim::Event("ALAPSyncTickEvent", MetaSim::Event::_DEFAULT_PRIORITY + 10),
           _scheduler(scheduler) {
-        // ⭐ 关键修复：提高tick事件优先级，确保tick事件及时触发
-        // 原优先级_DEFAULT_PRIORITY + 10太低，导致tick事件被延迟
+        // Keep regular ticks after same-timestamp task arrivals.
     }
 
     void ALAPSyncTickEvent::doit() {
@@ -706,11 +705,13 @@ namespace RTSim {
                    !idle_core_batch_affordable) {
             _energy_depleted = true;
             _stats.total_batch_skipped++;
-            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 空闲核 urgent batch 验资失败，continuation保持运行: K=") +
+            SCHEDULER_LOG_WARNING(std::string("⚠️ [ALAP-Sync] 整个Top-M urgent同步组级验资失败，全部挂起: K=") +
                                   std::to_string(idle_core_batch.size()) +
                                   " 批次需能=" + std::to_string(idle_core_batch_energy * 1000.0) + " mJ" +
                                   " continuation需能=" + std::to_string(continuation_energy * 1000.0) + " mJ" +
                                   " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+            selected_tasks.clear();
+            required_group_energy = 0.0;
         } else {
             _energy_depleted = false;
             selected_tasks = desired_tasks;
