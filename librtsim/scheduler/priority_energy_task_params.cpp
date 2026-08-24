@@ -1,6 +1,7 @@
 #include <rtsim/scheduler/priority_energy_task_params.hpp>
 
 #include <cerrno>
+#include <charconv>
 #include <cmath>
 #include <locale>
 #include <sstream>
@@ -23,6 +24,7 @@ private:
 };
 
 const char *const kFactorKey = "task_energy_factor";
+const char *const kFixedPriorityRankKey = "fixed_priority_rank";
 
 bool isAsciiWhitespace(char character) {
     switch (character) {
@@ -87,6 +89,32 @@ double parseFactorValue(const std::string &value_text) {
     return value;
 }
 
+std::int64_t parseFixedPriorityRankValue(const std::string &value_text) {
+    if (value_text.empty()) {
+        throw std::invalid_argument(
+            "fixed_priority_rank: value is empty");
+    }
+    for (const char character : value_text) {
+        if (character < '0' || character > '9') {
+            throw std::invalid_argument(
+                "fixed_priority_rank: value must be a non-negative decimal integer");
+        }
+    }
+
+    std::int64_t value = 0;
+    const auto result = std::from_chars(
+        value_text.data(), value_text.data() + value_text.size(), value, 10);
+    if (result.ec == std::errc::result_out_of_range) {
+        throw std::invalid_argument(
+            "fixed_priority_rank: integer overflow");
+    }
+    if (result.ec != std::errc{} || result.ptr != value_text.data() + value_text.size()) {
+        throw std::invalid_argument(
+            "fixed_priority_rank: value must be a non-negative decimal integer");
+    }
+    return value;
+}
+
 }  // namespace
 
 double parsePriorityEnergyTaskFactor(const std::string &params) {
@@ -129,6 +157,49 @@ double parsePriorityEnergyTaskFactor(const std::string &params) {
     }
 
     return factor;
+}
+
+std::optional<std::int64_t>
+parseFixedPriorityRank(const std::string &params) {
+    const ErrnoGuard errno_guard;
+    bool found = false;
+    std::optional<std::int64_t> rank;
+
+    std::size_t token_begin = 0;
+    while (token_begin <= params.size()) {
+        const std::size_t comma = params.find(',', token_begin);
+        const std::size_t token_end =
+            comma == std::string::npos ? params.size() : comma;
+        const std::string token = trimAsciiWhitespace(
+            params.substr(token_begin, token_end - token_begin));
+
+        const std::size_t equals = token.find('=');
+        if (equals == std::string::npos) {
+            if (trimAsciiWhitespace(token) == kFixedPriorityRankKey) {
+                throw std::invalid_argument(
+                    "fixed_priority_rank: missing '=' and value");
+            }
+        } else {
+            const std::string key =
+                trimAsciiWhitespace(token.substr(0, equals));
+            if (key == kFixedPriorityRankKey) {
+                if (found) {
+                    throw std::invalid_argument(
+                        "fixed_priority_rank: duplicate key");
+                }
+                found = true;
+                rank = parseFixedPriorityRankValue(trimAsciiWhitespace(
+                    token.substr(equals + 1)));
+            }
+        }
+
+        if (comma == std::string::npos) {
+            break;
+        }
+        token_begin = comma + 1;
+    }
+
+    return rank;
 }
 
 }  // namespace RTSim

@@ -401,7 +401,8 @@ namespace RTSim {
             lhs_model->getRMPriority() != rhs_model->getRMPriority()) {
             return lhs_model->getRMPriority() < rhs_model->getRMPriority();
         }
-        if (lhs && rhs && lhs->getPeriod() != rhs->getPeriod()) {
+        if ((!lhs_model || !rhs_model) && lhs && rhs &&
+            lhs->getPeriod() != rhs->getPeriod()) {
             return lhs->getPeriod() < rhs->getPeriod();
         }
         if (lhs && rhs) {
@@ -829,6 +830,7 @@ namespace RTSim {
         MetaSim::Tick arrival_offset = 0;
         std::string workload = "bzip2";
         const double energy_coeff = parsePriorityEnergyTaskFactor(params);
+        const auto fixed_priority_rank = parseFixedPriorityRank(params);
 
         size_t period_pos = params.find("period=");
         if (period_pos != std::string::npos) {
@@ -867,6 +869,10 @@ namespace RTSim {
 
         // 创建任务模型
         ASAPNonBlockTaskModel *model = new ASAPNonBlockTaskModel(task, period, wcet, workload, energy_coeff, arrival_offset);
+        if (fixed_priority_rank.has_value()) {
+            model->changePriority(MetaSim::Tick(
+                static_cast<MetaSim::Tick::impl_t>(*fixed_priority_rank)));
+        }
 
         // ⭐ 关键修复：先将模型添加到映射，再计算能量
         enqueueModel(model);

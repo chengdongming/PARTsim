@@ -206,6 +206,9 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--samples-per-cell", type=int, default=1)
     parser.add_argument("--cells")
     parser.add_argument("--schedulers")
+    parser.add_argument(
+        "--priority-policy", choices=("RM", "DM"), default="RM",
+    )
     parser.add_argument("--processors", type=int, default=perf_g.PROCESSORS)
     parser.add_argument("--tasks", type=int, default=perf_g.TASK_COUNT)
     parser.add_argument("--period-min", type=int, default=perf_g.PERIOD_MIN_MS)
@@ -251,7 +254,11 @@ def main(argv: list[str] | None = None) -> int:
         args.schedulers if args.schedulers is not None
         else ",".join(perf_g.FORMAL_SCHEDULERS)
     )
-    is_frozen_main_figure = tuple(cells) == tuple(experiment.FORMAL_CELLS)
+    priority_policy = args.priority_policy
+    is_frozen_main_figure = (
+        tuple(cells) == tuple(experiment.FORMAL_CELLS)
+        and priority_policy == "RM"
+    )
     try:
         figure_slices = experiment.resolve_figure_slices(
             cells,
@@ -276,6 +283,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             experiment.validate_frozen_main_figure(
                 cells, schedulers, horizon_ms=args.simulation_horizon,
+                priority_policy=priority_policy,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
@@ -288,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
         "experiment": "scheduler-load-cross-v2", "seed": args.seed, "workers": args.workers,
         "samples_per_cell": args.samples_per_cell, "cells": [[str(uc), str(ue)] for uc, ue in cells],
         "schedulers": list(schedulers), "processors": args.processors, "tasks": args.tasks,
+        "priority_policy": priority_policy,
         "period_min": args.period_min, "period_max": args.period_max,
         "min_task_util": str(min_util), "max_task_util": str(max_util),
         "util_tolerance_total": str(tolerance), "rho": str(rho), "latency": str(latency),
@@ -303,6 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         "campaign_contract": {
             "name": "ordinary-general-random-nine-scheduler-main-figures-v1"
             if is_frozen_main_figure else "scheduler-load-cross-custom",
+            "priority_policy": priority_policy,
             "wholepass": "all_adjudicable_jobs_on_time_taskset_level",
             "frozen_main_figure": is_frozen_main_figure,
             "unique_cell_count": len(set(cells)),
@@ -325,6 +335,13 @@ def main(argv: list[str] | None = None) -> int:
             key: value for key, value in (stored_config or {}).items()
             if key not in runtime_keys
         }
+        if "priority_policy" not in stored_comparable and priority_policy == "RM":
+            stored_comparable["priority_policy"] = "RM"
+            stored_contract = stored_comparable.get("campaign_contract")
+            if isinstance(stored_contract, dict) and "priority_policy" not in stored_contract:
+                stored_comparable["campaign_contract"] = {
+                    **stored_contract, "priority_policy": "RM",
+                }
         requested_comparable = {
             key: value for key, value in config.items() if key not in runtime_keys
         }
@@ -365,7 +382,10 @@ def main(argv: list[str] | None = None) -> int:
     rows = [experiment.taskset_row(taskset, args.processors) for taskset in tasksets]
     write_jsonl(root / "tasksets.jsonl", rows)
     request_started = time.perf_counter()
-    requests = experiment.request_rows(tasksets, cells, schedulers, args.simulation_horizon)
+    requests = experiment.request_rows(
+        tasksets, cells, schedulers, args.simulation_horizon,
+        priority_policy=priority_policy,
+    )
     write_jsonl(root / "requests.jsonl", requests)
     request_build_seconds = time.perf_counter() - request_started
     raw_trace = tuple(experiment.construct_paired_harvest_trace(
@@ -376,6 +396,8 @@ def main(argv: list[str] | None = None) -> int:
     results_path = root / "results.jsonl"
     attempts_path = root / "attempts.jsonl"
     existing = read_jsonl(results_path) if args.resume else []
+    if any(row.get("priority_policy", "RM") != priority_policy for row in existing):
+        raise SystemExit("persisted results priority policy does not match requested policy")
     existing_ids = [str(row.get("request_id")) for row in existing]
     expected_ids = {str(row["request_id"]) for row in requests}
     if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
@@ -416,6 +438,7 @@ def main(argv: list[str] | None = None) -> int:
         simulation = {
             "simulator_bin": str(args.simulator), "horizon": args.simulation_horizon,
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
+            "priority_policy": priority_policy,
             "warmup": 0, "minimum_jobs_per_task": 1, "trace_mode": "semantic",
             "trace_on_failure": args.keep_traces,
             "retain_trace": args.keep_traces,
