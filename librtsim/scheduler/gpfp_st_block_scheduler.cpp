@@ -343,6 +343,14 @@ namespace RTSim {
             return;
         }
 
+        // A task that was killed while waiting for charge may not pass through
+        // MRTKernel::onEnd().  Clear only an inactive current charge head;
+        // extract()/reinsert() remains a temporary scheduling operation and
+        // therefore preserves an active hold.
+        if (_st_charge_blocked_task && !_st_charge_blocked_task->isActive()) {
+            clearSTChargeStateIfBlockedTask(_st_charge_blocked_task);
+        }
+
         SCHEDULER_LOG_INFO(std::string("🔄 [ST-Block] ===== Tick ") +
                            std::to_string(static_cast<int64_t>(current_time)) + "ms =====");
         SCHEDULER_LOG_INFO("⚡ 初始能量: " + std::to_string(_current_energy * 1000) + " mJ");
@@ -388,6 +396,7 @@ namespace RTSim {
         }
 
         // ========== PFPST charging gate ==========
+        AbsRTTask *charging_hold_task = nullptr;
         if (_is_charging_sleep || _deep_charging) {
             Tick blocked_slack = _st_charge_blocked_task
                 ? calculateSlackForTask(_st_charge_blocked_task)
@@ -418,13 +427,16 @@ namespace RTSim {
                 SCHEDULER_LOG_INFO(std::string("🔓 [ST-Block] PFPST charge release: ") +
                                   release_reason);
             } else {
-                logSTChargeEvent("st_charge_hold",
-                                 _st_charge_blocked_task,
-                                 _st_charge_required_energy,
-                                 _st_charge_slack_at_begin);
-                SCHEDULER_LOG_INFO(std::string("😴 [ST-Block] PFPST charge hold: ") +
-                                  " energy=" + std::to_string(_current_energy * 1000) +
-                                  "mJ slack=" + std::to_string(blocked_slack_ms) + "ms");
+                if (_st_charge_blocked_task) {
+                    charging_hold_task = _st_charge_blocked_task;
+                    logSTChargeEvent("st_charge_hold",
+                                     _st_charge_blocked_task,
+                                     _st_charge_required_energy,
+                                     _st_charge_slack_at_begin);
+                    SCHEDULER_LOG_INFO(std::string("😴 [ST-Block] PFPST charge hold: ") +
+                                      " energy=" + std::to_string(_current_energy * 1000) +
+                                      "mJ slack=" + std::to_string(blocked_slack_ms) + "ms");
+                } else {
 
                 if (!_kernel) {
                     _kernel = getKernel();
@@ -546,6 +558,7 @@ namespace RTSim {
                 }
                 return;
             }
+            }
         }
 
         // ⭐ Bug修复3：能量耗尽时跳过任务调度（但已经收集了太阳能）
@@ -635,6 +648,12 @@ namespace RTSim {
 
         std::vector<AbsRTTask *> previous_selection = _dispatch_selection_order;
         std::vector<AbsRTTask *> active_tasks = collectActiveJobs(current_time);
+        if (charging_hold_task &&
+            std::find(active_tasks.begin(), active_tasks.end(),
+                      charging_hold_task) == active_tasks.end() &&
+            charging_hold_task->getRemainingWCET() > 0.0) {
+            active_tasks.push_back(charging_hold_task);
+        }
         sortByRMPriority(active_tasks);
 
         resetTickDispatchState();
@@ -643,9 +662,14 @@ namespace RTSim {
         double reserved_energy = 0.0;
         const double epsilon = 1e-9;
         const size_t processor_count = running_tasks_map.size();
-        AbsRTTask *blocking_task = nullptr;
+        AbsRTTask *blocking_task = charging_hold_task;
 
         for (AbsRTTask *task : active_tasks) {
+            if (task == charging_hold_task) {
+                blocking_task = task;
+                break;
+            }
+
             if (_dispatch_selection_order.size() >= processor_count) {
                 break;
             }
@@ -669,6 +693,10 @@ namespace RTSim {
 
         _alap_blocking = (blocking_task != nullptr);
         _energy_depleted = _dispatch_selection_order.empty() && !active_tasks.empty();
+        const bool charge_head_changed =
+            charging_hold_task &&
+            blocking_task &&
+            blocking_task != charging_hold_task;
         std::vector<AbsRTTask *> timing_wait_tasks;
         double observation_available_energy = _current_energy;
         if (blocking_task) {
@@ -677,38 +705,49 @@ namespace RTSim {
             if (slack_ms > 0) {
                 _deep_charging = true;
                 _is_charging_sleep = true;
-                _energy_depleted = true;
-                _st_charge_blocked_task = blocking_task;
-                _st_charge_required_energy =
-                    getConfiguredUnitEnergyForTask(blocking_task);
-                _st_charge_slack_at_begin = slack;
+                if (!charging_hold_task || charge_head_changed) {
+                    _st_charge_blocked_task = blocking_task;
+                    _st_charge_required_energy =
+                        getConfiguredUnitEnergyForTask(blocking_task);
+                    _st_charge_slack_at_begin = slack;
+                }
                 const double decision_available_energy =
                     std::max(0.0, _current_energy - reserved_energy);
                 observation_available_energy = decision_available_energy;
-                logSTChargeEvent("st_charge_begin",
-                                 blocking_task,
-                                 _st_charge_required_energy,
-                                 _st_charge_slack_at_begin,
-                                 decision_available_energy);
-
-                _dispatch_selection_order.clear();
-                _counted_tasks_in_dispatch.clear();
-                reserved_energy = 0.0;
-                _dispatching_tasks_total_energy = 0.0;
+                if (!charging_hold_task || charge_head_changed) {
+                    logSTChargeEvent(charge_head_changed
+                                         ? "st_charge_head_replace"
+                                         : "st_charge_begin",
+                                     blocking_task,
+                                     _st_charge_required_energy,
+                                     _st_charge_slack_at_begin,
+                                     decision_available_energy);
+                }
                 timing_wait_tasks.push_back(blocking_task);
 
-                Tick wake_time =
-                    computeSafeWakeTimeFromOffset(std::max<int64_t>(0, slack_ms));
-                if (_wake_event) {
-                    _wake_event->drop();
-                    delete _wake_event;
+                if (!charging_hold_task || charge_head_changed) {
+                    Tick wake_time =
+                        computeSafeWakeTimeFromOffset(std::max<int64_t>(0, slack_ms));
+                    if (_wake_event) {
+                        _wake_event->drop();
+                        delete _wake_event;
+                    }
+                    _wake_event = new STBlockWakeEvent(this, wake_time);
+                    _wake_event->post(wake_time);
+                    SCHEDULER_LOG_INFO(std::string("🔒 [ST-Block] PFPST charge begin: ") +
+                                       getTaskName(blocking_task) +
+                                       " slack=" + std::to_string(slack_ms) + "ms");
                 }
-                _wake_event = new STBlockWakeEvent(this, wake_time);
-                _wake_event->post(wake_time);
-                SCHEDULER_LOG_INFO(std::string("🔒 [ST-Block] PFPST charge begin: ") +
-                                   getTaskName(blocking_task) +
-                                   " slack=" + std::to_string(slack_ms) + "ms");
             } else {
+                if (charge_head_changed) {
+                    clearSTChargeStateIfBlockedTask(charging_hold_task);
+                    // The new blocking task still governs this tick.  Restore
+                    // the non-head flags cleared by the lifecycle helper.
+                    _alap_blocking = (blocking_task != nullptr);
+                    _energy_depleted =
+                        _dispatch_selection_order.empty() &&
+                        !active_tasks.empty();
+                }
                 _deep_charging = false;
                 _is_charging_sleep = false;
             }
@@ -795,6 +834,7 @@ namespace RTSim {
             const bool head_st_charging_opportunity =
                 processor_count > 0 &&
                 charge_wait &&
+                (!charging_hold_task || charge_head_changed) &&
                 !active_tasks.empty() &&
                 blocking_task == active_tasks.front();
             _trace_logger->observeDecision(makeOwnedDecisionRecord(
@@ -1112,6 +1152,7 @@ namespace RTSim {
 
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearSTChargeStateIfBlockedTask(task);
         clearPersistentTaskState(task);
 
         auto it = _task_models.find(task);
@@ -1881,6 +1922,28 @@ namespace RTSim {
         }
     }
 
+    void STBlockScheduler::clearSTChargeStateIfBlockedTask(AbsRTTask *task) {
+        if (!task || _st_charge_blocked_task != task) {
+            return;
+        }
+
+        if (_wake_event) {
+            _wake_event->drop();
+            delete _wake_event;
+            _wake_event = nullptr;
+        }
+
+        _st_charge_blocked_task = nullptr;
+        _st_charge_required_energy = 0.0;
+        _st_charge_slack_at_begin = 0;
+        _deep_charging = false;
+        _is_charging_sleep = false;
+        _energy_depleted = false;
+        _alap_blocking = false;
+        _charge_start_time = 0;
+        _charge_until_slack_zero = 0;
+    }
+
     void STBlockScheduler::accountInitialEnergyForSelectedTasks(const std::string &log_prefix) {
         for (AbsRTTask *task : _counted_tasks_in_dispatch) {
             if (_energy_deducted_tasks.find(task) != _energy_deducted_tasks.end()) {
@@ -2020,6 +2083,7 @@ namespace RTSim {
         // 从就绪队列移除
         removeFromReadyQueue(task);
         removeFromWaitingQueue(task);
+        clearSTChargeStateIfBlockedTask(task);
         clearPersistentTaskState(task);
 
         // 从运行任务映射中移除

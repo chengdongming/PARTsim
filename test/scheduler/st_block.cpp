@@ -86,6 +86,7 @@ public:
     }
 
     void markRunningWithoutScheduleCount() { state = TSK_EXEC; }
+    void markIdle() { state = TSK_IDLE; }
 };
 
 class STBlockTestActionEvent : public MetaSim::Event {
@@ -411,16 +412,16 @@ TEST(STBlockScheduler, CumulativePrefixEnergyReservation) {
     STBlockSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
 
-    EXPECT_EQ(first.getScheduleCount(), 0);
+    EXPECT_EQ(first.getScheduleCount(), 1);
     EXPECT_EQ(second.getScheduleCount(), 0);
     EXPECT_TRUE(scheduler.isChargingSleepActive());
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
 
     simulation.endSingleRun();
 }
 
 TEST(STBlockScheduler,
-     ChargingSleepDoesNotLetAffordablePrefixRunForFreeAcrossTicks) {
+     ChargingHoldPreservesAffordablePrefixAndChargesItNormally) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTBlockScheduler scheduler;
     CPU cpu0("st-block-charging-prefix-cpu0", nullptr);
@@ -444,8 +445,8 @@ TEST(STBlockScheduler,
 
     STBlockSchedulerTestPeer::tick(scheduler);
     simulation.run_to(Tick(0));
-    ASSERT_FALSE(affordable.isExecuting());
-    ASSERT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
+    ASSERT_TRUE(affordable.isExecuting());
+    ASSERT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 1.0);
     ASSERT_TRUE(scheduler.isChargingSleepActive());
 
     STBlockTestActionEvent next_tick([&]() {
@@ -455,11 +456,11 @@ TEST(STBlockScheduler,
     next_tick.post(Tick(1));
     simulation.run_to(Tick(1));
 
-    EXPECT_FALSE(affordable.isExecuting());
+    EXPECT_TRUE(affordable.isExecuting());
     EXPECT_EQ(blocked.getScheduleCount(), 0);
     EXPECT_TRUE(scheduler.isChargingSleepActive());
-    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.5);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 2.0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.5);
 
     simulation.endSingleRun();
 }
@@ -510,6 +511,433 @@ TEST(STBlockScheduler,
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 2.0);
     EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 1.0);
     EXPECT_EQ(STBlockSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, HigherPriorityAffordableArrivalDuringChargeHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-higher-arrival-affordable-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask blocked(2, 10, 20, 1.0);
+    FakeSTBlockTask low(3, 20, 20, 1.0);
+    FakeSTBlockTask high(1, 5, 20, 1.0, 1);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &blocked, 10, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 0.5);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 1.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    blocked.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &blocked);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &blocked);
+
+    STBlockTestActionEvent high_arrival([&]() {
+        high.releaseAt(Tick(1));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &high);
+        scheduler._current_energy = 1.0;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    high_arrival.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(high.getScheduleCount(), 1);
+    EXPECT_EQ(blocked.getScheduleCount(), 0);
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(scheduler._st_charge_blocked_task, &blocked);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, HigherPriorityUnaffordableArrivalReplacesChargeHead) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-higher-arrival-unaffordable-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask blocked(2, 10, 20, 1.0);
+    FakeSTBlockTask low(3, 20, 20, 1.0);
+    FakeSTBlockTask high(1, 5, 20, 1.0, 1);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &blocked, 10, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 0.5);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &high, 5, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    blocked.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &blocked);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &blocked);
+
+    STBlockTestActionEvent high_arrival([&]() {
+        high.releaseAt(Tick(1));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &high);
+        scheduler._current_energy = 1.0;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    high_arrival.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(high.getScheduleCount(), 0);
+    EXPECT_EQ(blocked.getScheduleCount(), 0);
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(scheduler._st_charge_blocked_task, &high);
+    EXPECT_NE(scheduler._st_charge_blocked_task, &blocked);
+    EXPECT_DOUBLE_EQ(scheduler._st_charge_required_energy, 2.0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler,
+     HigherPriorityExhaustedSlackArrivalSupersedesChargeHeadWithoutStaleHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu0("st-block-exhausted-slack-replacement-cpu0", nullptr);
+    CPU cpu1("st-block-exhausted-slack-replacement-cpu1", nullptr);
+    TestSTBlockMRTKernel kernel(
+        &scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTBlockTask old_head(3, 10, 20, 1.0);
+    FakeSTBlockTask low(4, 20, 20, 1.0);
+    FakeSTBlockTask new_head(2, 5, 1, 1.0, 1);
+    FakeSTBlockTask affordable_prefix(1, 3, 20, 1.0, 1);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &old_head, 10, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 0.5);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &new_head, 5, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &affordable_prefix, 3, 1, 0.5);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    old_head.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &old_head);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &old_head);
+    ASSERT_NE(scheduler._wake_event, nullptr);
+
+    STBlockTestActionEvent exhausted_slack_arrival([&]() {
+        affordable_prefix.releaseAt(Tick(1));
+        new_head.releaseAt(Tick(1));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &affordable_prefix);
+        STBlockSchedulerTestPeer::enqueue(scheduler, &new_head);
+        scheduler._current_energy = 1.0;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    exhausted_slack_arrival.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(affordable_prefix.getScheduleCount(), 1);
+    EXPECT_EQ(new_head.getScheduleCount(), 0);
+    EXPECT_EQ(old_head.getScheduleCount(), 0);
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_EQ(scheduler._wake_event, nullptr);
+    EXPECT_FALSE(scheduler._deep_charging);
+    EXPECT_FALSE(scheduler._is_charging_sleep);
+
+    STBlockTestActionEvent next_tick([&]() {
+        scheduler._current_energy = 0.5;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    next_tick.post(Tick(2));
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_EQ(scheduler._wake_event, nullptr);
+    EXPECT_FALSE(scheduler._deep_charging);
+    EXPECT_FALSE(scheduler._is_charging_sleep);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler,
+     CpuCapacityDoesNotSupersedeChargeHeadWithUnaffordableTask) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-capacity-preserves-charge-head-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask old_head(3, 10, 20, 1.0);
+    FakeSTBlockTask low(4, 20, 20, 1.0);
+    FakeSTBlockTask new_task(2, 5, 1, 1.0, 1);
+    FakeSTBlockTask affordable_prefix(1, 3, 20, 1.0, 1);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &old_head, 10, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 0.5);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &new_task, 5, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &affordable_prefix, 3, 1, 0.5);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    old_head.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &old_head);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    STBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &old_head);
+    auto *old_wake_event = scheduler._wake_event;
+    ASSERT_NE(old_wake_event, nullptr);
+
+    STBlockTestActionEvent capacity_full_arrival([&]() {
+        affordable_prefix.releaseAt(Tick(1));
+        new_task.releaseAt(Tick(1));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &affordable_prefix);
+        STBlockSchedulerTestPeer::enqueue(scheduler, &new_task);
+        scheduler._current_energy = 1.0;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    capacity_full_arrival.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(affordable_prefix.getScheduleCount(), 1);
+    EXPECT_EQ(new_task.getScheduleCount(), 0);
+    EXPECT_EQ(old_head.getScheduleCount(), 0);
+    EXPECT_EQ(low.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler._st_charge_blocked_task, &old_head);
+    EXPECT_EQ(scheduler._wake_event, old_wake_event);
+    EXPECT_TRUE(scheduler._deep_charging);
+    EXPECT_TRUE(scheduler._is_charging_sleep);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, BlockedTaskCompletionClearsChargingHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-completion-cleanup-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &task, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+    STBlockSchedulerTestPeer::tick(scheduler);
+
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &task);
+    ASSERT_NE(scheduler._wake_event, nullptr);
+    scheduler.onTaskEnd(&task);
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_FALSE(scheduler._energy_depleted);
+    EXPECT_EQ(scheduler._wake_event, nullptr);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, RemoveTaskClearsChargingHoldAndWakeEvent) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-remove-cleanup-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &task, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+    STBlockSchedulerTestPeer::tick(scheduler);
+
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &task);
+    ASSERT_NE(scheduler._wake_event, nullptr);
+    scheduler.removeTask(&task);
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(scheduler._wake_event, nullptr);
+    EXPECT_EQ(scheduler._task_models.find(&task), scheduler._task_models.end());
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, PeriodicNextJobDoesNotInheritCompletedChargeHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-periodic-cleanup-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &task, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+    STBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &task);
+
+    scheduler.onTaskEnd(&task);
+    task.releaseAt(Tick(1));
+    STBlockTestActionEvent next_job([&]() {
+        scheduler._current_energy = 2.0;
+        STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    next_job.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(task.getScheduleCount(), 1);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, TemporaryExtractInsertPreservesChargingHold) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-extract-preserves-hold-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &task, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+    STBlockSchedulerTestPeer::tick(scheduler);
+
+    auto *wake_event = scheduler._wake_event;
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &task);
+    ASSERT_NE(wake_event, nullptr);
+
+    scheduler.extract(&task);
+    scheduler.insert(&task);
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, &task);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(scheduler._wake_event, wake_event);
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, InactiveBlockedHeadIsClearedBeforeNextTick) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-stale-head-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask task(1, 20, 20, 1.0);
+
+    STBlockSchedulerTestPeer::addTaskModel(scheduler, &task, 20, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    task.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &task);
+    STBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_NE(scheduler._wake_event, nullptr);
+
+    task.markIdle();
+    STBlockTestActionEvent stale_head_tick([&]() {
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    stale_head_tick.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_EQ(scheduler._wake_event, nullptr);
+
+    // The old wake time must no longer carry a live charging callback/state.
+    simulation.run_to(Tick(25));
+    EXPECT_EQ(scheduler._st_charge_blocked_task, nullptr);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+
+    simulation.endSingleRun();
+}
+
+TEST(STBlockScheduler, EndingOldHeadDoesNotClearReplacementHead) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTBlockScheduler scheduler;
+    CPU cpu("st-block-replacement-cleanup-cpu", nullptr);
+    TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+    FakeSTBlockTask old_head(2, 10, 20, 1.0);
+    FakeSTBlockTask low(3, 20, 20, 1.0);
+    FakeSTBlockTask new_head(1, 5, 20, 1.0, 1);
+
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &old_head, 10, 1, 2.0);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &low, 20, 1, 0.5);
+    STBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &new_head, 5, 1, 2.0);
+
+    simulation.initSingleRun();
+    STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    old_head.releaseAt(Tick(0));
+    low.releaseAt(Tick(0));
+    STBlockSchedulerTestPeer::enqueue(scheduler, &old_head);
+    STBlockSchedulerTestPeer::enqueue(scheduler, &low);
+    STBlockSchedulerTestPeer::tick(scheduler);
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &old_head);
+
+    STBlockTestActionEvent replace_head([&]() {
+        new_head.releaseAt(Tick(1));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &new_head);
+        scheduler._current_energy = 1.0;
+        STBlockSchedulerTestPeer::tick(scheduler);
+    });
+    replace_head.post(Tick(1));
+    simulation.run_to(Tick(1));
+    ASSERT_EQ(scheduler._st_charge_blocked_task, &new_head);
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+
+    scheduler.onTaskEnd(&old_head);
+
+    EXPECT_EQ(scheduler._st_charge_blocked_task, &new_head);
+    EXPECT_TRUE(scheduler.isChargingSleepActive());
+    EXPECT_NE(scheduler._wake_event, nullptr);
 
     simulation.endSingleRun();
 }
@@ -716,15 +1144,16 @@ TEST(STBlockScheduler, ChargingSleepReleasesWhenSlackExhausted) {
     ASSERT_TRUE(scheduler.isChargingSleepActive());
 
     STBlockTestActionEvent slack_exhausted([&]() {
+        scheduler._current_energy = 2.0;
         STBlockSchedulerTestPeer::tick(scheduler);
     });
     slack_exhausted.post(Tick(1));
     simulation.run_to(Tick(1));
 
     EXPECT_FALSE(scheduler.isChargingSleepActive());
-    EXPECT_EQ(high.getScheduleCount(), 0);
+    EXPECT_EQ(high.getScheduleCount(), 1);
     EXPECT_EQ(low.getScheduleCount(), 0);
-    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
 
     simulation.endSingleRun();
 }
