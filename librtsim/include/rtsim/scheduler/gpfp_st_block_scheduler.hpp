@@ -232,6 +232,7 @@ namespace RTSim {
         void clearTaskTickSelection(AbsRTTask *task);
         void markTaskSelectedThisTick(AbsRTTask *task);
         void clearPersistentTaskState(AbsRTTask *task);
+        void clearSTChargeStateIfBlockedTask(AbsRTTask *task);
         void accountInitialEnergyForSelectedTasks(const std::string &log_prefix);
         std::vector<AbsRTTask *> collectActiveJobs(MetaSim::Tick current_time);
         bool hasHigherRMPriority(AbsRTTask *lhs, AbsRTTask *rhs);
