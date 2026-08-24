@@ -828,7 +828,7 @@ TEST(PriorityEnergyTaskFactorIntegration,
 }
 
 template <typename SchedulerType>
-std::vector<AbsRTTask *> sortedTwoTaskPriorityOrder(bool use_dm) {
+std::vector<int> sortedTwoTaskPriorityOrder(bool use_dm) {
     PriorityEnergyTestTask task_a(1, 10, 9);
     PriorityEnergyTestTask task_b(2, 20, 5);
     SchedulerType scheduler;
@@ -841,10 +841,13 @@ std::vector<AbsRTTask *> sortedTwoTaskPriorityOrder(bool use_dm) {
         : "period=20,wcet=7,arrival_offset=0,workload=hash");
     std::vector<AbsRTTask *> ordered{&task_a, &task_b};
     scheduler.sortByRMPriority(ordered);
-    return ordered;
+    return {
+        ordered[0]->getTaskNumber(),
+        ordered[1]->getTaskNumber(),
+    };
 }
 
-std::vector<AbsRTTask *> sortedSTSyncTwoTaskPriorityOrder(bool use_dm) {
+std::vector<int> sortedSTSyncTwoTaskPriorityOrder(bool use_dm) {
     PriorityEnergyTestTask task_a(1, 10, 9);
     PriorityEnergyTestTask task_b(2, 20, 5);
     STSyncScheduler scheduler;
@@ -856,46 +859,49 @@ std::vector<AbsRTTask *> sortedSTSyncTwoTaskPriorityOrder(bool use_dm) {
         : "period=20,wcet=7,arrival_offset=0,workload=hash");
     scheduler.addToReadyQueue(&task_a);
     scheduler.addToReadyQueue(&task_b);
-    return {scheduler._ready_queue.begin(), scheduler._ready_queue.end()};
+    return {
+        (*scheduler._ready_queue.begin())->getTaskNumber(),
+        (*std::next(scheduler._ready_queue.begin()))->getTaskNumber(),
+    };
 }
 
 TEST(PriorityEnergyFixedPriorityIntegration, NineSchedulersOrderRMAndDM) {
     auto rm_asap_block = sortedTwoTaskPriorityOrder<ASAPBlockScheduler>(false);
     auto dm_asap_block = sortedTwoTaskPriorityOrder<ASAPBlockScheduler>(true);
-    EXPECT_EQ(rm_asap_block[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_asap_block[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_asap_block[0], 1);
+    EXPECT_EQ(dm_asap_block[0], 2);
     auto rm_asap_nonblock = sortedTwoTaskPriorityOrder<ASAPNonBlockScheduler>(false);
     auto dm_asap_nonblock = sortedTwoTaskPriorityOrder<ASAPNonBlockScheduler>(true);
-    EXPECT_EQ(rm_asap_nonblock[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_asap_nonblock[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_asap_nonblock[0], 1);
+    EXPECT_EQ(dm_asap_nonblock[0], 2);
     auto rm_asap_sync = sortedTwoTaskPriorityOrder<ASAPSyncScheduler>(false);
     auto dm_asap_sync = sortedTwoTaskPriorityOrder<ASAPSyncScheduler>(true);
-    EXPECT_EQ(rm_asap_sync[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_asap_sync[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_asap_sync[0], 1);
+    EXPECT_EQ(dm_asap_sync[0], 2);
     auto rm_alap_block = sortedTwoTaskPriorityOrder<ALAPBlockScheduler>(false);
     auto dm_alap_block = sortedTwoTaskPriorityOrder<ALAPBlockScheduler>(true);
-    EXPECT_EQ(rm_alap_block[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_alap_block[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_alap_block[0], 1);
+    EXPECT_EQ(dm_alap_block[0], 2);
     auto rm_alap_nonblock = sortedTwoTaskPriorityOrder<ALAPNonBlockScheduler>(false);
     auto dm_alap_nonblock = sortedTwoTaskPriorityOrder<ALAPNonBlockScheduler>(true);
-    EXPECT_EQ(rm_alap_nonblock[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_alap_nonblock[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_alap_nonblock[0], 1);
+    EXPECT_EQ(dm_alap_nonblock[0], 2);
     auto rm_alap_sync = sortedTwoTaskPriorityOrder<ALAPSyncScheduler>(false);
     auto dm_alap_sync = sortedTwoTaskPriorityOrder<ALAPSyncScheduler>(true);
-    EXPECT_EQ(rm_alap_sync[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_alap_sync[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_alap_sync[0], 1);
+    EXPECT_EQ(dm_alap_sync[0], 2);
     auto rm_st_block = sortedTwoTaskPriorityOrder<STBlockScheduler>(false);
     auto dm_st_block = sortedTwoTaskPriorityOrder<STBlockScheduler>(true);
-    EXPECT_EQ(rm_st_block[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_st_block[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_st_block[0], 1);
+    EXPECT_EQ(dm_st_block[0], 2);
     auto rm_st_nonblock = sortedTwoTaskPriorityOrder<STNonBlockScheduler>(false);
     auto dm_st_nonblock = sortedTwoTaskPriorityOrder<STNonBlockScheduler>(true);
-    EXPECT_EQ(rm_st_nonblock[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_st_nonblock[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_st_nonblock[0], 1);
+    EXPECT_EQ(dm_st_nonblock[0], 2);
     auto rm_st_sync = sortedSTSyncTwoTaskPriorityOrder(false);
     auto dm_st_sync = sortedSTSyncTwoTaskPriorityOrder(true);
-    EXPECT_EQ(rm_st_sync[0]->getTaskNumber(), 1);
-    EXPECT_EQ(dm_st_sync[0]->getTaskNumber(), 2);
+    EXPECT_EQ(rm_st_sync[0], 1);
+    EXPECT_EQ(dm_st_sync[0], 2);
 };
 
 TEST(PriorityEnergyTaskFactorIntegration,
