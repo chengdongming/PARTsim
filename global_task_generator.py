@@ -262,7 +262,7 @@ class UUniFastDiscard:
             valid = True
             
             for i in range(n - 1):
-                nextSumU = sumU * (random.random() ** (1.0 / (n - i)))
+                nextSumU = sumU * (random.random() ** (1.0 / (n - i - 1)))
                 util_i = sumU - nextSumU
                 utilizations.append(util_i)
                 sumU = nextSumU
