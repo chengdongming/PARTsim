@@ -14,6 +14,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -60,10 +61,11 @@ private:
     AbsKernel *_kernel;
 
 public:
-    PriorityEnergyTestTask()
-        : _task_number(17),
-          _period(120),
-          _relative_deadline(83),
+    explicit PriorityEnergyTestTask(
+        int task_number = 17, Tick period = 120, Tick relative_deadline = 83)
+        : _task_number(task_number),
+          _period(period),
+          _relative_deadline(relative_deadline),
           _arrival(13),
           _wcet(7.0),
           _remaining_wcet(6.0),
@@ -100,6 +102,7 @@ struct SchedulerEnergySnapshot {
     double total_energy;
     double unit_energy;
     int model_period;
+    int64_t model_priority;
     int model_wcet;
     int64_t model_arrival_offset;
     std::string model_workload;
@@ -133,6 +136,7 @@ SchedulerEnergySnapshot captureSchedulerEnergy(const std::string &params) {
         scheduler.getTaskTotalEnergy(&task),
         scheduler.getTaskUnitEnergy(&task),
         model->getPeriod(),
+        static_cast<int64_t>(model->getRMPriority()),
         model->getWCET(),
         static_cast<int64_t>(model->getArrivalOffset()),
         model->getWorkloadType(),
@@ -206,6 +210,23 @@ void expectFactorErrorPreservesErrno(const std::string &params,
     }
 }
 
+void expectFixedPriorityRankError(const std::string &params) {
+    errno = EDOM;
+    try {
+        (void)parseFixedPriorityRank(params);
+        FAIL() << "expected fixed_priority_rank parsing to fail: " << params;
+    } catch (const std::invalid_argument &error) {
+        EXPECT_EQ(errno, EDOM);
+        EXPECT_NE(std::string(error.what()).find("fixed_priority_rank"),
+                  std::string::npos);
+    } catch (const std::exception &error) {
+        FAIL() << "expected std::invalid_argument, got std::exception: "
+               << error.what();
+    } catch (...) {
+        FAIL() << "expected std::invalid_argument, got non-standard exception";
+    }
+}
+
 template <typename SchedulerType>
 void expectSchedulerRejectsFactor(const std::string &params) {
     PriorityEnergyTestTask task;
@@ -224,6 +245,25 @@ void expectSchedulerRejectsFactor(const std::string &params) {
         FAIL() << "expected std::invalid_argument, got non-standard exception";
     }
 
+    EXPECT_EQ(scheduler._task_models.count(&task), 0u);
+}
+
+template <typename SchedulerType>
+void expectSchedulerRejectsFixedPriorityRank(const std::string &params) {
+    PriorityEnergyTestTask task;
+    SchedulerType scheduler;
+    try {
+        scheduler.addTask(&task, params);
+        FAIL() << "expected scheduler to reject invalid fixed_priority_rank";
+    } catch (const std::invalid_argument &error) {
+        EXPECT_NE(std::string(error.what()).find("fixed_priority_rank"),
+                  std::string::npos);
+    } catch (const std::exception &error) {
+        FAIL() << "expected std::invalid_argument, got std::exception: "
+               << error.what();
+    } catch (...) {
+        FAIL() << "expected std::invalid_argument, got non-standard exception";
+    }
     EXPECT_EQ(scheduler._task_models.count(&task), 0u);
 }
 
@@ -647,6 +687,39 @@ TEST(PriorityEnergyTaskFactorParser, RepeatedCallsAreDeterministic) {
     }
 }
 
+TEST(PriorityEnergyFixedPriorityRankParser, DefaultsAndAcceptedValues) {
+    EXPECT_FALSE(parseFixedPriorityRank(""));
+    EXPECT_EQ(parseFixedPriorityRank("fixed_priority_rank=0"), 0);
+    EXPECT_EQ(parseFixedPriorityRank("period=100, fixed_priority_rank=8"), 8);
+    EXPECT_EQ(parseFixedPriorityRank(
+                  "\t period=100 \r,\v fixed_priority_rank \f= 1 \n"),
+              1);
+}
+
+TEST(PriorityEnergyFixedPriorityRankParser, UnknownTokensRemainCompatible) {
+    EXPECT_FALSE(parseFixedPriorityRank("period=100,legacy_token,workload=hash"));
+    EXPECT_EQ(parseFixedPriorityRank(
+                  "fixed_priority_rank=2,unknown=value,workload=hash"), 2);
+}
+
+TEST(PriorityEnergyFixedPriorityRankParser, RejectsMalformedValues) {
+    const std::vector<std::string> invalid = {
+        "fixed_priority_rank=",
+        "fixed_priority_rank=   ",
+        "fixed_priority_rank=-1",
+        "fixed_priority_rank=1.5",
+        "fixed_priority_rank=1e2",
+        "fixed_priority_rank=abc",
+        "fixed_priority_rank=1x",
+        "fixed_priority_rank",
+        "fixed_priority_rank=1,fixed_priority_rank=2",
+        "fixed_priority_rank=18446744073709551616",
+    };
+    for (const auto &params : invalid) {
+        expectFixedPriorityRankError(params);
+    }
+}
+
 TEST(PriorityEnergyTaskFactorIntegration,
      NineSchedulersDefaultExplicitOneAndDoubleEnergy) {
     const auto defaults = captureAllSchedulers(kBaseParams);
@@ -696,6 +769,7 @@ TEST(PriorityEnergyTaskFactorIntegration,
                             doubles.front().unit_energy);
 
         EXPECT_EQ(explicit_ones[index].model_period, 120);
+        EXPECT_EQ(explicit_ones[index].model_priority, 120);
         EXPECT_EQ(explicit_ones[index].model_wcet, 7);
         EXPECT_EQ(explicit_ones[index].model_arrival_offset, 11);
         EXPECT_EQ(explicit_ones[index].model_workload, "hash");
@@ -725,6 +799,106 @@ TEST(PriorityEnergyTaskFactorIntegration,
 }
 
 TEST(PriorityEnergyTaskFactorIntegration,
+     NineSchedulersApplyOnlyFixedPriorityOverride) {
+    const auto defaults = captureAllSchedulers(kBaseParams);
+    const auto overridden = captureAllSchedulers(
+        kBaseParams + ",fixed_priority_rank=3");
+
+    ASSERT_EQ(overridden.size(), 9u);
+    for (std::size_t index = 0; index < overridden.size(); ++index) {
+        EXPECT_EQ(defaults[index].model_priority, 120);
+        EXPECT_EQ(overridden[index].model_priority, 3);
+        EXPECT_EQ(overridden[index].model_period, defaults[index].model_period);
+        EXPECT_EQ(overridden[index].model_wcet, defaults[index].model_wcet);
+        EXPECT_EQ(overridden[index].model_arrival_offset,
+                  defaults[index].model_arrival_offset);
+        EXPECT_EQ(overridden[index].model_workload,
+                  defaults[index].model_workload);
+        EXPECT_DOUBLE_EQ(overridden[index].factor, defaults[index].factor);
+        EXPECT_DOUBLE_EQ(overridden[index].total_energy,
+                         defaults[index].total_energy);
+        EXPECT_DOUBLE_EQ(overridden[index].unit_energy,
+                         defaults[index].unit_energy);
+        EXPECT_EQ(overridden[index].task_deadline, defaults[index].task_deadline);
+        EXPECT_EQ(overridden[index].task_relative_deadline,
+                  defaults[index].task_relative_deadline);
+        EXPECT_EQ(overridden[index].task_period, defaults[index].task_period);
+        EXPECT_EQ(overridden[index].task_arrival, defaults[index].task_arrival);
+    }
+}
+
+template <typename SchedulerType>
+std::vector<AbsRTTask *> sortedTwoTaskPriorityOrder(bool use_dm) {
+    PriorityEnergyTestTask task_a(1, 10, 9);
+    PriorityEnergyTestTask task_b(2, 20, 5);
+    SchedulerType scheduler;
+    const std::string suffix = use_dm
+        ? ",fixed_priority_rank=1"
+        : "";
+    scheduler.addTask(&task_a, "period=10,wcet=7,arrival_offset=0,workload=hash" + suffix);
+    scheduler.addTask(&task_b, use_dm
+        ? "period=20,wcet=7,arrival_offset=0,workload=hash,fixed_priority_rank=0"
+        : "period=20,wcet=7,arrival_offset=0,workload=hash");
+    std::vector<AbsRTTask *> ordered{&task_a, &task_b};
+    scheduler.sortByRMPriority(ordered);
+    return ordered;
+}
+
+std::vector<AbsRTTask *> sortedSTSyncTwoTaskPriorityOrder(bool use_dm) {
+    PriorityEnergyTestTask task_a(1, 10, 9);
+    PriorityEnergyTestTask task_b(2, 20, 5);
+    STSyncScheduler scheduler;
+    scheduler.addTask(&task_a,
+                      "period=10,wcet=7,arrival_offset=0,workload=hash" +
+                          std::string(use_dm ? ",fixed_priority_rank=1" : ""));
+    scheduler.addTask(&task_b, use_dm
+        ? "period=20,wcet=7,arrival_offset=0,workload=hash,fixed_priority_rank=0"
+        : "period=20,wcet=7,arrival_offset=0,workload=hash");
+    scheduler.addToReadyQueue(&task_a);
+    scheduler.addToReadyQueue(&task_b);
+    return {scheduler._ready_queue.begin(), scheduler._ready_queue.end()};
+}
+
+TEST(PriorityEnergyFixedPriorityIntegration, NineSchedulersOrderRMAndDM) {
+    auto rm_asap_block = sortedTwoTaskPriorityOrder<ASAPBlockScheduler>(false);
+    auto dm_asap_block = sortedTwoTaskPriorityOrder<ASAPBlockScheduler>(true);
+    EXPECT_EQ(rm_asap_block[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_asap_block[0]->getTaskNumber(), 2);
+    auto rm_asap_nonblock = sortedTwoTaskPriorityOrder<ASAPNonBlockScheduler>(false);
+    auto dm_asap_nonblock = sortedTwoTaskPriorityOrder<ASAPNonBlockScheduler>(true);
+    EXPECT_EQ(rm_asap_nonblock[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_asap_nonblock[0]->getTaskNumber(), 2);
+    auto rm_asap_sync = sortedTwoTaskPriorityOrder<ASAPSyncScheduler>(false);
+    auto dm_asap_sync = sortedTwoTaskPriorityOrder<ASAPSyncScheduler>(true);
+    EXPECT_EQ(rm_asap_sync[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_asap_sync[0]->getTaskNumber(), 2);
+    auto rm_alap_block = sortedTwoTaskPriorityOrder<ALAPBlockScheduler>(false);
+    auto dm_alap_block = sortedTwoTaskPriorityOrder<ALAPBlockScheduler>(true);
+    EXPECT_EQ(rm_alap_block[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_alap_block[0]->getTaskNumber(), 2);
+    auto rm_alap_nonblock = sortedTwoTaskPriorityOrder<ALAPNonBlockScheduler>(false);
+    auto dm_alap_nonblock = sortedTwoTaskPriorityOrder<ALAPNonBlockScheduler>(true);
+    EXPECT_EQ(rm_alap_nonblock[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_alap_nonblock[0]->getTaskNumber(), 2);
+    auto rm_alap_sync = sortedTwoTaskPriorityOrder<ALAPSyncScheduler>(false);
+    auto dm_alap_sync = sortedTwoTaskPriorityOrder<ALAPSyncScheduler>(true);
+    EXPECT_EQ(rm_alap_sync[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_alap_sync[0]->getTaskNumber(), 2);
+    auto rm_st_block = sortedTwoTaskPriorityOrder<STBlockScheduler>(false);
+    auto dm_st_block = sortedTwoTaskPriorityOrder<STBlockScheduler>(true);
+    EXPECT_EQ(rm_st_block[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_st_block[0]->getTaskNumber(), 2);
+    auto rm_st_nonblock = sortedTwoTaskPriorityOrder<STNonBlockScheduler>(false);
+    auto dm_st_nonblock = sortedTwoTaskPriorityOrder<STNonBlockScheduler>(true);
+    EXPECT_EQ(rm_st_nonblock[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_st_nonblock[0]->getTaskNumber(), 2);
+    auto rm_st_sync = sortedSTSyncTwoTaskPriorityOrder(false);
+    auto dm_st_sync = sortedSTSyncTwoTaskPriorityOrder(true);
+    EXPECT_EQ(rm_st_sync[0]->getTaskNumber(), 1);
+    EXPECT_EQ(dm_st_sync[0]->getTaskNumber(), 2);
+};
+
+TEST(PriorityEnergyTaskFactorIntegration,
      NineSchedulersRejectInvalidFactorBeforeRegistration) {
     const std::string invalid = kBaseParams + ",task_energy_factor=0";
 
@@ -737,6 +911,20 @@ TEST(PriorityEnergyTaskFactorIntegration,
     expectSchedulerRejectsFactor<STBlockScheduler>(invalid);
     expectSchedulerRejectsFactor<STNonBlockScheduler>(invalid);
     expectSchedulerRejectsFactor<STSyncScheduler>(invalid);
+}
+
+TEST(PriorityEnergyFixedPriorityIntegration,
+     NineSchedulersRejectInvalidRankBeforeRegistration) {
+    const std::string invalid = kBaseParams + ",fixed_priority_rank=-1";
+    expectSchedulerRejectsFixedPriorityRank<ASAPBlockScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<ASAPNonBlockScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<ASAPSyncScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<ALAPBlockScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<ALAPNonBlockScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<ALAPSyncScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<STBlockScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<STNonBlockScheduler>(invalid);
+    expectSchedulerRejectsFixedPriorityRank<STSyncScheduler>(invalid);
 }
 
 }  // namespace

@@ -11,6 +11,10 @@ import pytest
 from experiments.v9_3 import perf_g
 from experiments.v9_3 import scheduler_load_cross as experiment
 from experiments.v9_3.simulation_engine import should_retain_failure_trace
+from experiments.v9_3.simulation_engine import (
+    _render_taskset_yaml, derive_fixed_priority_ranks,
+    normalize_scheduler_priority_policy,
+)
 from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
@@ -58,6 +62,85 @@ def test_frozen_main_figure_has_exactly_16_cells_and_two_slices():
 def test_default_and_explicit_nine_scheduler_lists():
     assert experiment.parse_schedulers(None) == experiment.DEFAULT_SCHEDULERS
     assert experiment.parse_schedulers(",".join(experiment.ALL_SCHEDULERS)) == experiment.ALL_SCHEDULERS
+
+
+def _priority_projection_payload():
+    return [
+        {"task_id": "A", "priority_rank": 0, "C": 3, "D": 9, "T": 10,
+         "P": "5/2", "workload": "hash", "arrival_offset": 0},
+        {"task_id": "B", "priority_rank": 1, "C": 4, "D": 5, "T": 20,
+         "P": "3", "workload": "bzip2", "arrival_offset": 0},
+    ]
+
+
+def test_priority_policy_normalization_and_fail_closed():
+    assert normalize_scheduler_priority_policy(" rm ") == "RM"
+    assert normalize_scheduler_priority_policy("dm") == "DM"
+    for value in ("EDF", "", "garbage", None):
+        with pytest.raises(Exception, match="priority_policy"):
+            normalize_scheduler_priority_policy(value)
+
+
+def test_rm_projection_is_byte_for_byte_backward_compatible():
+    payload = _priority_projection_payload()
+    legacy = _render_taskset_yaml(payload)
+    explicit = _render_taskset_yaml(payload, priority_policy="RM")
+    assert legacy == explicit
+    assert "fixed_priority_rank" not in explicit
+
+
+def test_dm_projection_uses_relative_deadline_and_does_not_mutate_payload():
+    payload = _priority_projection_payload()
+    original = [dict(row) for row in payload]
+    assert derive_fixed_priority_ranks(payload, "DM") == {"A": 1, "B": 0}
+    rendered = _render_taskset_yaml(payload, priority_policy="DM")
+    assert "fixed_priority_rank=1" in rendered
+    assert "fixed_priority_rank=0" in rendered
+    assert payload == original
+    assert [(row["task_id"], row["C"], row["D"], row["T"], row["P"], row["workload"])
+            for row in payload] == [
+                ("A", 3, 9, 10, "5/2", "hash"),
+                ("B", 4, 5, 20, "3", "bzip2"),
+            ]
+
+
+def test_dm_priority_tie_breaks_are_deterministic_and_d_equals_t_matches_rm():
+    payload = [
+        {"task_id": "A", "priority_rank": 0, "C": 1, "D": 5, "T": 10},
+        {"task_id": "B", "priority_rank": 1, "C": 1, "D": 5, "T": 20},
+        {"task_id": "C", "priority_rank": 2, "C": 1, "D": 5, "T": 20},
+    ]
+    assert derive_fixed_priority_ranks(payload, "DM") == {"A": 0, "B": 1, "C": 2}
+    implicit = [
+        {"task_id": "A", "priority_rank": 0, "C": 1, "D": 10, "T": 10},
+        {"task_id": "B", "priority_rank": 1, "C": 1, "D": 20, "T": 20},
+    ]
+    assert derive_fixed_priority_ranks(implicit, "DM") == {"A": 0, "B": 1}
+
+
+def test_rm_and_dm_request_identity_is_paired_but_distinct():
+    class Taskset:
+        taskset_id = "same-taskset"
+        semantic_hash = "same-hash"
+        target_utilization = Fraction(2)
+        actual_utilization = Fraction(2)
+        processors = 4
+        taskset_index = 0
+        seed = 9
+
+    rm = experiment.request_rows(
+        [Taskset()], ((Fraction(1, 2), Fraction(1, 5)),),
+        ("ASAP-BLOCK",), 2000, priority_policy="RM",
+    )[0]
+    dm = experiment.request_rows(
+        [Taskset()], ((Fraction(1, 2), Fraction(1, 5)),),
+        ("ASAP-BLOCK",), 2000, priority_policy="DM",
+    )[0]
+    assert rm["taskset_id"] == dm["taskset_id"]
+    assert rm["taskset_hash"] == dm["taskset_hash"]
+    assert rm["priority_policy"] == "RM"
+    assert dm["priority_policy"] == "DM"
+    assert rm["request_id"] != dm["request_id"]
 
 
 def test_nine_scheduler_mapping_is_complete_and_unique():
@@ -782,10 +865,18 @@ def test_runner_migrates_legacy_resume_config_with_unambiguous_slices(tmp_path, 
     config_path = output / "run_config.json"
     config = json.loads(config_path.read_text())
     expected_slices = config.pop("figure_slices")
+    config.pop("priority_policy")
+    config["campaign_contract"].pop("priority_policy")
     config_path.write_text(json.dumps(config), encoding="utf-8")
     assert scheduler_runner.main(_scheduler_runner_args(output, resume=True)) == 0
     migrated = json.loads(config_path.read_text())
     assert migrated["figure_slices"] == expected_slices
+    assert migrated["priority_policy"] == "RM"
+    assert migrated["campaign_contract"]["priority_policy"] == "RM"
+    with pytest.raises(SystemExit, match="resume configuration mismatch"):
+        scheduler_runner.main(_scheduler_runner_args(
+            output, resume=True, cells="0.1:0.4", fixed_ue=None, fixed_uc=None,
+        ) + ["--priority-policy", "DM"])
 
 
 def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_path, monkeypatch):

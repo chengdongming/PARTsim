@@ -12,7 +12,10 @@ from typing import Any, Mapping, Sequence
 from . import perf_g
 from .cell_model import expand_cells
 from .config import canonical_json, fraction_text
-from .simulation_engine import construct_paired_harvest_trace
+from .simulation_engine import (
+    construct_paired_harvest_trace,
+    normalize_scheduler_priority_policy,
+)
 from .taskset_store import TasksetStore, prepare_service_curve
 from .parallel_prepare import run_prepare_jobs
 
@@ -155,8 +158,15 @@ def validate_frozen_main_figure(
     schedulers: Sequence[str],
     *,
     horizon_ms: int,
+    priority_policy: str = "RM",
 ) -> None:
     """Fail closed when the paper campaign is presented as the frozen one."""
+    try:
+        policy = normalize_scheduler_priority_policy(priority_policy)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    if policy != "RM":
+        raise ValueError("frozen main-figure campaign requires priority policy RM")
     if tuple(cells) != tuple(FORMAL_CELLS):
         raise ValueError(
             "frozen main-figure campaign must contain exactly the 16 canonical cells"
@@ -302,7 +312,12 @@ def taskset_row(taskset: Any, processors: int) -> dict[str, Any]:
 
 
 def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fraction]],
-                 schedulers: Sequence[str], horizon: int) -> list[dict[str, Any]]:
+                 schedulers: Sequence[str], horizon: int,
+                 priority_policy: str = "RM") -> list[dict[str, Any]]:
+    try:
+        policy = normalize_scheduler_priority_policy(priority_policy)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
     by_uc_index = {
         (Fraction(taskset.target_utilization, taskset.processors), taskset.taskset_index): taskset
         for taskset in tasksets
@@ -317,6 +332,8 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "taskset_id": taskset.taskset_id, "target_ue": fraction_text(ue),
                     "scheduler": scheduler,
                 }
+                if policy == "DM":
+                    identity["priority_policy"] = policy
                 rows.append({
                     "request_id": "scheduler-load-cross-" + _hash(identity)[:32],
                     "taskset_id": taskset.taskset_id,
@@ -326,6 +343,7 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "generation_index": taskset.taskset_index, "seed": taskset.seed,
                     "scheduler": scheduler, "scheduler_cli": perf_g.SCHEDULER_CLI[scheduler],
                     "horizon_ms": horizon,
+                    "priority_policy": policy,
                 })
     return rows
 

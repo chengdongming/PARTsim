@@ -72,6 +72,63 @@ class SimulationConfigurationError(RuntimeError):
     """Raised before execution when RTA/simulation inputs cannot be paired."""
 
 
+def normalize_scheduler_priority_policy(value: Any) -> str:
+    """Return the canonical runtime fixed-priority policy."""
+    if not isinstance(value, str):
+        raise SimulationConfigurationError(
+            "priority_policy must be RM or DM"
+        )
+    policy = value.strip().upper()
+    if policy not in {"RM", "DM"}:
+        raise SimulationConfigurationError(
+            "priority_policy must be RM or DM"
+        )
+    return policy
+
+
+def derive_fixed_priority_ranks(
+    task_payload: Sequence[Mapping[str, Any]],
+    priority_policy: str,
+) -> dict[str, int] | None:
+    """Derive an optional runtime rank without changing frozen task payload."""
+    policy = normalize_scheduler_priority_policy(priority_policy)
+    expected_ranks = list(range(len(task_payload)))
+    observed_ranks: list[int] = []
+    seen_task_ids: set[str] = set()
+    normalized: list[tuple[str, int, int, int, int]] = []
+    for row in task_payload:
+        try:
+            task_id = str(row["task_id"])
+            raw_values = [row["C"], row["D"], row["T"], row["priority_rank"]]
+            if any(isinstance(value, bool) or not isinstance(value, int)
+                   for value in raw_values):
+                raise TypeError("task payload integer field is not an integer")
+            c_value, d_value, t_value, priority_rank = raw_values
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SimulationConfigurationError(
+                "task payload has invalid priority fields"
+            ) from exc
+        if task_id in seen_task_ids:
+            raise SimulationConfigurationError(
+                "frozen task payload has duplicate task IDs"
+            )
+        seen_task_ids.add(task_id)
+        if not 0 < c_value <= d_value <= t_value:
+            raise SimulationConfigurationError(
+                "frozen task violates 0 < C <= D <= T"
+            )
+        observed_ranks.append(priority_rank)
+        normalized.append((task_id, c_value, d_value, t_value, priority_rank))
+    if observed_ranks != expected_ranks:
+        raise SimulationConfigurationError(
+            "frozen task payload is not in contiguous priority order"
+        )
+    if policy == "RM":
+        return None
+    ordered = sorted(normalized, key=lambda item: (item[2], item[3], item[4]))
+    return {item[0]: rank for rank, item in enumerate(ordered)}
+
+
 @dataclass(frozen=True)
 class SharedSolarInput:
     """Side-effect-free replay of production per-tick solar input."""
@@ -445,7 +502,10 @@ def _taskset_document(
     *,
     release_horizon: Optional[int] = None,
     task_energy_factors: Optional[Mapping[str, str]] = None,
+    priority_policy: str = "RM",
 ) -> Dict[str, Any]:
+    policy = normalize_scheduler_priority_policy(priority_policy)
+    fixed_priority_ranks = derive_fixed_priority_ranks(task_payload, policy)
     if release_horizon is not None and (
         isinstance(release_horizon, bool)
         or not isinstance(release_horizon, int)
@@ -500,12 +560,6 @@ def _taskset_document(
                     f"task {task_id} energy factor is not canonical and positive"
                 )
     tasks = []
-    expected_ranks = list(range(len(task_payload)))
-    ranks = [int(row["priority_rank"]) for row in task_payload]
-    if ranks != expected_ranks:
-        raise SimulationConfigurationError(
-            "frozen task payload is not in contiguous priority order"
-        )
     for row in task_payload:
         task_id = str(row["task_id"])
         c_value, d_value, t_value = int(row["C"]), int(row["D"]), int(row["T"])
@@ -531,6 +585,10 @@ def _taskset_document(
             )
         params = (
             f"period={t_value},wcet={c_value},arrival_offset={offset},"
+            + (
+                f"fixed_priority_rank={fixed_priority_ranks[task_id]},"
+                if fixed_priority_ranks is not None else ""
+            )
             + (
                 f"task_energy_factor={factors[task_id]},"
                 if factors is not None else ""
@@ -558,6 +616,7 @@ def _render_taskset_yaml(
     *,
     release_horizon: Optional[int] = None,
     task_energy_factors: Optional[Mapping[str, str]] = None,
+    priority_policy: str = "RM",
 ) -> str:
     """Render the conservative YAML subset consumed by RTSim's C++ parser."""
 
@@ -565,6 +624,7 @@ def _render_taskset_yaml(
         task_payload,
         release_horizon=release_horizon,
         task_energy_factors=task_energy_factors,
+        priority_policy=priority_policy,
     )
     lines = []
     if release_horizon is not None:
@@ -744,6 +804,7 @@ def materialize_simulation_inputs(
     service_curve: Optional[Mapping[str, Any]] = None,
     release_horizon: Optional[int] = None,
     task_energy_factors: Optional[Mapping[str, str]] = None,
+    priority_policy: str = "RM",
 ) -> tuple[Path, Path]:
     """Write a scheduler-only projection without changing frozen semantics."""
 
@@ -769,6 +830,7 @@ def materialize_simulation_inputs(
             task_payload,
             release_horizon=release_horizon,
             task_energy_factors=task_energy_factors,
+            priority_policy=priority_policy,
         ),
     )
     return system_path, taskset_path
@@ -1294,6 +1356,9 @@ def run_paired_simulation(
     task_energy_factors: Optional[Mapping[str, str]] = None,
     expected_task_power_j_per_tick: Optional[Mapping[str, float]] = None,
 ) -> SimulationExecution:
+    priority_policy = normalize_scheduler_priority_policy(
+        simulation_config.get("priority_policy", "RM")
+    )
     try:
         initial = exact_energy.exact_e0_lower_bound(
             energy_config["simulation_initial_battery"],
@@ -1311,6 +1376,7 @@ def run_paired_simulation(
         battery_capacity=capacity, scheduler_id=scheduler_id,
         service_curve=energy_config.get("service_curve"),
         task_energy_factors=task_energy_factors,
+        priority_policy=priority_policy,
     )
     # CORE-3's proof-oriented runs forbid harvest clipping.  EXT-1B's
     # SLACK_LIMITED_CHARGING micro-mechanism intentionally observes the ST

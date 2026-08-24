@@ -101,7 +101,7 @@ def dmr_cluster_bootstrap_ci(
 
 def summarize_dmr(
     rows: list[dict[str, Any]], *, target_uc: str, target_ue: str,
-    scheduler: str, campaign_seed: int,
+    scheduler: str, campaign_seed: int, priority_policy: str = "RM",
     bootstrap_replicates: int = DMR_BOOTSTRAP_REPLICATES,
 ) -> dict[str, Any]:
     """Aggregate DMR from valid taskset outcomes using job-weighted counts."""
@@ -136,6 +136,7 @@ def summarize_dmr(
         replicates=bootstrap_replicates,
     )
     return {
+        "priority_policy": priority_policy,
         "target_uc": target_uc,
         "target_ue": target_ue,
         "scheduler": scheduler,
@@ -381,6 +382,12 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     analysis_started = time.perf_counter()
     validation_started = analysis_started
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    try:
+        priority_policy = experiment.normalize_scheduler_priority_policy(
+            config.get("priority_policy", "RM")
+        )
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
     cells = _configured_cells(config)
     figure_slices = _figure_slices(config, cells)
     schedulers = list(config.get("schedulers", ()))
@@ -390,10 +397,11 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         raise SystemExit(str(exc)) from exc
     if tuple(parsed_schedulers) != tuple(schedulers):
         raise SystemExit("run_config schedulers are not canonical and unique")
-    if tuple(cells) == tuple(experiment.FORMAL_CELLS):
+    if tuple(cells) == tuple(experiment.FORMAL_CELLS) and priority_policy == "RM":
         try:
             experiment.validate_frozen_main_figure(
                 cells, schedulers, horizon_ms=int(config.get("simulation_horizon_ms", 0)),
+                priority_policy=priority_policy,
             )
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
@@ -410,10 +418,16 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     request_by_id = {str(row["request_id"]): row for row in requests}
     if len(request_by_id) != len(requests):
         raise SystemExit("requests contain duplicate request IDs")
+    if any(row.get("priority_policy", "RM") != priority_policy for row in requests):
+        raise SystemExit("request priority policy does not match run_config")
     for row in results:
         request = request_by_id.get(str(row.get("request_id")))
         if request is None:
             raise SystemExit("result request identity is unexpected")
+        if row.get("priority_policy", "RM") != priority_policy:
+            raise SystemExit("result priority policy does not match run_config")
+        if request.get("priority_policy", "RM") != priority_policy:
+            raise SystemExit("request priority policy does not match run_config")
         for key in (
             "taskset_id", "taskset_hash", "target_uc", "target_ue",
             "generation_index", "scheduler", "scheduler_cli",
@@ -530,6 +544,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
             n_miss = sum(row.get("deadline_miss") is True for row in selected)
             ci_low, ci_high = wilson_ci(n_wholepass, n_total)
             summaries.append({
+                "priority_policy": priority_policy,
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
                 "n_total": n_total, "n_valid_tasksets": n_total,
                 "n_technical": 0, "n_wholepass": n_wholepass,
@@ -547,6 +562,7 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 target_ue=ue,
                 scheduler=scheduler,
                 campaign_seed=campaign_seed,
+                priority_policy=priority_policy,
             ))
     uc_slice = figure_slices["uc_scan"]
     ue_slice = figure_slices["ue_scan"]
