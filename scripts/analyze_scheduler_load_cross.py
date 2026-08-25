@@ -24,6 +24,25 @@ from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_wor
 
 DMR_BOOTSTRAP_REPLICATES = 10000
 
+_PLOT_COLORS = {
+    "ASAP": "tab:blue",
+    "ALAP": "tab:orange",
+    "ST": "tab:green",
+}
+
+
+def _plot_style(prefix: str) -> dict[str, Any]:
+    """Return the shared three-panel style for one scheduler family."""
+    style = experiment.SCHEDULER_STYLES[prefix]
+    is_asap = prefix == "ASAP"
+    return {
+        **style,
+        "color": _PLOT_COLORS[prefix],
+        "linewidth": 2.2 if is_asap else 1.5,
+        "markersize": 6.0 if is_asap else 5.0,
+        "zorder": 3 if is_asap else 2,
+    }
+
 
 def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -284,7 +303,7 @@ def plot_scan(
             if not values:
                 continue
             prefix = scheduler.split("-", 1)[0]
-            style = experiment.SCHEDULER_STYLES[prefix]
+            style = _plot_style(prefix)
             axis.errorbar(
                 [float(Fraction(row[xkey])) for row in values],
                 [row["wholepass_ratio"] for row in values],
@@ -293,6 +312,8 @@ def plot_scan(
                     [row["ci95_high"] - row["wholepass_ratio"] for row in values],
                 ],
                 marker=style["marker"], linestyle=style["linestyle"],
+                color=style["color"], linewidth=style["linewidth"],
+                markersize=style["markersize"], zorder=style["zorder"],
                 capsize=2, label=scheduler,
             )
         axis.set_xlabel(xlabel)
@@ -300,7 +321,7 @@ def plot_scan(
         axis.set_ylim(0, 1)
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
-    axes[0].set_ylabel("WholePass ratio")
+    axes[0].set_ylabel("Whole-taskset pass ratio")
     figure.suptitle(title)
     figure.tight_layout()
     figure.savefig(output / filename)
@@ -333,7 +354,7 @@ def plot_dmr_scan(
             if not values:
                 continue
             prefix = scheduler.split("-", 1)[0]
-            style = experiment.SCHEDULER_STYLES[prefix]
+            style = _plot_style(prefix)
             lower_errors = [
                 row["dmr"] - row["dmr_ci95_low"]
                 if row["dmr_ci95_low"] is not None else 0.0
@@ -349,6 +370,8 @@ def plot_dmr_scan(
                 [row["dmr"] for row in values],
                 yerr=[lower_errors, upper_errors],
                 marker=style["marker"], linestyle=style["linestyle"],
+                color=style["color"], linewidth=style["linewidth"],
+                markersize=style["markersize"], zorder=style["zorder"],
                 capsize=2, label=scheduler,
             )
         axis.set_xlabel(xlabel)
@@ -356,7 +379,7 @@ def plot_dmr_scan(
         axis.set_ylim(0, 1)
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
-    axes[0].set_ylabel("Deadline-Meeting Ratio (DMR)")
+    axes[0].set_ylabel("Deadline-meeting ratio (DMR)")
     figure.suptitle(title)
     figure.tight_layout()
     figure.savefig(output / filename)
@@ -610,26 +633,38 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 "rows": uc_rows, "output": str(root),
                 "filename": "figure_scheduler_uc.png", "xkey": uc_slice["x_key"],
                 "schedulers": schedulers, "xlabel": "U_C",
-                "title": f"Schedulability ratio versus U_C (U_E={uc_slice['fixed_value']})",
+                "title": (
+                    f"{priority_policy} — Whole-taskset pass ratio versus U_C "
+                    f"(U_E={uc_slice['fixed_value']})"
+                ),
             },
             {
                 "rows": ue_rows, "output": str(root),
                 "filename": "figure_scheduler_ue.png", "xkey": ue_slice["x_key"],
                 "schedulers": schedulers, "xlabel": "U_E",
-                "title": f"Schedulability ratio versus U_E (U_C={ue_slice['fixed_value']})",
+                "title": (
+                    f"{priority_policy} — Whole-taskset pass ratio versus U_E "
+                    f"(U_C={ue_slice['fixed_value']})"
+                ),
             },
             {
                 "rows": dmr_uc_rows, "output": str(root),
                 "filename": "figure_scheduler_uc_dmr.png", "xkey": uc_slice["x_key"],
                 "schedulers": schedulers, "xlabel": "U_C",
-                "title": f"Deadline-Meeting Ratio versus U_C (U_E={uc_slice['fixed_value']})",
+                "title": (
+                    f"{priority_policy} — Job-level deadline-meeting ratio (DMR) "
+                    f"versus U_C (U_E={uc_slice['fixed_value']})"
+                ),
                 "metric": "dmr",
             },
             {
                 "rows": dmr_ue_rows, "output": str(root),
                 "filename": "figure_scheduler_ue_dmr.png", "xkey": ue_slice["x_key"],
                 "schedulers": schedulers, "xlabel": "U_E",
-                "title": f"Deadline-Meeting Ratio versus U_E (U_C={ue_slice['fixed_value']})",
+                "title": (
+                    f"{priority_policy} — Job-level deadline-meeting ratio (DMR) "
+                    f"versus U_E (U_C={ue_slice['fixed_value']})"
+                ),
                 "metric": "dmr",
             },
         ], _plot_any_scan_job, workers=analysis_workers)
