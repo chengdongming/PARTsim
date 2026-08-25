@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <functional>
 #include <memory>
 #include <set>
@@ -132,7 +133,73 @@ public:
         scheduler._tick_event->drop();
         scheduler._first_tick_scheduled = false;
     }
+
+    static std::vector<AbsRTTask *> candidates(
+        ALAPBlockScheduler &scheduler,
+        const std::vector<AbsRTTask *> &active_tasks,
+        Tick current_time) {
+        return scheduler.collectALAPCandidates(active_tasks, current_time);
+    }
+
+    static void bindKernel(ALAPBlockScheduler &scheduler, MRTKernel *kernel) {
+        scheduler._kernel = kernel;
+    }
 };
+
+TEST(ALAPBlockScheduler, ActiveHigherPriorityReserveGate) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    ALAPBlockScheduler scheduler;
+    CPU cpu0("alap-block-reserve-cpu0", nullptr);
+    CPU cpu1("alap-block-reserve-cpu1", nullptr);
+    MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+
+    FakeALAPBlockTask no_hp_positive(1, 20, 10, 3.0);
+    FakeALAPBlockTask no_hp_zero(2, 30, 2, 2.0);
+    FakeALAPBlockTask one_hp_target(3, 20, 3, 2.0);
+    FakeALAPBlockTask one_hp(4, 5, 10, 2.0);
+    FakeALAPBlockTask two_hp_target(5, 30, 4, 2.0);
+    FakeALAPBlockTask two_hp_a(6, 5, 10, 2.0);
+    FakeALAPBlockTask two_hp_b(7, 10, 10, 2.0);
+
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &no_hp_positive, 20, 3, 1.0);
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &no_hp_zero, 30, 2, 1.0);
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &one_hp_target, 20, 2, 1.0);
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &one_hp, 5, 2, 1.0);
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &two_hp_target, 30, 2, 1.0);
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &two_hp_a, 5, 2, 1.0);
+    ALAPBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &two_hp_b, 10, 2, 1.0);
+
+    simulation.initSingleRun();
+    ALAPBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPBlockSchedulerTestPeer::bindKernel(scheduler, &kernel);
+
+    auto candidates = ALAPBlockSchedulerTestPeer::candidates(
+        scheduler, {&no_hp_positive}, Tick(0));
+    EXPECT_TRUE(candidates.empty());
+
+    candidates = ALAPBlockSchedulerTestPeer::candidates(
+        scheduler, {&no_hp_zero}, Tick(0));
+    ASSERT_EQ(candidates.size(), 1U);
+    EXPECT_EQ(candidates[0], &no_hp_zero);
+
+    candidates = ALAPBlockSchedulerTestPeer::candidates(
+        scheduler, {&one_hp, &one_hp_target}, Tick(0));
+    EXPECT_TRUE(candidates.empty());
+
+    candidates = ALAPBlockSchedulerTestPeer::candidates(
+        scheduler, {&two_hp_a, &two_hp_b, &two_hp_target}, Tick(0));
+    ASSERT_EQ(candidates.size(), 1U);
+    EXPECT_EQ(candidates[0], &two_hp_target);
+
+    simulation.endSingleRun();
+}
 
 TEST(ALAPBlockScheduler, UsesRelativeDeadlineNotPeriod) {
     auto &simulation = MetaSim::Simulation::getInstance();

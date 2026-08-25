@@ -891,6 +891,8 @@ namespace RTSim {
         // 如果同一个任务在同一个tick内被连续抢占，跳过本次抢占
         // 这防止了"挂起→调度→挂起"的恶性循环
         Tick current_time = SIMUL.getTime();
+        const std::vector<AbsRTTask *> timing_candidates =
+            collectALAPCandidates(collectActiveJobs(current_time), current_time);
         if (_last_preempted_task && _last_preempted_tick == current_time) {
             // 检查是否有更高优先级的候选任务
             bool has_higher_priority = false;
@@ -947,15 +949,14 @@ namespace RTSim {
             ALAPNonBlockTaskModel *model = getTaskModel(candidate);
             if (!model) continue;
 
-            // 计算候选任务的Slack
+            // 计算候选任务的原始 laxity；时序资格由统一候选门控判断。
             Tick candidate_slack = calculateSlackForTask(candidate);
-
-            // ⭐ Slack门控：只有Slack≤0的任务才能参与抢占
-            if (candidate_slack > 0) {
-                continue;  // Slack>0，跳过这个候选任务
+            if (std::find(timing_candidates.begin(), timing_candidates.end(),
+                          candidate) == timing_candidates.end()) {
+                continue;
             }
 
-            // 在Slack≤0的任务中，找优先级最高的
+            // 在通过统一时序门控的任务中，找优先级最高的
             if (!best_candidate || model->getRMPriority() < best_model->getRMPriority()) {
                 best_candidate = candidate;
                 best_model = model;
@@ -1499,10 +1500,43 @@ namespace RTSim {
     ALAPNonBlockScheduler::collectALAPCandidates(
         const std::vector<AbsRTTask *> &active_tasks,
         Tick current_time) {
+        // Lightweight active higher-priority interference reserve heuristic:
+        // account only for currently active jobs, with no future releases.
+        // This is neither exact multiprocessor slack nor Davis (1993) slack,
+        // and provides no schedulability guarantee; it only lets ALAP start
+        // slightly earlier when active higher-priority work warrants it.
+        MRTKernel *kernel = _kernel ? _kernel : getKernel();
+        const std::size_t processor_count = kernel
+            ? std::max<std::size_t>(1, kernel->getCurrentExecutingTasks().size())
+            : std::max<std::size_t>(
+                  1, ConfigManager::getInstance().getNumCores());
+
         std::vector<AbsRTTask *> candidates;
         for (AbsRTTask *task : active_tasks) {
-            if (calculateSlackForTask(task, current_time) <=
-                Tick(0)) {
+            if (!task) {
+                continue;
+            }
+
+            const Tick raw_laxity = calculateSlackForTask(task, current_time);
+            std::size_t hp_count = 0;
+            Tick::impl_t hp_work_ticks = 0;
+            for (AbsRTTask *hp : active_tasks) {
+                if (!hp || hp == task || !hasHigherRMPriority(hp, task)) {
+                    continue;
+                }
+                ++hp_count;
+                hp_work_ticks += static_cast<Tick::impl_t>(std::ceil(
+                    std::max(0.0, hp->getRemainingWCET())));
+            }
+
+            Tick reserve(0);
+            if (hp_count >= processor_count) {
+                const Tick::impl_t processors =
+                    static_cast<Tick::impl_t>(processor_count);
+                reserve = Tick((hp_work_ticks + processors - 1) / processors);
+            }
+
+            if (raw_laxity <= reserve) {
                 candidates.push_back(task);
             }
         }
