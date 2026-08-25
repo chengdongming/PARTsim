@@ -19,7 +19,7 @@ from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
-    plot_scan,
+    _plot_style, plot_dmr_scan, plot_scan,
 )
 import scripts.run_scheduler_load_cross as scheduler_runner
 
@@ -238,6 +238,93 @@ def test_plot_scan_accepts_zero_wholepass_ratio(tmp_path):
     )
 
     assert (tmp_path / "zero-wholepass.png").is_file()
+
+
+def test_plot_styles_are_consistent_across_panels_and_emphasize_asap(
+    tmp_path, monkeypatch,
+):
+    import matplotlib.pyplot as plt
+
+    class CaptureAxis:
+        def __init__(self):
+            self.errorbars = []
+            self.ylabel = None
+
+        def errorbar(self, *args, **kwargs):
+            self.errorbars.append(kwargs)
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, label):
+            self.ylabel = label
+
+        def set_title(self, _title):
+            pass
+
+        def set_ylim(self, *_args):
+            pass
+
+        def grid(self, **_kwargs):
+            pass
+
+        def legend(self, **_kwargs):
+            pass
+
+    class CaptureFigure:
+        def savefig(self, _path):
+            pass
+
+        def suptitle(self, _title):
+            pass
+
+        def tight_layout(self):
+            pass
+
+    axes = [CaptureAxis() for _ in range(3)]
+    monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+    monkeypatch.setattr(plt, "close", lambda _figure: None)
+    rows = []
+    for panel_schedulers in experiment.PANEL_GROUPS.values():
+        for scheduler in panel_schedulers:
+            rows.append({
+                "target_uc": "1/10", "scheduler": scheduler,
+                "wholepass_ratio": 0.5, "ci95_low": 0.4, "ci95_high": 0.6,
+            })
+
+    plot_scan(rows, tmp_path, "styles.png", "target_uc",
+              list(experiment.ALL_SCHEDULERS), "U_C", "RM — Whole-taskset pass ratio")
+
+    assert all(len(axis.errorbars) == 3 for axis in axes)
+    per_panel = [
+        {
+            call["label"].split("-", 1)[0]: {
+                key: call[key]
+                for key in ("color", "linestyle", "linewidth", "markersize", "zorder")
+            }
+            for call in axis.errorbars
+        }
+        for axis in axes
+    ]
+    assert per_panel[0] == per_panel[1] == per_panel[2]
+    assert per_panel[0]["ASAP"]["color"] == "tab:blue"
+    assert per_panel[0]["ASAP"]["linestyle"] == "-"
+    assert per_panel[0]["ASAP"]["linewidth"] > per_panel[0]["ALAP"]["linewidth"]
+    assert per_panel[0]["ASAP"]["markersize"] > per_panel[0]["ALAP"]["markersize"]
+    assert per_panel[0]["ASAP"]["zorder"] > per_panel[0]["ALAP"]["zorder"]
+    assert _plot_style("ALAP")["linestyle"] == "--"
+    assert _plot_style("ST")["linestyle"] == ":"
+
+    dmr_rows = [{
+        "target_uc": "1/10", "scheduler": scheduler, "dmr": 0.5,
+        "dmr_ci95_low": 0.4, "dmr_ci95_high": 0.6,
+    } for scheduler in experiment.ALL_SCHEDULERS]
+    plot_dmr_scan(
+        dmr_rows, tmp_path, "styles-dmr.png", "target_uc",
+        list(experiment.ALL_SCHEDULERS), "U_C",
+        "DM — Job-level deadline-meeting ratio (DMR)",
+    )
+    assert axes[0].ylabel == "Deadline-meeting ratio (DMR)"
 
 
 @pytest.mark.parametrize("adjudicable,misses,expected", [
@@ -488,11 +575,12 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
     ]
 
 
-def _write_configured_analyzer_fixture(tmp_path):
+def _write_configured_analyzer_fixture(tmp_path, priority_policy="RM"):
     config = {
         "cells": [["1/10", "3/7"], ["1/5", "3/7"],
                   ["2/5", "3/7"], ["2/5", "1/2"], ["2/5", "4/5"]],
         "samples_per_cell": 1, "schedulers": ["ASAP-BLOCK"],
+        "priority_policy": priority_policy,
         "processors": 4, "util_tolerance_total": "1/100",
         "figure_slices": {
             "uc_scan": {
@@ -524,7 +612,7 @@ def _write_configured_analyzer_fixture(tmp_path):
             "request_id": f"configured-r-{index}", "taskset_id": taskset_id,
             "taskset_hash": taskset_hash, "target_uc": target_uc,
             "target_ue": target_ue, "generation_index": 0,
-            "scheduler": "ASAP-BLOCK",
+            "scheduler": "ASAP-BLOCK", "priority_policy": priority_policy,
         }
         results.append({
             **request,
@@ -551,13 +639,21 @@ def _write_configured_analyzer_fixture(tmp_path):
         )
 
 
-def test_analyzer_uses_configured_custom_slices_and_dynamic_titles(tmp_path, monkeypatch):
-    _write_configured_analyzer_fixture(tmp_path)
+@pytest.mark.parametrize("priority_policy", ["RM", "DM"])
+def test_analyzer_uses_configured_custom_slices_and_dynamic_titles(
+    tmp_path, monkeypatch, priority_policy,
+):
+    _write_configured_analyzer_fixture(tmp_path, priority_policy)
     plotted = {}
     monkeypatch.setattr(
         "scripts.analyze_scheduler_load_cross.plot_scan",
         lambda rows, output, filename, xkey, schedulers, xlabel, title:
             plotted.setdefault(filename, (list(rows), title)),
+    )
+    monkeypatch.setattr(
+        "scripts.analyze_scheduler_load_cross.plot_dmr_scan",
+        lambda rows, output, filename, xkey, schedulers, xlabel, title:
+            plotted.setdefault("dmr:" + filename, (list(rows), title)),
     )
     assert analyze(tmp_path)["complete"]
     uc_rows = list(csv.DictReader((tmp_path / "figure_scheduler_uc.csv").open()))
@@ -568,6 +664,20 @@ def test_analyzer_uses_configured_custom_slices_and_dynamic_titles(tmp_path, mon
     assert [row["target_ue"] for row in ue_rows] == ["3/7", "1/2", "4/5"]
     assert "U_E=3/7" in plotted["figure_scheduler_uc.png"][1]
     assert "U_C=2/5" in plotted["figure_scheduler_ue.png"][1]
+    assert priority_policy in plotted["figure_scheduler_uc.png"][1]
+    assert priority_policy in plotted["figure_scheduler_ue.png"][1]
+    assert "Whole-taskset pass ratio" in plotted["figure_scheduler_uc.png"][1]
+    assert "Whole-taskset pass ratio" in plotted["figure_scheduler_ue.png"][1]
+    assert "Schedulability ratio" not in plotted["figure_scheduler_uc.png"][1]
+    assert "Schedulability ratio" not in plotted["figure_scheduler_ue.png"][1]
+    assert "Job-level deadline-meeting ratio (DMR)" in plotted[
+        "dmr:figure_scheduler_uc_dmr.png"
+    ][1]
+    assert "Job-level deadline-meeting ratio (DMR)" in plotted[
+        "dmr:figure_scheduler_ue_dmr.png"
+    ][1]
+    assert priority_policy in plotted["dmr:figure_scheduler_uc_dmr.png"][1]
+    assert priority_policy in plotted["dmr:figure_scheduler_ue_dmr.png"][1]
     assert [row["target_uc"] for row in plotted["figure_scheduler_uc.png"][0]] == [
         "1/10", "1/5", "2/5",
     ]
