@@ -8,6 +8,7 @@ import csv
 from fractions import Fraction
 import hashlib
 import json
+import math
 from pathlib import Path
 import random
 import sys
@@ -284,6 +285,40 @@ def _validate_dmr_scan_rows(
             raise SystemExit(f"{label} contains invalid DMR bootstrap bounds")
 
 
+def _validate_dmr_ymin(value: float, label: str = "DMR y-axis lower bound") -> float:
+    try:
+        lower_bound = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must be a finite number in [0, 1)") from exc
+    if not math.isfinite(lower_bound) or not 0.0 <= lower_bound < 1.0:
+        raise ValueError(f"{label} must be a finite number in [0, 1)")
+    return lower_bound
+
+
+def _parse_dmr_ymin(value: str) -> float:
+    try:
+        return _validate_dmr_ymin(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _validate_dmr_ci_lower_bounds(
+    rows: list[dict[str, Any]], lower_bound: float, label: str,
+) -> None:
+    observed = [
+        row["dmr_ci95_low"] for row in rows
+        if row.get("dmr_ci95_low") is not None
+    ]
+    if not observed:
+        return
+    minimum = min(observed)
+    if minimum < lower_bound:
+        raise ValueError(
+            f"{label} DMR y-axis lower bound {lower_bound:g} would clip "
+            f"the minimum observed DMR CI lower bound {minimum:g}"
+        )
+
+
 def plot_scan(
     rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
     schedulers: list[str], xlabel: str, title: str,
@@ -337,8 +372,10 @@ def _plot_scan_job(job: dict[str, Any]) -> None:
 
 def plot_dmr_scan(
     rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
-    schedulers: list[str], xlabel: str, title: str,
+    schedulers: list[str], xlabel: str, title: str, ymin: float = 0.0,
 ) -> None:
+    ymin = _validate_dmr_ymin(ymin)
+    _validate_dmr_ci_lower_bounds(rows, ymin, filename)
     import matplotlib.pyplot as plt
 
     figure, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
@@ -376,7 +413,7 @@ def plot_dmr_scan(
             )
         axis.set_xlabel(xlabel)
         axis.set_title(panel)
-        axis.set_ylim(0, 1)
+        axis.set_ylim(ymin, 1.0)
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
     axes[0].set_ylabel("Deadline-meeting ratio (DMR)")
@@ -389,7 +426,7 @@ def plot_dmr_scan(
 def _plot_dmr_scan_job(job: dict[str, Any]) -> None:
     plot_dmr_scan(
         job["rows"], Path(job["output"]), job["filename"], job["xkey"],
-        job["schedulers"], job["xlabel"], job["title"],
+        job["schedulers"], job["xlabel"], job["title"], job.get("ymin", 0.0),
     )
 
 
@@ -400,8 +437,13 @@ def _plot_any_scan_job(job: dict[str, Any]) -> None:
         _plot_scan_job(job)
 
 
-def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
+def analyze(
+    root: Path, *, analysis_workers: int = 1,
+    uc_dmr_ymin: float = 0.0, ue_dmr_ymin: float = 0.0,
+) -> dict[str, Any]:
     validate_workers(analysis_workers, "analysis-workers")
+    uc_dmr_ymin = _validate_dmr_ymin(uc_dmr_ymin, "U_C DMR y-axis lower bound")
+    ue_dmr_ymin = _validate_dmr_ymin(ue_dmr_ymin, "U_E DMR y-axis lower bound")
     analysis_started = time.perf_counter()
     validation_started = analysis_started
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
@@ -617,6 +659,8 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
         dmr_ue_rows, cells, fixed_key=ue_slice["fixed_key"],
         x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="U_E DMR",
     )
+    _validate_dmr_ci_lower_bounds(dmr_uc_rows, uc_dmr_ymin, "U_C")
+    _validate_dmr_ci_lower_bounds(dmr_ue_rows, ue_dmr_ymin, "U_E")
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "figure_scheduler_uc.csv", uc_rows)
     write_csv(root / "figure_scheduler_ue.csv", ue_rows)
@@ -654,8 +698,10 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 "title": (
                     f"{priority_policy} — Job-level deadline-meeting ratio (DMR) "
                     f"versus U_C (U_E={uc_slice['fixed_value']})"
+                    + (f" (zoomed y-axis: {uc_dmr_ymin:g}–1.0)" if uc_dmr_ymin > 0 else "")
                 ),
                 "metric": "dmr",
+                "ymin": uc_dmr_ymin,
             },
             {
                 "rows": dmr_ue_rows, "output": str(root),
@@ -664,8 +710,10 @@ def analyze(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
                 "title": (
                     f"{priority_policy} — Job-level deadline-meeting ratio (DMR) "
                     f"versus U_E (U_C={ue_slice['fixed_value']})"
+                    + (f" (zoomed y-axis: {ue_dmr_ymin:g}–1.0)" if ue_dmr_ymin > 0 else "")
                 ),
                 "metric": "dmr",
+                "ymin": ue_dmr_ymin,
             },
         ], _plot_any_scan_job, workers=analysis_workers)
     except ImportError:
@@ -693,9 +741,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--analysis-workers", type=int, default=1)
+    parser.add_argument(
+        "--uc-dmr-ymin", type=_parse_dmr_ymin, default=0.0,
+        help="lower y-axis bound for the U_C-scan DMR figure (default: 0.0)",
+    )
+    parser.add_argument(
+        "--ue-dmr-ymin", type=_parse_dmr_ymin, default=0.0,
+        help="lower y-axis bound for the U_E-scan DMR figure (default: 0.0)",
+    )
     args = parser.parse_args(argv)
     try:
-        result = analyze(args.input, analysis_workers=args.analysis_workers)
+        result = analyze(
+            args.input,
+            analysis_workers=args.analysis_workers,
+            uc_dmr_ymin=args.uc_dmr_ymin,
+            ue_dmr_ymin=args.ue_dmr_ymin,
+        )
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True))
