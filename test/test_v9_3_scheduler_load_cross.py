@@ -19,7 +19,7 @@ from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
-    _plot_style, plot_dmr_scan, plot_scan,
+    _parse_dmr_ymin, _plot_style, plot_dmr_scan, plot_scan,
 )
 import scripts.run_scheduler_load_cross as scheduler_runner
 
@@ -249,6 +249,7 @@ def test_plot_styles_are_consistent_across_panels_and_emphasize_asap(
         def __init__(self):
             self.errorbars = []
             self.ylabel = None
+            self.ylims = []
 
         def errorbar(self, *args, **kwargs):
             self.errorbars.append(kwargs)
@@ -262,8 +263,8 @@ def test_plot_styles_are_consistent_across_panels_and_emphasize_asap(
         def set_title(self, _title):
             pass
 
-        def set_ylim(self, *_args):
-            pass
+        def set_ylim(self, *args):
+            self.ylims.append(args)
 
         def grid(self, **_kwargs):
             pass
@@ -325,6 +326,80 @@ def test_plot_styles_are_consistent_across_panels_and_emphasize_asap(
         "DM — Job-level deadline-meeting ratio (DMR)",
     )
     assert axes[0].ylabel == "Deadline-meeting ratio (DMR)"
+    assert all(axis.ylims[-1] == (0.0, 1.0) for axis in axes)
+
+
+def test_dmr_ymin_is_validated_and_never_clips_ci(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    class CaptureAxis:
+        def __init__(self):
+            self.ylims = []
+
+        def errorbar(self, *args, **kwargs):
+            pass
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, _label):
+            pass
+
+        def set_title(self, _title):
+            pass
+
+        def set_ylim(self, *args):
+            self.ylims.append(args)
+
+        def grid(self, **_kwargs):
+            pass
+
+        def legend(self, **_kwargs):
+            pass
+
+    class CaptureFigure:
+        def savefig(self, _path):
+            pass
+
+        def suptitle(self, _title):
+            pass
+
+        def tight_layout(self):
+            pass
+
+    axes = [CaptureAxis() for _ in range(3)]
+    monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+    monkeypatch.setattr(plt, "close", lambda _figure: None)
+    rows = [{
+        "target_uc": "1/10", "scheduler": "ASAP-BLOCK", "dmr": 0.95,
+        "dmr_ci95_low": 0.90, "dmr_ci95_high": 0.99,
+    }]
+
+    plot_dmr_scan(
+        rows, tmp_path, "zoomed.png", "target_uc", ["ASAP-BLOCK"],
+        "U_C", "RM — DMR (zoomed y-axis)", 0.89,
+    )
+    assert all(axis.ylims == [(0.89, 1.0)] for axis in axes)
+
+    with pytest.raises(ValueError, match="minimum observed.*0.9"):
+        plot_dmr_scan(
+            rows, tmp_path, "clipped.png", "target_uc", ["ASAP-BLOCK"],
+            "U_C", "DMR", 0.91,
+        )
+    for invalid in (-0.01, 1.0, float("nan")):
+        with pytest.raises(ValueError, match=r"\[0, 1\)"):
+            plot_dmr_scan(
+                rows, tmp_path, "invalid.png", "target_uc", ["ASAP-BLOCK"],
+                "U_C", "DMR", invalid,
+            )
+
+
+def test_dmr_ymin_cli_values_are_finite_and_in_half_open_unit_interval():
+    assert _parse_dmr_ymin("0") == 0.0
+    assert _parse_dmr_ymin("0.89") == 0.89
+    for invalid in ("-0.01", "1", "nan", "inf"):
+        with pytest.raises(Exception, match=r"\[0, 1\)"):
+            _parse_dmr_ymin(invalid)
 
 
 @pytest.mark.parametrize("adjudicable,misses,expected", [
@@ -544,7 +619,7 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
     )
     monkeypatch.setattr(
         "scripts.analyze_scheduler_load_cross.plot_dmr_scan",
-        lambda rows, output, filename, xkey, schedulers, xlabel, title:
+        lambda rows, output, filename, xkey, schedulers, xlabel, title, ymin=0.0:
             plotted.setdefault("dmr:" + filename, list(rows)),
     )
     assert analyze(tmp_path)["complete"]
@@ -652,10 +727,10 @@ def test_analyzer_uses_configured_custom_slices_and_dynamic_titles(
     )
     monkeypatch.setattr(
         "scripts.analyze_scheduler_load_cross.plot_dmr_scan",
-        lambda rows, output, filename, xkey, schedulers, xlabel, title:
-            plotted.setdefault("dmr:" + filename, (list(rows), title)),
+        lambda rows, output, filename, xkey, schedulers, xlabel, title, ymin=0.0:
+            plotted.setdefault("dmr:" + filename, (list(rows), title, ymin)),
     )
-    assert analyze(tmp_path)["complete"]
+    assert analyze(tmp_path, uc_dmr_ymin=0.11, ue_dmr_ymin=0.22)["complete"]
     uc_rows = list(csv.DictReader((tmp_path / "figure_scheduler_uc.csv").open()))
     ue_rows = list(csv.DictReader((tmp_path / "figure_scheduler_ue.csv").open()))
     assert {row["target_ue"] for row in uc_rows} == {"3/7"}
@@ -678,6 +753,10 @@ def test_analyzer_uses_configured_custom_slices_and_dynamic_titles(
     ][1]
     assert priority_policy in plotted["dmr:figure_scheduler_uc_dmr.png"][1]
     assert priority_policy in plotted["dmr:figure_scheduler_ue_dmr.png"][1]
+    assert plotted["dmr:figure_scheduler_uc_dmr.png"][2] == 0.11
+    assert plotted["dmr:figure_scheduler_ue_dmr.png"][2] == 0.22
+    assert "zoomed y-axis" in plotted["dmr:figure_scheduler_uc_dmr.png"][1]
+    assert "zoomed y-axis" in plotted["dmr:figure_scheduler_ue_dmr.png"][1]
     assert [row["target_uc"] for row in plotted["figure_scheduler_uc.png"][0]] == [
         "1/10", "1/5", "2/5",
     ]
