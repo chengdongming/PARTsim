@@ -469,9 +469,43 @@ namespace RTSim {
     std::vector<AbsRTTask *> ALAPSyncScheduler::collectALAPCandidates(
         const std::vector<AbsRTTask *> &active_tasks,
         Tick current_time) {
+        // Lightweight active higher-priority interference reserve heuristic:
+        // account only for currently active jobs, with no future releases.
+        // This is neither exact multiprocessor slack nor Davis (1993) slack,
+        // and provides no schedulability guarantee; it only lets ALAP start
+        // slightly earlier when active higher-priority work warrants it.
+        MRTKernel *kernel = _kernel ? _kernel : getKernel();
+        const std::size_t processor_count = kernel
+            ? std::max<std::size_t>(1, kernel->getCurrentExecutingTasks().size())
+            : std::max<std::size_t>(
+                  1, ConfigManager::getInstance().getNumCores());
+
         std::vector<AbsRTTask *> candidates;
         for (AbsRTTask *task : active_tasks) {
-            if (calculateSlackForTask(task, current_time) <= Tick(0)) {
+            if (!task) {
+                continue;
+            }
+
+            const Tick raw_laxity = calculateSlackForTask(task, current_time);
+            std::size_t hp_count = 0;
+            Tick::impl_t hp_work_ticks = 0;
+            for (AbsRTTask *hp : active_tasks) {
+                if (!hp || hp == task || !hasHigherRMPriority(hp, task)) {
+                    continue;
+                }
+                ++hp_count;
+                hp_work_ticks += static_cast<Tick::impl_t>(std::ceil(
+                    std::max(0.0, hp->getRemainingWCET())));
+            }
+
+            Tick reserve(0);
+            if (hp_count >= processor_count) {
+                const Tick::impl_t processors =
+                    static_cast<Tick::impl_t>(processor_count);
+                reserve = Tick((hp_work_ticks + processors - 1) / processors);
+            }
+
+            if (raw_laxity <= reserve) {
                 candidates.push_back(task);
             }
         }

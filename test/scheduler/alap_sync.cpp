@@ -158,7 +158,73 @@ public:
     static int batchSize(ALAPSyncScheduler &scheduler) {
         return scheduler.calculateBatchSize();
     }
+
+    static std::vector<AbsRTTask *> candidates(
+        ALAPSyncScheduler &scheduler,
+        const std::vector<AbsRTTask *> &active_tasks,
+        Tick current_time) {
+        return scheduler.collectALAPCandidates(active_tasks, current_time);
+    }
+
+    static void bindKernel(ALAPSyncScheduler &scheduler, MRTKernel *kernel) {
+        scheduler._kernel = kernel;
+    }
 };
+
+TEST(ALAPSyncScheduler, ActiveHigherPriorityReserveGate) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestALAPSyncScheduler scheduler;
+    CPU cpu0("alap-sync-reserve-cpu0", nullptr);
+    CPU cpu1("alap-sync-reserve-cpu1", nullptr);
+    TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+
+    FakeALAPSyncTask no_hp_positive(1, 20, 10, 3.0);
+    FakeALAPSyncTask no_hp_zero(2, 30, 2, 2.0);
+    FakeALAPSyncTask one_hp_target(3, 20, 3, 2.0);
+    FakeALAPSyncTask one_hp(4, 5, 10, 2.0);
+    FakeALAPSyncTask two_hp_target(5, 30, 4, 2.0);
+    FakeALAPSyncTask two_hp_a(6, 5, 10, 2.0);
+    FakeALAPSyncTask two_hp_b(7, 10, 10, 2.0);
+
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &no_hp_positive, 20, 3, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &no_hp_zero, 30, 2, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &one_hp_target, 20, 2, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &one_hp, 5, 2, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &two_hp_target, 30, 2, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &two_hp_a, 5, 2, 1.0);
+    ALAPSyncSchedulerTestPeer::addTaskModel(
+        scheduler, &two_hp_b, 10, 2, 1.0);
+
+    simulation.initSingleRun();
+    ALAPSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    ALAPSyncSchedulerTestPeer::bindKernel(scheduler, &kernel);
+
+    auto candidates = ALAPSyncSchedulerTestPeer::candidates(
+        scheduler, {&no_hp_positive}, Tick(0));
+    EXPECT_TRUE(candidates.empty());
+
+    candidates = ALAPSyncSchedulerTestPeer::candidates(
+        scheduler, {&no_hp_zero}, Tick(0));
+    ASSERT_EQ(candidates.size(), 1U);
+    EXPECT_EQ(candidates[0], &no_hp_zero);
+
+    candidates = ALAPSyncSchedulerTestPeer::candidates(
+        scheduler, {&one_hp, &one_hp_target}, Tick(0));
+    EXPECT_TRUE(candidates.empty());
+
+    candidates = ALAPSyncSchedulerTestPeer::candidates(
+        scheduler, {&two_hp_a, &two_hp_b, &two_hp_target}, Tick(0));
+    ASSERT_EQ(candidates.size(), 1U);
+    EXPECT_EQ(candidates[0], &two_hp_target);
+
+    simulation.endSingleRun();
+}
 
 static bool ContainsTask(const std::vector<AbsRTTask *> &tasks,
                          AbsRTTask *task) {
