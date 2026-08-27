@@ -34,6 +34,10 @@ def _available_outcome(adjudicable_jobs=1, deadline_miss_jobs=0, wholepass=True)
     }
 
 
+def _harvest_model_fields():
+    return dict(experiment.HARVEST_MODEL_IDENTITY)
+
+
 def test_exact_ue_eta_mapping_and_deduplicated_cells():
     assert experiment.eta_for_ue(Fraction(2, 5)) == Fraction(5, 2)
     assert experiment.eta_for_ue(Fraction(3, 10)) == Fraction(10, 3)
@@ -523,20 +527,28 @@ def test_service_only_energy_material_preserves_canonical_power():
     assert material["target_supply_mean_j_per_tick"] == "3/2"
     assert material["solar_scale"] == "3/2"
     assert material["energy_control"] == "SERVICE_ONLY_SCALING"
+    assert {
+        key: material[key] for key in experiment.HARVEST_MODEL_IDENTITY
+    } == experiment.HARVEST_MODEL_IDENTITY
 
 
 def test_analyzer_writes_both_figure_csvs(tmp_path):
     config = {"cells": [["1/2", "2/5"]], "samples_per_cell": 1,
               "schedulers": ["ASAP-BLOCK"], "processors": 4,
-              "util_tolerance_total": "1/100"}
+              "util_tolerance_total": "1/100", "use_real_solar_data": False,
+              **experiment.HARVEST_MODEL_IDENTITY}
     taskset = {"taskset_id": "t", "taskset_hash": "h", "canonical_task_power": True,
                "target_uc": "1/2", "actual_uc": "1/2"}
     request = {"request_id": "r", "taskset_id": "t", "taskset_hash": "h",
                "target_uc": "1/2", "target_ue": "2/5", "generation_index": 0,
-               "scheduler": "ASAP-BLOCK"}
+               "scheduler": "ASAP-BLOCK", **_harvest_model_fields()}
     energy = {"target_ue": "2/5", "eta": "5/2", "P_dem_j_per_tick": "3/5",
               "target_supply_mean_j_per_tick": "3/2", "raw_reference_mean_j_per_tick": "1",
-              "solar_scale": "3/2"}
+              "solar_scale": "3/2",
+              "runtime_configured_average_supply_j_per_tick": "3/2",
+              "actual_ue": "2/5", "actual_ue_abs_error": "0",
+              "actual_ue_rel_error": "0", "actual_ue_minus_target_ue": "0",
+              **_harvest_model_fields()}
     result = {**request, "energy": energy, "outcome": _available_outcome(),
               "schedulable": True, "deadline_miss": False,
               "simulation_status": "SIM_PASS_OBSERVED", "technical_error": None,
@@ -557,13 +569,28 @@ def test_analyzer_writes_both_figure_csvs(tmp_path):
     assert (tmp_path / "figure_scheduler_ue_dmr.png").is_file()
 
 
+def test_analyzer_rejects_empty_campaign_explicitly(tmp_path):
+    config = {
+        "cells": [["1/2", "2/5"]], "samples_per_cell": 1,
+        "schedulers": ["ASAP-BLOCK"], "processors": 4,
+        "util_tolerance_total": "1/100", "use_real_solar_data": False,
+        **experiment.HARVEST_MODEL_IDENTITY,
+    }
+    (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    for name in ("tasksets.jsonl", "requests.jsonl", "results.jsonl"):
+        (tmp_path / name).write_text("", encoding="utf-8")
+    with pytest.raises(SystemExit, match="requests are empty"):
+        analyze(tmp_path)
+
+
 def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monkeypatch):
     config = {"cells": [
         ["1/10", "2/5"], ["1/5", "2/5"],
         ["1/2", "1/5"], ["1/2", "3/10"],
         ["1/2", "2/5"], ["1/2", "1/2"],
     ], "samples_per_cell": 1, "schedulers": ["ASAP-BLOCK"],
-       "processors": 4, "util_tolerance_total": "1/100"}
+       "processors": 4, "util_tolerance_total": "1/100",
+       "use_real_solar_data": False, **experiment.HARVEST_MODEL_IDENTITY}
     tasksets = [
         {"taskset_id": "t-1", "taskset_hash": "h-1",
          "canonical_task_power": True, "target_uc": "1/10", "actual_uc": "1/10"},
@@ -583,6 +610,7 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
             "taskset_hash": next(row["taskset_hash"] for row in tasksets if row["taskset_id"] == taskset_id),
             "target_uc": target_uc, "target_ue": target_ue,
             "generation_index": 0, "scheduler": "ASAP-BLOCK",
+            **_harvest_model_fields(),
         }
         eta = str(1 / Fraction(target_ue))
         target_supply = str(1 / Fraction(target_ue))
@@ -592,7 +620,11 @@ def test_analyzer_keeps_csv_and_png_scans_on_the_same_fixed_axis(tmp_path, monke
             "battery_capacity_j": "100", "initial_energy_j": "50",
             "target_supply_mean_j_per_tick": target_supply,
             "raw_reference_mean_j_per_tick": "1", "solar_scale": target_supply,
+            "runtime_configured_average_supply_j_per_tick": target_supply,
+            "actual_ue": target_ue, "actual_ue_abs_error": "0",
+            "actual_ue_rel_error": "0", "actual_ue_minus_target_ue": "0",
             "harvest_trace_id": "fixture-trace",
+            **_harvest_model_fields(),
         }
         requests.append(request)
         results.append({
@@ -657,6 +689,7 @@ def _write_configured_analyzer_fixture(tmp_path, priority_policy="RM"):
         "samples_per_cell": 1, "schedulers": ["ASAP-BLOCK"],
         "priority_policy": priority_policy,
         "processors": 4, "util_tolerance_total": "1/100",
+        "use_real_solar_data": False, **experiment.HARVEST_MODEL_IDENTITY,
         "figure_slices": {
             "uc_scan": {
                 "x_key": "target_uc", "fixed_key": "target_ue",
@@ -688,6 +721,7 @@ def _write_configured_analyzer_fixture(tmp_path, priority_policy="RM"):
             "taskset_hash": taskset_hash, "target_uc": target_uc,
             "target_ue": target_ue, "generation_index": 0,
             "scheduler": "ASAP-BLOCK", "priority_policy": priority_policy,
+            **_harvest_model_fields(),
         }
         results.append({
             **request,
@@ -698,7 +732,11 @@ def _write_configured_analyzer_fixture(tmp_path, priority_policy="RM"):
                 "target_supply_mean_j_per_tick": str(1 / Fraction(target_ue)),
                 "raw_reference_mean_j_per_tick": "1",
                 "solar_scale": str(1 / Fraction(target_ue)),
+                "runtime_configured_average_supply_j_per_tick": str(1 / Fraction(target_ue)),
+                "actual_ue": target_ue, "actual_ue_abs_error": "0",
+                "actual_ue_rel_error": "0", "actual_ue_minus_target_ue": "0",
                 "harvest_trace_id": "fixture-trace",
+                **_harvest_model_fields(),
             },
             "outcome": _available_outcome(),
             "schedulable": True, "deadline_miss": False,
@@ -807,6 +845,7 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
         "generation_index": 0, "seed": taskset.seed,
         "scheduler": "ASAP-BLOCK", "scheduler_cli": "gpfp_asap_block",
         "horizon_ms": 20,
+        **_harvest_model_fields(),
     }
     monkeypatch.setattr(
         scheduler_runner.experiment, "materialize_tasksets",
@@ -827,6 +866,9 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
             "initial_energy_j": "1", "battery_capacity_j": "2",
             "solar_scale": "1", "P_dem_j_per_tick": "1",
             "raw_reference_mean_j_per_tick": "1",
+            "runtime_configured_average_supply_j_per_tick": "1",
+            "actual_ue": "2/5", "actual_ue_abs_error": "0",
+            "actual_ue_rel_error": "0", **_harvest_model_fields(),
         },
     )
     monkeypatch.setattr(
@@ -931,6 +973,27 @@ def test_scheduler_runner_disables_trace_retention_by_default(tmp_path, monkeypa
     ) == 0
     assert configs[0]["trace_on_failure"] is True
     assert configs[0]["retain_trace"] is True
+
+
+def test_runner_uses_v3_runtime_ue_report_name(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        result = SimpleNamespace(
+            status=SimulationStatus.PASS_OBSERVED, reason="observed",
+            jobs=(), metrics={}, simulation_completed=True,
+        )
+        return SimpleNamespace(
+            result=result, runtime_seconds=0.1, stdout_tail="",
+            stderr_tail="", retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    output = tmp_path / "v3-runtime-ue"
+    assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
+    config = json.loads((output / "run_config.json").read_text())
+    report = json.loads((output / "invariant_report.json").read_text())
+    assert config["experiment"] == "scheduler-load-cross-v3"
+    assert report["runtime_config_ue_exact"] is True
+    assert "actual_" + "ue_exact" not in report
 
 
 def test_parse_concurrency_is_configured_and_resume_bound(tmp_path, monkeypatch):
@@ -1076,6 +1139,7 @@ def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_pat
             "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
             "generation_index": 0, "seed": 710213, "scheduler": "ASAP-BLOCK",
             "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+            **_harvest_model_fields(),
         },
         {
             "request_id": "request-2", "taskset_id": "taskset-0",
@@ -1083,6 +1147,7 @@ def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_pat
             "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
             "generation_index": 1, "seed": 710214, "scheduler": "ASAP-BLOCK",
             "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+            **_harvest_model_fields(),
         },
     ]
     _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: SimpleNamespace(
@@ -1175,6 +1240,7 @@ def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, 
             "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
             "generation_index": 0, "seed": 710213, "scheduler": "ASAP-BLOCK",
             "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+            **_harvest_model_fields(),
         },
         {
             "request_id": "request-2", "taskset_id": "taskset-0",
@@ -1182,6 +1248,7 @@ def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, 
             "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
             "generation_index": 1, "seed": 710214, "scheduler": "ASAP-BLOCK",
             "scheduler_cli": "gpfp_asap_block", "horizon_ms": 20,
+            **_harvest_model_fields(),
         },
     ]
     fail_second = {"value": True}
@@ -1280,7 +1347,11 @@ def test_completed_request_resume_does_not_create_attempt(tmp_path, monkeypatch)
         "taskset_id": attempts[0]["taskset_id"], "taskset_hash": attempts[0]["taskset_hash"],
         "target_uc": "1/10", "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
         "scheduler": "ASAP-BLOCK", "simulation_status": "SIM_PASS_OBSERVED",
-        "technical_error": None, "energy": {"eta": "5/2", "target_ue": "2/5"},
+        "technical_error": None, **_harvest_model_fields(), "energy": {
+            "eta": "5/2", "target_ue": "2/5", "actual_ue": "2/5",
+            "actual_ue_abs_error": "0", "actual_ue_rel_error": "0",
+            **_harvest_model_fields(),
+        },
     }
     (output / "results.jsonl").write_text(json.dumps(terminal) + "\n", encoding="utf-8")
     before = sorted((output / "simulations" / terminal["request_id"]).iterdir())
@@ -1296,6 +1367,7 @@ def test_legacy_technical_row_in_active_results_fails_closed(tmp_path, monkeypat
     (output / "results.jsonl").write_text(json.dumps({
         "request_id": "scheduler-load-cross-test-request",
         "simulation_status": "SIM_INTERNAL_ERROR", "technical_error": "old failure",
+        **_harvest_model_fields(),
     }) + "\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="migration/recovery"):
         scheduler_runner.main(_scheduler_runner_args(output, resume=True))
@@ -1356,7 +1428,7 @@ def test_duplicate_active_request_ids_fail_closed(tmp_path, monkeypatch):
     terminal = {
         "request_id": attempt["request_id"], "taskset_id": attempt["taskset_id"],
         "taskset_hash": attempt["taskset_hash"], "simulation_status": "SIM_PASS_OBSERVED",
-        "technical_error": None,
+        "technical_error": None, **_harvest_model_fields(),
     }
     (output / "results.jsonl").write_text(
         json.dumps(terminal) + "\n" + json.dumps(terminal) + "\n", encoding="utf-8",

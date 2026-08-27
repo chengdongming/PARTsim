@@ -128,111 +128,57 @@ def _single_task_closure(demand: Fraction, available: Fraction):
     )
 
 
-def _runtime_start_offset_ms(day_of_year: int, time_of_day_ms: int) -> int:
-    """Independent reference for EnergyConfig's production conversion."""
-
-    start_offset_minutes = (
-        (day_of_year - 1) * 1440 + int(time_of_day_ms / 60000)
-    )
-    return int(start_offset_minutes * 60 * 1000)
-
-
-def _runtime_synthetic_harvest(
+def _reference_linear_ramp_harvest(
     config: legacy_rta.RTASystemConfig, tick: int,
 ) -> float:
-    absolute_time_ms = (
-        _runtime_start_offset_ms(config.day_of_year, config.time_of_day_ms)
-        + tick
-    )
-    peak_irradiance = config.base_harvesting_rate / (
-        config.pv_area_m2 * config.pv_efficiency
-    )
-    irradiance = peak_irradiance * legacy_rta._time_factor(absolute_time_ms)
-    return (
-        irradiance
-        * config.pv_area_m2
-        * config.pv_efficiency
-        * (1.0 * legacy_rta.TICK_SECONDS)
-    )
+    midpoint_ms = (float(tick) + float(tick + 1)) * 0.5
+    if midpoint_ms < 60000.0:
+        power = config.base_harvesting_rate * (
+            0.975 + 0.05 * midpoint_ms / 60000.0
+        )
+    else:
+        power = config.base_harvesting_rate * 1.025
+    return power * (1.0 * legacy_rta.TICK_SECONDS)
 
 
-@pytest.mark.parametrize(
-    "time_of_day_ms",
-    [
-        6 * 3600000,
-        6 * 3600000 + 1,
-        6 * 3600000 + 30000,
-        6 * 3600000 + 59999,
-        6 * 3600000 + 59998,
-        7 * 3600000 - 1,
-        21975000,
-    ],
-    ids=(
-        "minute-aligned",
-        "minute-plus-1ms",
-        "minute-plus-30s",
-        "minute-plus-59999ms",
-        "near-minute",
-        "near-hour",
-        "formal-21975000",
-    ),
-)
-def test_harvest_materializer_matches_runtime_minute_phase_across_boundary(
-    time_of_day_ms,
-):
+def test_harvest_materializer_matches_independent_linear_ramp_reference():
     system = legacy_rta.load_system_config(
         str(ROOT / "system_config_unified_template.yml")
     )
     system = replace(
         system,
         use_real_solar_data=False,
-        day_of_year=187,
-        time_of_day_ms=time_of_day_ms,
+        base_harvesting_rate=0.054,
     )
     trace = legacy_rta._harvest_trace_from_config(system, 60002)
-    compared_ticks = (1, 2, 59998, 59999, 60000, 60001, 60002)
+    compared_ticks = (0, 1, 29999, 30000, 59998, 59999, 60000, 60001)
     assert [
-        _bits(trace[tick - 1]) for tick in compared_ticks
+        _bits(trace[tick]) for tick in compared_ticks
     ] == [
-        _bits(_runtime_synthetic_harvest(system, tick))
+        _bits(_reference_linear_ramp_harvest(system, tick))
         for tick in compared_ticks
     ]
 
 
-def test_formal_phase_counterexample_is_closed_by_runtime_aligned_trace():
-    # Frozen witness from the independently compiled Release probe at the old
-    # PR head.  Retaining it makes the original failure-to-success flip
-    # reproducible without treating either decimal rendering as authoritative.
-    old_rta_supply = Fraction.from_float(
-        float.fromhex("0x1.2dfd9e1397380p-20")
-    )
-    runtime_supply = Fraction.from_float(
-        float.fromhex("0x1.21e93db45be9fp-20")
-    )
-    boundary_demand = (old_rta_supply + runtime_supply) / 2
-    assert _single_task_closure(
-        boundary_demand, old_rta_supply,
-    ).solver_status is core.V93SolverStatus.CANDIDATE
-    assert _single_task_closure(
-        boundary_demand, runtime_supply,
-    ).solver_status is core.V93SolverStatus.NO_CANDIDATE
-
+def test_synthetic_linear_ramp_ignores_calendar_and_pv_parameters():
     system = legacy_rta.load_system_config(
         str(ROOT / "system_config_unified_template.yml")
     )
-    system = replace(
+    reference = replace(
         system,
         use_real_solar_data=False,
-        day_of_year=1,
-        time_of_day_ms=21975000,
+        base_harvesting_rate=0.123,
     )
-    repaired_supply = Fraction.from_float(
-        legacy_rta._harvest_trace_from_config(system, 1)[0]
+    changed = replace(
+        reference,
+        day_of_year=999,
+        time_of_day_ms=23 * 3600000,
+        pv_area_m2=0.037,
+        pv_efficiency=0.213,
     )
-    assert repaired_supply == runtime_supply
-    assert _single_task_closure(
-        boundary_demand, repaired_supply,
-    ).solver_status is core.V93SolverStatus.NO_CANDIDATE
+    assert legacy_rta._harvest_trace_from_config(reference, 60001) == (
+        legacy_rta._harvest_trace_from_config(changed, 60001)
+    )
 
 
 def test_closure_boundary_cannot_flip_failure_to_success():

@@ -1583,19 +1583,6 @@ def _load_irradiance_values(path: str) -> List[float]:
     return values
 
 
-def _time_factor(absolute_time_ms: int) -> float:
-    hour = (absolute_time_ms % 86400000) / 3600000.0
-    if hour < 6.0:
-        return 0.0
-    if hour < 11.0:
-        return (hour - 6.0) / 5.0
-    if hour < 13.0:
-        return 1.0
-    if hour < 18.0:
-        return (18.0 - hour) / 5.0
-    return 0.0
-
-
 def materialize_runtime_start_offset_ms(
     day_of_year: int, time_of_day_ms: int,
 ) -> int:
@@ -1630,22 +1617,21 @@ def _harvest_trace_from_config(
             )
         return trace
 
-    # Mirror ASAPBlockScheduler::collectSolarEnergy's binary64 operation order
-    # for a one-ms tick, including the area/efficiency cancellation performed
-    # by the production C++ scheduler.
+    # Mirror LegacySolarSource's binary64 operation order for the synthetic
+    # one-ms tick.  The synthetic clock starts at the beginning of this
+    # simulation; calendar and photovoltaic parameters are intentionally not
+    # consulted on this path.
     trace = []
-    peak_irradiance = config.base_harvesting_rate / (
-        config.pv_area_m2 * config.pv_efficiency
-    )
-    for tick in range(1, horizon_ms + 1):
-        irradiance = peak_irradiance * _time_factor(start_offset + tick)
+    for tick in range(horizon_ms):
+        midpoint_ms = (float(tick) + float(tick + 1)) * 0.5
+        if midpoint_ms < 60000.0:
+            power = config.base_harvesting_rate * (
+                0.975 + 0.05 * midpoint_ms / 60000.0
+            )
+        else:
+            power = config.base_harvesting_rate * 1.025
         elapsed_seconds = 1.0 * TICK_SECONDS
-        trace.append(
-            irradiance
-            * config.pv_area_m2
-            * config.pv_efficiency
-            * elapsed_seconds
-        )
+        trace.append(power * elapsed_seconds)
     return trace
 
 

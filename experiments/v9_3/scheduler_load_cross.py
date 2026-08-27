@@ -20,10 +20,17 @@ from .taskset_store import TasksetStore, prepare_service_curve
 from .parallel_prepare import run_prepare_jobs
 
 
-DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v2"
+DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v3"
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
 ORDINARY_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 DEFAULT_KAPPA = Fraction(10)
+HARVEST_MODEL = "linear_ramp_v1"
+HARVEST_MODEL_IDENTITY = {
+    "harvest_model": HARVEST_MODEL,
+    "ramp_half_span": "1/40",
+    "ramp_horizon_ms": 60000,
+    "post_horizon_policy": "hold_last",
+}
 FORMAL_UC_SCAN = tuple(Fraction(value) for value in (
     "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
 ))
@@ -219,6 +226,11 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
         "max_task_util": fraction_text(max_task_util),
         "utilization_tolerance": fraction_text(tolerance),
     })
+    config["energy"]["service_curve"].update(HARVEST_MODEL_IDENTITY)
+    config["energy"]["service_curve"].update({
+        "use_real_solar_data": False,
+        "require_real_solar_data": False,
+    })
     return config
 
 
@@ -331,6 +343,7 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                 identity = {
                     "taskset_id": taskset.taskset_id, "target_ue": fraction_text(ue),
                     "scheduler": scheduler,
+                    **HARVEST_MODEL_IDENTITY,
                 }
                 if policy == "DM":
                     identity["priority_policy"] = policy
@@ -344,6 +357,7 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "scheduler": scheduler, "scheduler_cli": perf_g.SCHEDULER_CLI[scheduler],
                     "horizon_ms": horizon,
                     "priority_policy": policy,
+                    **HARVEST_MODEL_IDENTITY,
                 })
     return rows
 
@@ -389,10 +403,21 @@ def energy_material(taskset: Any, target_ue: Fraction, raw_trace: Sequence[Fract
         **material,
         "target_ue": fraction_text(ue), "eta": fraction_text(eta),
         "target_supply_mean_j_per_tick": fraction_text(target_supply),
+        "runtime_configured_average_supply_j_per_tick": fraction_text(
+            target_supply
+        ),
+        "runtime_average_supply_j_per_tick": fraction_text(target_supply),
+        "actual_ue": fraction_text(demand / target_supply),
+        "actual_ue_abs_error": fraction_text(abs(demand / target_supply - ue)),
+        "actual_ue_minus_target_ue": fraction_text(demand / target_supply - ue),
+        "actual_ue_rel_error": fraction_text(
+            abs(demand / target_supply - ue) / ue
+        ),
         "raw_reference_mean_j_per_tick": fraction_text(raw_mean),
         "solar_scale": fraction_text(solar_scale),
         "normalization_horizon_ms": str(normalization_horizon),
         "energy_control": "SERVICE_ONLY_SCALING",
+        **HARVEST_MODEL_IDENTITY,
         "harvest_trace_id": raw_trace_id or harvest_trace_identity(raw_trace),
     }
 

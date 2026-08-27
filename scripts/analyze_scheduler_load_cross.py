@@ -24,6 +24,7 @@ from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_wor
 
 
 DMR_BOOTSTRAP_REPLICATES = 10000
+ACTUAL_UE_RELATIVE_TOLERANCE = Fraction(1, 10**12)
 
 _PLOT_COLORS = {
     "ASAP": "tab:blue",
@@ -54,6 +55,11 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns)
         writer.writeheader(); writer.writerows(rows)
+
+
+def _validate_harvest_model(value: Any, label: str) -> None:
+    if value != experiment.HARVEST_MODEL_IDENTITY:
+        raise SystemExit(f"{label} does not identify linear_ramp_v1")
 
 
 def wilson_ci(k: int, n: int, *, z: float = 1.959963984540054) -> tuple[float, float]:
@@ -447,6 +453,12 @@ def analyze(
     analysis_started = time.perf_counter()
     validation_started = analysis_started
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    _validate_harvest_model(
+        {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+        "run_config harvest model",
+    )
+    if config.get("use_real_solar_data") is not False:
+        raise SystemExit("run_config must disable real solar data")
     try:
         priority_policy = experiment.normalize_scheduler_priority_policy(
             config.get("priority_policy", "RM")
@@ -473,6 +485,8 @@ def analyze(
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
+    if not requests:
+        raise SystemExit("incomplete campaign: requests are empty")
     expected = {str(row["request_id"]) for row in requests}
     observed = [str(row.get("request_id")) for row in results]
     duplicate = len(observed) - len(set(observed))
@@ -499,6 +513,14 @@ def analyze(
         ):
             if row.get(key) != request.get(key):
                 raise SystemExit(f"result/request identity mismatch for {key}")
+        _validate_harvest_model(
+            {key: request.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+            "request harvest model",
+        )
+        _validate_harvest_model(
+            {key: row.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+            "result harvest model",
+        )
     expected_tasksets = len({row["taskset_id"] for row in requests})
     taskset_by_id = {str(row["taskset_id"]): row for row in tasksets}
     if len(taskset_by_id) != expected_tasksets:
@@ -533,6 +555,10 @@ def analyze(
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("scheduler changed taskset identity")
         energy = row["energy"]
+        _validate_harvest_model(
+            {key: energy.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+            "energy harvest model",
+        )
         ue = Fraction(row["target_ue"])
         if Fraction(energy["eta"]) != experiment.eta_for_ue(ue):
             raise SystemExit("eta != 1/U_E")
@@ -543,6 +569,39 @@ def analyze(
             raise SystemExit("U_E service identity mismatch")
         if Fraction(energy["eta"]) * ue != 1:
             raise SystemExit("eta * U_E != 1")
+        try:
+            runtime_supply = Fraction(
+                energy["runtime_configured_average_supply_j_per_tick"]
+            )
+            actual_ue = Fraction(energy["actual_ue"])
+            actual_ue_abs_error = Fraction(energy["actual_ue_abs_error"])
+            actual_ue_rel_error = Fraction(energy["actual_ue_rel_error"])
+            actual_ue_minus_target_ue = Fraction(
+                energy["actual_ue_minus_target_ue"]
+            )
+        except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+            raise SystemExit(
+                "runtime average supply and actual U_E are invalid"
+            ) from exc
+        if runtime_supply <= 0 or actual_ue <= 0:
+            raise SystemExit("runtime average supply and actual U_E must be positive")
+        calculated_actual_ue = demand / runtime_supply
+        calculated_abs_error = abs(calculated_actual_ue - ue)
+        calculated_rel_error = calculated_abs_error / ue
+        if (
+            actual_ue != calculated_actual_ue
+            or actual_ue_abs_error != calculated_abs_error
+            or actual_ue_rel_error != calculated_rel_error
+            or actual_ue_minus_target_ue != calculated_actual_ue - ue
+        ):
+            raise SystemExit(
+                "recorded actual U_E does not match runtime average supply"
+            )
+        if calculated_rel_error > ACTUAL_UE_RELATIVE_TOLERANCE:
+            raise SystemExit(
+                "actual U_E relative error exceeds 1e-12: "
+                f"{float(calculated_rel_error):.17g}"
+            )
     if technical_rows:
         raise SystemExit(f"technical failures are not scientific WholePass rows: {len(technical_rows)}")
 
@@ -567,13 +626,13 @@ def analyze(
     for row in results:
         by_taskset_ue.setdefault((str(row["taskset_id"]), str(row["target_ue"])), []).append(row)
         by_taskset.setdefault(str(row["taskset_id"]), []).append(row)
-    for key, group in by_taskset_ue.items():
-        if len(group) != len(schedulers) or len({str(row["energy"].get("harvest_trace_id")) for row in group}) != 1:
-            raise SystemExit(f"energy material is not paired across schedulers: {key}")
     invariant_fields = (
         "P_dem_j_per_tick", "E_burst_j", "battery_capacity_j",
         "initial_energy_j", "raw_reference_mean_j_per_tick", "harvest_trace_id",
     )
+    for key, group in by_taskset_ue.items():
+        if len(group) != len(schedulers) or len({str(row["energy"].get("harvest_trace_id")) for row in group}) != 1:
+            raise SystemExit(f"energy material is not paired across schedulers: {key}")
     for taskset_id, group in by_taskset.items():
         invariants = {
             field: {str(row["energy"].get(field)) for row in group}
@@ -611,6 +670,13 @@ def analyze(
             summaries.append({
                 "priority_policy": priority_policy,
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
+                "runtime_configured_average_supply_j_per_tick": selected[0][
+                    "energy"
+                ]["runtime_configured_average_supply_j_per_tick"],
+                "actual_ue": selected[0]["energy"]["actual_ue"],
+                "actual_ue_minus_target_ue": selected[0]["energy"][
+                    "actual_ue_minus_target_ue"
+                ],
                 "n_total": n_total, "n_valid_tasksets": n_total,
                 "n_technical": 0, "n_wholepass": n_wholepass,
                 "wholepass_ratio": n_wholepass / n_total,
@@ -719,6 +785,11 @@ def analyze(
     except ImportError:
         pass
     plot_seconds = time.perf_counter() - plot_started
+    ue_errors = [
+        Fraction(row["energy"]["actual_ue_abs_error"])
+        / Fraction(row["energy"]["target_ue"])
+        for row in results
+    ]
     report = {"complete": True, "tasksets": len(tasksets), "requests": len(requests),
               "results": len(results), "duplicate_request_ids": duplicate,
               "missing_request_ids": missing, "unexpected_request_ids": unexpected,
@@ -727,6 +798,9 @@ def analyze(
               "technical_result_count": len(technical_rows),
               "missing": missing, "duplicate": duplicate,
               "unexpected": unexpected, "technical": len(technical_rows),
+              "harvest_model": experiment.HARVEST_MODEL,
+              "actual_ue_validated": bool(ue_errors) and max(ue_errors) <= ACTUAL_UE_RELATIVE_TOLERANCE,
+              "actual_ue_max_relative_error": str(max(ue_errors, default=Fraction(0))),
               "telemetry": {
                   "validation_summary_seconds": validation_summary_seconds,
                   "plot_seconds": plot_seconds,
