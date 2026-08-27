@@ -10,6 +10,7 @@ import pytest
 
 from experiments.v9_3 import perf_g
 from experiments.v9_3 import scheduler_load_cross as experiment
+from experiments.v9_3 import taskset_store
 from experiments.v9_3.simulation_engine import should_retain_failure_trace
 from experiments.v9_3.simulation_engine import (
     _render_taskset_yaml, derive_fixed_priority_ranks,
@@ -176,6 +177,86 @@ def test_system_templates_are_scoped_to_their_experiment_paths():
         perf_g.BASE_SYSTEM_TEMPLATE
     )
     assert perf_g.BASE_SYSTEM_TEMPLATE != experiment.ORDINARY_SYSTEM_TEMPLATE
+
+
+def _synthetic_service_config(template_name):
+    config = experiment._config(
+        1, utilizations=[Fraction(1, 10)], count=1, processors=4, tasks=2,
+        period_min=1, period_max=2, min_task_util=Fraction(1, 100),
+        max_task_util=Fraction(1, 10), tolerance=Fraction(1, 100),
+    )
+    config["energy"]["service_curve"]["system_template"] = template_name
+    config["energy"]["service_curve"]["horizon"] = 4
+    return config
+
+
+def _synthetic_template(source, *, solar_file, pv_area, pv_efficiency):
+    rendered = source.replace(
+        'solar_data_file: "data/processed/shenyang_solar_minute.csv"',
+        f'solar_data_file: "{solar_file}"',
+    )
+    rendered = rendered.replace("pv_area_m2: 1.0", f"pv_area_m2: {pv_area}")
+    rendered = rendered.replace(
+        "pv_efficiency: 0.18", f"pv_efficiency: {pv_efficiency}"
+    )
+    return rendered
+
+
+def test_synthetic_service_does_not_require_solar_csv(tmp_path, monkeypatch):
+    source = (
+        taskset_store.PROJECT_ROOT / experiment.ORDINARY_SYSTEM_TEMPLATE
+    ).read_text(encoding="utf-8")
+    template = tmp_path / "synthetic.yml"
+    template.write_text(
+        _synthetic_template(
+            source, solar_file="missing.csv", pv_area="1", pv_efficiency="0.18",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(taskset_store, "PROJECT_ROOT", tmp_path)
+
+    service = taskset_store.prepare_service_curve(
+        _synthetic_service_config(template.name), tmp_path / "service"
+    )
+    material = json.loads(service.raw_spec)
+
+    assert material["use_real_solar_data"] is False
+    assert material["harvest_model"] == experiment.HARVEST_MODEL
+    assert material["base_harvesting_rate"]
+    assert "solar_data_sha256" not in material
+    assert "effective_pv_area_m2" not in material
+    assert "source_template_sha256" not in material
+
+
+def test_synthetic_service_identity_ignores_solar_and_pv_fields(
+    tmp_path, monkeypatch,
+):
+    source = (
+        taskset_store.PROJECT_ROOT / experiment.ORDINARY_SYSTEM_TEMPLATE
+    ).read_text(encoding="utf-8")
+    template = tmp_path / "synthetic.yml"
+    monkeypatch.setattr(taskset_store, "PROJECT_ROOT", tmp_path)
+    config = _synthetic_service_config(template.name)
+
+    template.write_text(
+        _synthetic_template(
+            source, solar_file="missing-a.csv", pv_area="1", pv_efficiency="0.18",
+        ),
+        encoding="utf-8",
+    )
+    first = taskset_store.prepare_service_curve(config, tmp_path / "first")
+
+    template.write_text(
+        _synthetic_template(
+            source, solar_file="missing-b.csv", pv_area="7.5", pv_efficiency="0.91",
+        ),
+        encoding="utf-8",
+    )
+    second = taskset_store.prepare_service_curve(config, tmp_path / "second")
+
+    assert first.values == second.values
+    assert first.raw_spec == second.raw_spec
+    assert first.identity == second.identity
 
 
 def test_strict_wholepass_and_technical_outcome_contract():
