@@ -1,5 +1,6 @@
 #include <rtsim/harvesting/legacy_solar_source.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -8,7 +9,10 @@
 
 namespace RTSim {
     namespace {
-        constexpr std::int64_t MillisecondsPerDay = INT64_C(86400000);
+        constexpr std::int64_t SyntheticHorizonMs = INT64_C(60000);
+        constexpr double SyntheticBaseFactor = 0.975;
+        constexpr double SyntheticRampSpan = 0.05;
+        constexpr double SyntheticFinalFactor = 1.025;
         constexpr double MillisecondsToSeconds = 0.001;
 
         double positiveZero(double value) {
@@ -138,36 +142,54 @@ namespace RTSim {
     }
 
     double LegacySolarSource::syntheticOfferedEnergy(
-        const HarvestInterval &,
-        std::int64_t end_time_ms,
-        std::int64_t elapsed_ms) const {
-        const std::int64_t ms_of_day =
-            end_time_ms % MillisecondsPerDay;
-        const double hour_of_day =
-            static_cast<double>(ms_of_day) / 3600000.0;
+        const HarvestInterval &interval,
+        std::int64_t,
+        std::int64_t) const {
+        const std::int64_t start_time_ms =
+            static_cast<std::int64_t>(interval.start_time_ms);
+        const std::int64_t end_time_ms =
+            static_cast<std::int64_t>(interval.end_time_ms);
+        double offered_j = 0.0;
 
-        double time_factor = 0.0;
-        if (hour_of_day < 6.0) {
-            time_factor = 0.0;
-        } else if (hour_of_day < 11.0) {
-            time_factor = (hour_of_day - 6.0) / 5.0;
-        } else if (hour_of_day < 13.0) {
-            time_factor = 1.0;
-        } else if (hour_of_day < 18.0) {
-            time_factor = (18.0 - hour_of_day) / 5.0;
+        const auto add_linear_segment = [&](std::int64_t start,
+                                            std::int64_t end) {
+            if (end <= start) {
+                return;
+            }
+            // The midpoint rule is exact for this linear segment and gives
+            // the required [l,l+1) midpoint for a one-ms query.
+            const double midpoint_ms =
+                (static_cast<double>(start) +
+                 static_cast<double>(end)) * 0.5;
+            const double power =
+                _config.base_harvesting_power_w *
+                (SyntheticBaseFactor +
+                 SyntheticRampSpan * midpoint_ms / 60000.0);
+            const double elapsed_seconds =
+                static_cast<double>(end - start) * MillisecondsToSeconds;
+            offered_j += power * elapsed_seconds;
+        };
+
+        const auto add_hold_segment = [&](std::int64_t start,
+                                          std::int64_t end) {
+            if (end <= start) {
+                return;
+            }
+            const double elapsed_seconds =
+                static_cast<double>(end - start) * MillisecondsToSeconds;
+            offered_j +=
+                (_config.base_harvesting_power_w * SyntheticFinalFactor) *
+                elapsed_seconds;
+        };
+
+        if (start_time_ms < SyntheticHorizonMs) {
+            const std::int64_t linear_end =
+                std::min(end_time_ms, SyntheticHorizonMs);
+            add_linear_segment(start_time_ms, linear_end);
+            add_hold_segment(linear_end, end_time_ms);
         } else {
-            time_factor = 0.0;
+            add_hold_segment(start_time_ms, end_time_ms);
         }
-
-        const double peak_irradiance =
-            _config.base_harvesting_power_w /
-            (_config.pv_area_m2 * _config.pv_efficiency);
-        const double irradiance = peak_irradiance * time_factor;
-        const double elapsed_seconds =
-            static_cast<double>(elapsed_ms) * MillisecondsToSeconds;
-        const double offered_j =
-            irradiance * _config.pv_area_m2 *
-            _config.pv_efficiency * elapsed_seconds;
         return checkedOfferedEnergy(offered_j);
     }
 

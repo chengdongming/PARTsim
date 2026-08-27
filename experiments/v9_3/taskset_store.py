@@ -258,27 +258,46 @@ def prepare_service_curve(
             "exact_scale": fraction_text(exact_scale),
         })
     if "solar_scale" in spec:
-        solar_path = Path(system.solar_data_file)
-        if not solar_path.is_absolute():
-            solar_path = Path(legacy_rta._resolve_solar_path(system))
-        raw.update({
-            "source_template_sha256": hashlib.sha256(
-                template.read_bytes()
-            ).hexdigest(),
-            "solar_data_sha256": hashlib.sha256(
-                solar_path.read_bytes()
-            ).hexdigest(),
-            "solar_scale": fraction_text(
-                exact_energy.parse_persisted_fraction(
-                    spec["solar_scale"], "service-curve solar scale",
-                )
-            ),
-            "effective_pv_area_m2": fraction_text(
-                exact_energy.materialize_supply_lower_bound(
-                    system.pv_area_m2, "effective pv_area_m2",
-                ).exact_value
-            ),
-        })
+        solar_scale = fraction_text(
+            exact_energy.parse_persisted_fraction(
+                spec["solar_scale"], "service-curve solar scale",
+            )
+        )
+        if system.use_real_solar_data:
+            solar_path = Path(system.solar_data_file)
+            if not solar_path.is_absolute():
+                solar_path = Path(legacy_rta._resolve_solar_path(system))
+            raw.update({
+                "source_template_sha256": hashlib.sha256(
+                    template.read_bytes()
+                ).hexdigest(),
+                "solar_data_sha256": hashlib.sha256(
+                    solar_path.read_bytes()
+                ).hexdigest(),
+                "solar_scale": solar_scale,
+                "effective_pv_area_m2": fraction_text(
+                    exact_energy.materialize_supply_lower_bound(
+                        system.pv_area_m2, "effective pv_area_m2",
+                    ).exact_value
+                ),
+            })
+        else:
+            raw.update({
+                "solar_scale": solar_scale,
+                "use_real_solar_data": False,
+                "base_harvesting_rate": fraction_text(
+                    exact_energy.materialize_supply_lower_bound(
+                        system.base_harvesting_rate,
+                        "effective base_harvesting_rate",
+                    ).exact_value
+                ),
+            })
+            for key in (
+                "harvest_model", "ramp_half_span", "ramp_horizon_ms",
+                "post_horizon_policy",
+            ):
+                if key in spec:
+                    raw[key] = spec[key]
     identity = domain_hash("ASAP_BLOCK:V9.3:SERVICE_CURVE:v1", raw)
     return ServiceCurveMaterial(values, identity, canonical_json(raw), system_path)
 

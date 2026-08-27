@@ -293,7 +293,7 @@ def main(argv: list[str] | None = None) -> int:
     latency = experiment.parse_fraction(args.latency, "latency")
     root = args.output
     config = {
-        "experiment": "scheduler-load-cross-v2", "seed": args.seed, "workers": args.workers,
+        "experiment": "scheduler-load-cross-v3", "seed": args.seed, "workers": args.workers,
         "samples_per_cell": args.samples_per_cell, "cells": [[str(uc), str(ue)] for uc, ue in cells],
         "schedulers": list(schedulers), "processors": args.processors, "tasks": args.tasks,
         "priority_policy": priority_policy,
@@ -303,6 +303,8 @@ def main(argv: list[str] | None = None) -> int:
         "kappa": str(kappa), "initial_energy_rule": "battery_capacity/2",
         "normalization_horizon_ms": experiment.FORMAL_NORMALIZATION_HORIZON,
         "simulation_horizon_ms": args.simulation_horizon,
+        "use_real_solar_data": False,
+        **experiment.HARVEST_MODEL_IDENTITY,
         "release_semantics": "synchronous arrival_offset=0",
         "energy_control": "SERVICE_ONLY_SCALING", "energy_unit": "J/tick exact canonical P",
         "simulator": str(args.simulator), "canonical_taskset_source": "PERF-G TasksetStore",
@@ -330,6 +332,15 @@ def main(argv: list[str] | None = None) -> int:
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
+        if (stored_config or {}).get("harvest_model") != experiment.HARVEST_MODEL:
+            raise SystemExit(
+                "resume harvest model mismatch: expected linear_ramp_v1"
+            )
+        if (stored_config or {}).get("use_real_solar_data") is not False:
+            raise SystemExit(
+                "resume solar mode mismatch: scheduler LOAD-CROSS requires "
+                "use_real_solar_data=false"
+            )
         runtime_keys = {"execution", "status", "telemetry"}
         stored_comparable = {
             key: value for key, value in (stored_config or {}).items()
@@ -398,6 +409,11 @@ def main(argv: list[str] | None = None) -> int:
     existing = read_jsonl(results_path) if args.resume else []
     if any(row.get("priority_policy", "RM") != priority_policy for row in existing):
         raise SystemExit("persisted results priority policy does not match requested policy")
+    if any(
+        any(row.get(key) != value for key, value in experiment.HARVEST_MODEL_IDENTITY.items())
+        for row in existing
+    ):
+        raise SystemExit("persisted results harvest model does not match linear_ramp_v1")
     existing_ids = [str(row.get("request_id")) for row in existing]
     expected_ids = {str(row["request_id"]) for row in requests}
     if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
@@ -484,7 +500,12 @@ def main(argv: list[str] | None = None) -> int:
         job["energy_config"] = {
             "simulation_initial_battery": energy["initial_energy_j"],
             "battery_capacity": energy["battery_capacity_j"], "allow_harvest_clipping": True,
-            "service_curve": {"solar_scale": energy["solar_scale"], "use_real_solar_data": True},
+            "service_curve": {
+                "solar_scale": energy["solar_scale"],
+                "use_real_solar_data": False,
+                "require_real_solar_data": False,
+                **experiment.HARVEST_MODEL_IDENTITY,
+            },
         }
 
     execution_started = time.perf_counter()
@@ -617,7 +638,12 @@ def main(argv: list[str] | None = None) -> int:
         "duplicate": len(observed_ids) - len(set(observed_ids)),
         "unexpected": len(set(observed_ids) - expected_ids),
         "technical": 0,
-        "actual_ue_exact": all(Fraction(row["energy"]["target_ue"]) * Fraction(row["energy"]["eta"]) == 1 for row in results_by_id.values()),
+        "runtime_config_ue_exact": all(
+            Fraction(row["energy"]["actual_ue"]) ==
+            Fraction(row["energy"]["target_ue"])
+            for row in results_by_id.values()
+        ),
+        "harvest_model": experiment.HARVEST_MODEL,
         "canonical_task_power": all(row.get("canonical_task_power") for row in rows),
         "scheduler_input_hashes_stable": all(len({row["taskset_hash"] for row in requests if row["taskset_id"] == taskset.taskset_id}) == 1 for taskset in tasksets),
         "complete": len(results_by_id) == len(requests) and len(observed_ids) == len(set(observed_ids)),

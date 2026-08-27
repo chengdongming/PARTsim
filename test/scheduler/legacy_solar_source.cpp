@@ -151,11 +151,10 @@ namespace RTSim {
             return config;
         }
 
-        // Frozen test-only oracle copied from the pre-I3B-2 production path:
-        // ASAPBlockScheduler::collectSolarEnergy/getSolarIrradiance at
-        // 4aee3ea8c1602115357148f6d4b7fd2ae7fde61b. It deliberately
-        // performs the old per-query file read and shares no implementation
-        // helper with LegacySolarSource.
+        // Frozen test-only real-data oracle copied from the pre-I3B-2
+        // production path. The synthetic branch below is an independent
+        // linear-ramp oracle and shares no implementation helper with the
+        // production source.
         double preMigrationRealIrradiance(
             const LegacySolarConfig &config,
             std::int64_t time_ms) {
@@ -209,37 +208,43 @@ namespace RTSim {
                 energy = irradiance * config.pv_area_m2 *
                          config.pv_efficiency * elapsed_seconds;
             } else {
-                const std::int64_t actual_time_ms =
-                    current_ms +
-                    static_cast<std::int64_t>(
-                        config.start_offset_ms);
-                const std::int64_t ms_of_day =
-                    actual_time_ms % INT64_C(86400000);
-                const double hour_of_day =
-                    static_cast<double>(ms_of_day) / 3600000.0;
-
-                double time_factor = 0.0;
-                if (hour_of_day < 6.0) {
-                    time_factor = 0.0;
-                } else if (hour_of_day < 11.0) {
-                    time_factor = (hour_of_day - 6.0) / 5.0;
-                } else if (hour_of_day < 13.0) {
-                    time_factor = 1.0;
-                } else if (hour_of_day < 18.0) {
-                    time_factor = (18.0 - hour_of_day) / 5.0;
+                double reference = 0.0;
+                const auto add_linear = [&](std::int64_t start,
+                                            std::int64_t end) {
+                    if (end <= start) {
+                        return;
+                    }
+                    const double midpoint_ms =
+                        (static_cast<double>(start) +
+                         static_cast<double>(end)) * 0.5;
+                    const double power =
+                        config.base_harvesting_power_w *
+                        (0.975 + 0.05 * midpoint_ms / 60000.0);
+                    reference += power *
+                        (static_cast<double>(end - start) * 0.001);
+                };
+                const auto add_hold = [&](std::int64_t start,
+                                          std::int64_t end) {
+                    if (end <= start) {
+                        return;
+                    }
+                    reference +=
+                        (config.base_harvesting_power_w * 1.025) *
+                        (static_cast<double>(end - start) * 0.001);
+                };
+                const std::int64_t start =
+                    static_cast<std::int64_t>(interval.start_time_ms);
+                const std::int64_t end =
+                    static_cast<std::int64_t>(interval.end_time_ms);
+                if (start < 60000) {
+                    const std::int64_t linear_end =
+                        std::min(end, INT64_C(60000));
+                    add_linear(start, linear_end);
+                    add_hold(linear_end, end);
                 } else {
-                    time_factor = 0.0;
+                    add_hold(start, end);
                 }
-
-                const double peak_irradiance =
-                    config.base_harvesting_power_w /
-                    (config.pv_area_m2 * config.pv_efficiency);
-                const double irradiance =
-                    peak_irradiance * time_factor;
-                const double elapsed_seconds =
-                    static_cast<double>(elapsed) * 0.001;
-                energy = irradiance * config.pv_area_m2 *
-                         config.pv_efficiency * elapsed_seconds;
+                energy = reference;
             }
             return energy;
         }
@@ -327,95 +332,53 @@ namespace RTSim {
             (void)LegacySolarSource(config), std::invalid_argument);
     }
 
-    TEST(LegacySolarSourceGolden, SyntheticMatchesFrozenProductionBits) {
-        struct Case {
-            const char *label;
-            LegacySolarConfig config;
-            HarvestInterval interval;
+    TEST(LegacySolarSourceGolden, SyntheticLinearRampMatchesIndependentOracle) {
+        const auto interval = [](std::uint64_t start, std::uint64_t end) {
+            return HarvestInterval{0u, start, end};
         };
+        LegacySolarConfig config = syntheticConfig();
+        config.start_offset_ms = UINT64_C(86399999);
+        LegacySolarSource source(config);
 
-        const auto at = [](std::uint64_t end, std::uint64_t elapsed) {
-            return HarvestInterval{0u, end - elapsed, end};
+        const std::vector<std::pair<const char *, HarvestInterval>> cases = {
+            {"first-tick", interval(0u, 1u)},
+            {"thirty-seconds", interval(30000u, 30001u)},
+            {"last-ramp-tick", interval(59999u, 60000u)},
+            {"first-held-tick", interval(60000u, 60001u)},
+            {"long-linear-interval", interval(10000u, 10007u)},
+            {"crosses-horizon", interval(59995u, 60005u)},
         };
-        std::vector<Case> cases;
-        cases.push_back(
-            {"time-zero", syntheticConfig(), {0u, 0u, 0u}});
-        cases.push_back(
-            {"before-6h", syntheticConfig(), at(21599999u, 1u)});
-        cases.push_back(
-            {"at-6h", syntheticConfig(), at(21600000u, 1u)});
-        cases.push_back(
-            {"after-6h", syntheticConfig(), at(21600001u, 1u)});
-        cases.push_back(
-            {"before-11h", syntheticConfig(), at(39599999u, 1u)});
-        cases.push_back(
-            {"at-11h", syntheticConfig(), at(39600000u, 1u)});
-        cases.push_back(
-            {"after-11h", syntheticConfig(), at(39600001u, 1u)});
-        cases.push_back(
-            {"before-13h", syntheticConfig(), at(46799999u, 1u)});
-        cases.push_back(
-            {"at-13h", syntheticConfig(), at(46800000u, 1u)});
-        cases.push_back(
-            {"after-13h", syntheticConfig(), at(46800001u, 1u)});
-        cases.push_back(
-            {"before-18h", syntheticConfig(), at(64799999u, 1u)});
-        cases.push_back(
-            {"at-18h", syntheticConfig(), at(64800000u, 1u)});
-        cases.push_back(
-            {"after-18h", syntheticConfig(), at(64800001u, 1u)});
-        cases.push_back(
-            {"24h-wrap", syntheticConfig(), at(86400000u, 1u)});
-
-        LegacySolarConfig offset = syntheticConfig();
-        offset.start_offset_ms = UINT64_C(21600000);
-        cases.push_back(
-            {"nonzero-offset", offset, at(1u, 1u)});
-
-        cases.push_back(
-            {"elapsed-many-ms",
-             syntheticConfig(),
-             at(UINT64_C(39612345), UINT64_C(12345))});
-
-        LegacySolarConfig zero_base = syntheticConfig();
-        zero_base.base_harvesting_power_w = 0.0;
-        cases.push_back(
-            {"zero-base", zero_base, at(39600000u, 1u)});
-
-        LegacySolarConfig nondefault = syntheticConfig();
-        nondefault.base_harvesting_power_w = 0.123;
-        nondefault.pv_area_m2 = 0.037;
-        nondefault.pv_efficiency = 0.213;
-        cases.push_back(
-            {"nondefault-area-efficiency",
-             nondefault,
-             at(40123456u, 57u)});
-
-        LegacySolarConfig tiny = syntheticConfig();
-        tiny.base_harvesting_power_w =
-            std::numeric_limits<double>::min();
-        tiny.pv_area_m2 = 1.0;
-        tiny.pv_efficiency = 1.0;
-        cases.push_back(
-            {"smallest-normal-positive",
-             tiny,
-             at(39600000u, 1000u)});
-
-        for (const Case &test_case : cases) {
-            SCOPED_TRACE(test_case.label);
-            LegacySolarSource source(test_case.config);
+        for (const auto &test_case : cases) {
+            SCOPED_TRACE(test_case.first);
             const double expected = preMigrationOfferedEnergy(
-                test_case.config, test_case.interval);
+                config, test_case.second);
             const double actual =
-                source.offeredEnergyForInterval(test_case.interval);
+                source.offeredEnergyForInterval(test_case.second);
             expectExactBits(expected, actual);
             EXPECT_TRUE(std::isfinite(actual));
             EXPECT_GE(actual, 0.0);
         }
 
-        LegacySolarSource night(syntheticConfig());
-        expectPositiveZero(night.offeredEnergyForInterval(
-            at(1000u, 1u)));
+        double total = 0.0;
+        for (std::uint64_t tick = 0; tick < 60000u; ++tick) {
+            total += source.offeredEnergyForInterval(
+                interval(tick, tick + 1u));
+        }
+        EXPECT_NEAR(total, 60.0 * config.base_harvesting_power_w, 1e-12);
+
+        LegacySolarConfig nondefault = config;
+        nondefault.pv_area_m2 = 0.037;
+        nondefault.pv_efficiency = 0.213;
+        LegacySolarSource nondefault_source(nondefault);
+        const HarvestInterval comparison = interval(12345u, 12352u);
+        expectExactBits(
+            source.offeredEnergyForInterval(comparison),
+            nondefault_source.offeredEnergyForInterval(comparison));
+
+        LegacySolarConfig zero = config;
+        zero.base_harvesting_power_w = 0.0;
+        expectPositiveZero(LegacySolarSource(zero).offeredEnergyForInterval(
+            interval(0u, 60001u)));
     }
 
     TEST(LegacySolarSourceGolden, RealRowsMatchFrozenProductionBits) {

@@ -689,6 +689,7 @@ def render_system_projection(
     battery_capacity: Fraction,
     scheduler_id: str = "gpfp_asap_block",
     service_curve: Optional[Mapping[str, Any]] = None,
+    use_real_solar_data: Optional[bool] = None,
 ) -> str:
     """Return the single side-effect-free system projection used by CORE-3."""
 
@@ -712,6 +713,20 @@ def render_system_projection(
         raise SimulationConfigurationError("initial battery exceeds capacity")
 
     service = dict(service_curve or {})
+    configured_mode = energy.get("use_real_solar_data", False)
+    if "use_real_solar_data" in service:
+        configured_mode = service["use_real_solar_data"]
+    if use_real_solar_data is not None:
+        configured_mode = use_real_solar_data
+    if not isinstance(configured_mode, bool):
+        raise SimulationConfigurationError(
+            "use_real_solar_data must be boolean"
+        )
+    use_real = configured_mode
+    if bool(service.get("require_real_solar_data", False)) and not use_real:
+        raise SimulationConfigurationError(
+            "service curve requires real-solar data but the projection disables it"
+        )
     scale = _system_fraction(
         service.get("solar_scale", "1"), "solar scale", positive=True
     )
@@ -729,7 +744,7 @@ def render_system_projection(
                 f"template={fraction_text(reference_area)} expected="
                 f"{fraction_text(expected)}"
             )
-    effective_area = reference_area * scale
+    effective_area = reference_area * scale if use_real else reference_area
     effective_float = float(effective_area)
     if not math.isfinite(effective_float) or effective_float <= 0:
         raise SimulationConfigurationError(
@@ -742,8 +757,24 @@ def render_system_projection(
         "initial_energy": format(float(initial), ".17g"),
         "max_energy": format(float(capacity), ".17g"),
         "pv_area_m2": format(effective_float, ".17g"),
+        "use_real_solar_data": "true" if use_real else "false",
     }
-    if bool(energy.get("use_real_solar_data", False)):
+    if not use_real:
+        base_rate = _system_fraction(
+            energy.get("base_harvesting_rate"),
+            "template base_harvesting_rate",
+        )
+        effective_rate = base_rate * scale
+        effective_rate_float = float(effective_rate)
+        if not math.isfinite(effective_rate_float) or effective_rate_float < 0:
+            raise SimulationConfigurationError(
+                "effective base_harvesting_rate is not a finite non-negative "
+                "runtime value"
+            )
+        replacements["base_harvesting_rate"] = format(
+            effective_rate_float, ".17g"
+        )
+    if use_real:
         raw_solar_path = energy.get("solar_data_file")
         if not isinstance(raw_solar_path, str) or not raw_solar_path:
             raise SimulationConfigurationError(
@@ -805,6 +836,7 @@ def materialize_simulation_inputs(
     release_horizon: Optional[int] = None,
     task_energy_factors: Optional[Mapping[str, str]] = None,
     priority_policy: str = "RM",
+    use_real_solar_data: Optional[bool] = None,
 ) -> tuple[Path, Path]:
     """Write a scheduler-only projection without changing frozen semantics."""
 
@@ -815,6 +847,7 @@ def materialize_simulation_inputs(
         battery_capacity=battery_capacity,
         scheduler_id=scheduler_id,
         service_curve=service_curve,
+        use_real_solar_data=use_real_solar_data,
     )
 
     destination.mkdir(parents=True, exist_ok=True)
