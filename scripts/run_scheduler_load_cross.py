@@ -224,6 +224,15 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--simulator", type=Path, default=ROOT / "build/rtsim/rtsim")
     parser.add_argument("--uc-figure-fixed-ue")
     parser.add_argument("--ue-figure-fixed-uc")
+    parser.add_argument("--ue-figure-fixed-ucs")
+    parser.add_argument("--ue-figure-labels")
+    parser.add_argument("--uc-scan-values")
+    parser.add_argument("--ue-scan-values")
+    parser.add_argument("--uc-figure-fixed-ues")
+    parser.add_argument("--uc-figure-labels")
+    parser.add_argument("--axis-display-min")
+    parser.add_argument("--axis-display-max")
+    parser.add_argument("--axis-tick-step")
     parser.add_argument(
         "--parse-concurrency", type=int, default=1,
         help="maximum concurrent trace parsers (default: 1)",
@@ -234,6 +243,63 @@ def make_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--resume", action="store_true")
     return parser
+
+
+_V4_GRID_ARGS = (
+    "uc_scan_values", "ue_scan_values", "uc_figure_fixed_ues",
+    "uc_figure_labels", "ue_figure_fixed_ucs", "ue_figure_labels",
+    "axis_display_min", "axis_display_max", "axis_tick_step",
+)
+
+
+def _resolve_grid(args: argparse.Namespace) -> tuple[
+    tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any] | None, bool,
+]:
+    structured = any(getattr(args, name) is not None for name in _V4_GRID_ARGS)
+    if args.cells is not None:
+        if structured:
+            raise SystemExit("--cells conflicts with structured v4 grid options")
+        try:
+            cells = experiment.parse_cells(args.cells)
+            slices = experiment.resolve_figure_slices(
+                cells,
+                fixed_ue=(experiment.parse_fraction(args.uc_figure_fixed_ue, "uc-figure-fixed-ue")
+                          if args.uc_figure_fixed_ue is not None else None),
+                fixed_uc=(experiment.parse_fraction(args.ue_figure_fixed_uc, "ue-figure-fixed-uc")
+                          if args.ue_figure_fixed_uc is not None else None),
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        return cells, slices, None, False
+    if args.uc_figure_fixed_ue is not None and args.uc_figure_fixed_ues is not None:
+        raise SystemExit("singular --uc-figure-fixed-ue conflicts with plural v4 option")
+    if args.uc_figure_fixed_ue is not None:
+        raise SystemExit("v4 requires --uc-figure-fixed-ues and --uc-figure-labels")
+    if args.ue_figure_fixed_uc is not None and args.ue_figure_fixed_ucs is not None:
+        raise SystemExit("singular --ue-figure-fixed-uc conflicts with plural v4 option")
+    if args.ue_figure_fixed_uc is not None:
+        raise SystemExit("v4 requires --ue-figure-fixed-ucs and --ue-figure-labels")
+    try:
+        profile = experiment.normalize_scan_profile(
+            uc_scan_values=args.uc_scan_values,
+            ue_scan_values=args.ue_scan_values,
+            uc_figure_fixed_ues=args.uc_figure_fixed_ues,
+            uc_figure_labels=args.uc_figure_labels,
+            ue_figure_fixed_ucs=args.ue_figure_fixed_ucs,
+            ue_figure_labels=args.ue_figure_labels,
+            axis_display_min=args.axis_display_min,
+            axis_display_max=args.axis_display_max,
+            axis_tick_step=args.axis_tick_step,
+        )
+        cells = experiment.build_scan_cells(
+            profile["uc_scan_values"], profile["ue_scan_values"],
+            profile["uc_figure_fixed_ues"], profile["ue_figure_fixed_ucs"],
+        )
+        contract = experiment.build_scan_contract(profile)
+        figure_slices = experiment.build_v4_figure_slices(profile)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    return cells, figure_slices, contract, True
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -249,7 +315,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("simulation horizon and timeout must be positive")
     if args.parse_concurrency < 1:
         raise SystemExit("parse-concurrency must be positive")
-    cells = experiment.parse_cells(args.cells)
+    cells, figure_slices, scan_contract, is_v4 = _resolve_grid(args)
     schedulers = experiment.parse_schedulers(
         args.schedulers if args.schedulers is not None
         else ",".join(perf_g.FORMAL_SCHEDULERS)
@@ -259,20 +325,6 @@ def main(argv: list[str] | None = None) -> int:
         tuple(cells) == tuple(experiment.FORMAL_CELLS)
         and priority_policy == "RM"
     )
-    try:
-        figure_slices = experiment.resolve_figure_slices(
-            cells,
-            fixed_ue=(
-                experiment.parse_fraction(args.uc_figure_fixed_ue, "uc-figure-fixed-ue")
-                if args.uc_figure_fixed_ue is not None else None
-            ),
-            fixed_uc=(
-                experiment.parse_fraction(args.ue_figure_fixed_uc, "ue-figure-fixed-uc")
-                if args.ue_figure_fixed_uc is not None else None
-            ),
-        )
-    except ValueError as exc:
-        raise SystemExit(str(exc)) from exc
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
     max_util = experiment.parse_fraction(args.max_task_util, "max-task-util")
     tolerance = experiment.parse_fraction(args.util_tolerance_total, "util-tolerance-total")
@@ -292,8 +344,9 @@ def main(argv: list[str] | None = None) -> int:
     rho = experiment.parse_fraction(args.rho, "rho")
     latency = experiment.parse_fraction(args.latency, "latency")
     root = args.output
+    experiment_name = experiment.V4_EXPERIMENT if is_v4 else experiment.V3_EXPERIMENT
     config = {
-        "experiment": "scheduler-load-cross-v3", "seed": args.seed, "workers": args.workers,
+        "experiment": experiment_name, "seed": args.seed, "workers": args.workers,
         "samples_per_cell": args.samples_per_cell, "cells": [[str(uc), str(ue)] for uc, ue in cells],
         "schedulers": list(schedulers), "processors": args.processors, "tasks": args.tasks,
         "priority_policy": priority_policy,
@@ -311,17 +364,6 @@ def main(argv: list[str] | None = None) -> int:
         "keep_traces": args.keep_traces,
         "parse_concurrency": args.parse_concurrency,
         "figure_slices": figure_slices,
-        "campaign_contract": {
-            "name": "ordinary-general-random-nine-scheduler-main-figures-v1"
-            if is_frozen_main_figure else "scheduler-load-cross-custom",
-            "priority_policy": priority_policy,
-            "wholepass": "all_adjudicable_jobs_on_time_taskset_level",
-            "frozen_main_figure": is_frozen_main_figure,
-            "unique_cell_count": len(set(cells)),
-            "panel_groups": {
-                name: list(group) for name, group in experiment.PANEL_GROUPS.items()
-            },
-        },
         "execution": {
             "workers": args.workers,
             "prepare_workers": prepare_workers,
@@ -329,9 +371,15 @@ def main(argv: list[str] | None = None) -> int:
             "keep_traces": bool(args.keep_traces),
         },
     }
+    if scan_contract is not None:
+        config["scan_contract"] = scan_contract
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
+        if is_v4 and (stored_config or {}).get("experiment") != experiment.V4_EXPERIMENT:
+            raise SystemExit("resume experiment mismatch: v4 cannot resume v3 results")
+        if not is_v4 and (stored_config or {}).get("experiment") == experiment.V4_EXPERIMENT:
+            raise SystemExit("resume experiment mismatch: v3 cannot resume v4 results")
         if (stored_config or {}).get("harvest_model") != experiment.HARVEST_MODEL:
             raise SystemExit(
                 "resume harvest model mismatch: expected linear_ramp_v1"
@@ -346,30 +394,11 @@ def main(argv: list[str] | None = None) -> int:
             key: value for key, value in (stored_config or {}).items()
             if key not in runtime_keys
         }
-        if "priority_policy" not in stored_comparable and priority_policy == "RM":
-            stored_comparable["priority_policy"] = "RM"
-            stored_contract = stored_comparable.get("campaign_contract")
-            if isinstance(stored_contract, dict) and "priority_policy" not in stored_contract:
-                stored_comparable["campaign_contract"] = {
-                    **stored_contract, "priority_policy": "RM",
-                }
         requested_comparable = {
             key: value for key, value in config.items() if key not in runtime_keys
         }
-        legacy_config = {key: value for key, value in requested_comparable.items() if key != "figure_slices"}
-        stored_legacy_comparable = {
-            key: value for key, value in stored_comparable.items()
-            if key != "figure_slices"
-        }
-        legacy_figure_slices = experiment.resolve_figure_slices(cells)
-        legacy_resume = (
-            stored_legacy_comparable == legacy_config
-            and figure_slices == legacy_figure_slices
-        )
-        if stored_comparable != requested_comparable and not legacy_resume:
+        if stored_comparable != requested_comparable:
             raise SystemExit("resume configuration mismatch")
-        if legacy_resume:
-            write_json(run_config, config)
     elif run_config.exists() or (root / "results.jsonl").exists():
         raise SystemExit("output exists; use --resume or choose a new output")
     else:
@@ -396,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
     requests = experiment.request_rows(
         tasksets, cells, schedulers, args.simulation_horizon,
         priority_policy=priority_policy,
+        experiment_name=experiment_name,
     )
     write_jsonl(root / "requests.jsonl", requests)
     request_build_seconds = time.perf_counter() - request_started
@@ -414,6 +444,11 @@ def main(argv: list[str] | None = None) -> int:
         for row in existing
     ):
         raise SystemExit("persisted results harvest model does not match linear_ramp_v1")
+    if is_v4 and any(
+        row.get("experiment") != experiment.V4_EXPERIMENT
+        for row in existing
+    ):
+        raise SystemExit("persisted results do not match the v4 experiment")
     existing_ids = [str(row.get("request_id")) for row in existing]
     expected_ids = {str(row["request_id"]) for row in requests}
     if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
@@ -643,6 +678,7 @@ def main(argv: list[str] | None = None) -> int:
             Fraction(row["energy"]["target_ue"])
             for row in results_by_id.values()
         ),
+        "experiment": experiment_name,
         "harvest_model": experiment.HARVEST_MODEL,
         "canonical_task_power": all(row.get("canonical_task_power") for row in rows),
         "scheduler_input_hashes_stable": all(len({row["taskset_hash"] for row in requests if row["taskset_id"] == taskset.taskset_id}) == 1 for taskset in tasksets),

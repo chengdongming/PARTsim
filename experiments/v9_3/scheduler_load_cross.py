@@ -6,6 +6,7 @@ from fractions import Fraction
 import hashlib
 import json
 from pathlib import Path
+import re
 import tempfile
 from typing import Any, Mapping, Sequence
 
@@ -20,7 +21,11 @@ from .taskset_store import TasksetStore, prepare_service_curve
 from .parallel_prepare import run_prepare_jobs
 
 
-DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v3"
+V3_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v3"
+V4_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v4"
+DOMAIN = V4_DOMAIN
+V4_EXPERIMENT = "scheduler-load-cross-v4"
+V3_EXPERIMENT = "scheduler-load-cross-v3"
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
 ORDINARY_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 DEFAULT_KAPPA = Fraction(10)
@@ -72,6 +77,24 @@ DEFAULT_SCHEDULERS = tuple(perf_g.CAL_SCHEDULERS)
 ALL_SCHEDULERS = tuple(perf_g.FORMAL_SCHEDULERS)
 _PREPARE_RAW_TRACE: tuple[Fraction, ...] | None = None
 
+DEFAULT_SCAN_PROFILE = {
+    "uc_scan_values": [
+        "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",
+    ],
+    "ue_scan_values": [
+        "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",
+    ],
+    "uc_figure_fixed_ues": ["3/10", "3/5", "9/10"],
+    "uc_figure_labels": ["low", "medium", "high"],
+    "ue_figure_fixed_ucs": ["3/10", "3/5", "9/10"],
+    "ue_figure_labels": ["low", "medium", "high"],
+    "axis_display_min": "0",
+    "axis_display_max": "1",
+    "axis_tick_step": "1/10",
+}
+_SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+MAX_AXIS_TICKS = 10001
+
 
 def parse_fraction(value: Any, label: str, *, positive: bool = True) -> Fraction:
     if isinstance(value, bool):
@@ -104,6 +127,205 @@ def parse_cells(text: str | None) -> tuple[tuple[Fraction, Fraction], ...]:
     if not cells:
         raise ValueError("at least one cell is required")
     return tuple(cells)
+
+
+def parse_fraction_list(value: Any, label: str) -> tuple[Fraction, ...]:
+    """Parse a comma-separated or JSON-like sequence without float conversion."""
+    if isinstance(value, str):
+        values = [part.strip() for part in value.split(",")]
+    elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray)):
+        values = list(value)
+    else:
+        raise ValueError(f"{label} must be a non-empty exact fraction list")
+    if not values or any(value == "" for value in values):
+        raise ValueError(f"{label} must be a non-empty exact fraction list")
+    try:
+        return tuple(parse_fraction(value, f"{label}[{index}]") for index, value in enumerate(values))
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def fraction_token(value: Any) -> str:
+    parsed = parse_fraction(value, "fraction token")
+    return str(parsed.numerator) if parsed.denominator == 1 else f"{parsed.numerator}of{parsed.denominator}"
+
+
+def decimal_text(value: Any) -> str:
+    parsed = parse_fraction(value, "decimal value")
+    return format(float(parsed), ".15g")
+
+
+def axis_ticks(axis_min: Fraction, axis_max: Fraction, step: Fraction) -> tuple[Fraction, ...]:
+    span = axis_max - axis_min
+    count = span / step
+    if count.denominator != 1:
+        raise ValueError("axis display range must be divisible by axis tick step")
+    if count.numerator > MAX_AXIS_TICKS - 1:
+        raise ValueError("axis display tick count exceeds configured limit")
+    return tuple(axis_min + step * index for index in range(count.numerator + 1))
+
+
+def normalize_scan_profile(
+    *, uc_scan_values: Any = None, ue_scan_values: Any = None,
+    uc_figure_fixed_ues: Any = None, uc_figure_labels: Any = None,
+    ue_figure_fixed_ucs: Any = None, ue_figure_labels: Any = None,
+    ue_figure_fixed_uc: Any = None, axis_display_min: Any = None,
+    axis_display_max: Any = None, axis_tick_step: Any = None,
+) -> dict[str, Any]:
+    """Validate and canonicalize one v4 grid and figure contract."""
+    source = DEFAULT_SCAN_PROFILE
+    uc_scan = parse_fraction_list(
+        source["uc_scan_values"] if uc_scan_values is None else uc_scan_values,
+        "uc_scan_values",
+    )
+    ue_scan = parse_fraction_list(
+        source["ue_scan_values"] if ue_scan_values is None else ue_scan_values,
+        "ue_scan_values",
+    )
+    fixed_ues = parse_fraction_list(
+        source["uc_figure_fixed_ues"] if uc_figure_fixed_ues is None else uc_figure_fixed_ues,
+        "uc_figure_fixed_ues",
+    )
+    labels_value = source["uc_figure_labels"] if uc_figure_labels is None else uc_figure_labels
+    if isinstance(labels_value, str):
+        labels = tuple(part.strip() for part in labels_value.split(","))
+    elif isinstance(labels_value, Sequence) and not isinstance(labels_value, (bytes, bytearray)):
+        labels = tuple(str(part) for part in labels_value)
+    else:
+        raise ValueError("uc_figure_labels must be a non-empty label list")
+    if not labels or any(not label or not _SAFE_LABEL.fullmatch(label) for label in labels):
+        raise ValueError("uc_figure_labels contain an empty or unsafe label")
+    if len(labels) != len(fixed_ues) or len(set(labels)) != len(labels):
+        raise ValueError("uc_figure_labels must match fixed U_E count and be unique")
+    for name, values in (("uc_scan_values", uc_scan), ("ue_scan_values", ue_scan)):
+        if any(value > 1 for value in values):
+            raise ValueError(f"{name} must be in (0,1]")
+        if tuple(sorted(values)) != values or len(set(values)) != len(values):
+            raise ValueError(f"{name} must be strictly increasing and unique")
+    if any(value not in ue_scan for value in fixed_ues) or len(set(fixed_ues)) != len(fixed_ues):
+        raise ValueError("uc_figure_fixed_ues must be unique values in ue_scan_values")
+    if ue_figure_fixed_ucs is not None and ue_figure_fixed_uc is not None:
+        raise ValueError("ue_figure_fixed_uc conflicts with ue_figure_fixed_ucs")
+    fixed_ucs = parse_fraction_list(
+        source["ue_figure_fixed_ucs"] if ue_figure_fixed_ucs is None else ue_figure_fixed_ucs,
+        "ue_figure_fixed_ucs",
+    )
+    if any(value not in uc_scan for value in fixed_ucs) or len(set(fixed_ucs)) != len(fixed_ucs):
+        raise ValueError("ue_figure_fixed_ucs must be unique values in uc_scan_values")
+    ue_labels_value = source["ue_figure_labels"] if ue_figure_labels is None else ue_figure_labels
+    if isinstance(ue_labels_value, str):
+        ue_labels = tuple(part.strip() for part in ue_labels_value.split(","))
+    elif isinstance(ue_labels_value, Sequence) and not isinstance(ue_labels_value, (bytes, bytearray)):
+        ue_labels = tuple(str(part) for part in ue_labels_value)
+    else:
+        raise ValueError("ue_figure_labels must be a non-empty label list")
+    if not ue_labels or any(not label or not _SAFE_LABEL.fullmatch(label) for label in ue_labels):
+        raise ValueError("ue_figure_labels contain an empty or unsafe label")
+    if len(ue_labels) != len(fixed_ucs) or len(set(ue_labels)) != len(ue_labels):
+        raise ValueError("ue_figure_labels must match fixed U_C count and be unique")
+    minimum = parse_fraction(
+        source["axis_display_min"] if axis_display_min is None else axis_display_min,
+        "axis_display_min", positive=False,
+    )
+    maximum = parse_fraction(
+        source["axis_display_max"] if axis_display_max is None else axis_display_max,
+        "axis_display_max", positive=False,
+    )
+    step = parse_fraction(
+        source["axis_tick_step"] if axis_tick_step is None else axis_tick_step,
+        "axis_tick_step",
+    )
+    if not 0 <= minimum < maximum <= 1:
+        raise ValueError("axis display range must satisfy 0 <= min < max <= 1")
+    if step <= 0:
+        raise ValueError("axis_tick_step must be positive")
+    if any(value < minimum or value > maximum for value in (*uc_scan, *ue_scan)):
+        raise ValueError("axis display range must cover every scan value")
+    ticks = axis_ticks(minimum, maximum, step)
+    return {
+        "uc_scan_values": [fraction_text(value) for value in uc_scan],
+        "ue_scan_values": [fraction_text(value) for value in ue_scan],
+        "uc_figure_fixed_ues": [fraction_text(value) for value in fixed_ues],
+        "uc_figure_labels": list(labels),
+        "ue_figure_fixed_ucs": [fraction_text(value) for value in fixed_ucs],
+        "ue_figure_labels": list(ue_labels),
+        "axis_display_min": fraction_text(minimum),
+        "axis_display_max": fraction_text(maximum),
+        "axis_tick_step": fraction_text(step),
+        "axis_ticks": [fraction_text(value) for value in ticks],
+        "zero_point_policy": "display_tick_only_outside_experiment_domain",
+    }
+
+
+def build_scan_cells(
+    uc_scan_values: Sequence[Any], ue_scan_values: Sequence[Any],
+    uc_figure_fixed_ues: Sequence[Any], ue_figure_fixed_ucs: Sequence[Any] | Any,
+) -> tuple[tuple[Fraction, Fraction], ...]:
+    """Return canonical ordered cells for the two v4 figure scans."""
+    uc_scan = tuple(parse_fraction(value, "uc_scan_value") for value in uc_scan_values)
+    ue_scan = tuple(parse_fraction(value, "ue_scan_value") for value in ue_scan_values)
+    fixed_ues = tuple(parse_fraction(value, "uc_figure_fixed_ue") for value in uc_figure_fixed_ues)
+    if isinstance(ue_figure_fixed_ucs, (str, Fraction, int)):
+        ue_figure_fixed_ucs = (ue_figure_fixed_ucs,)
+    fixed_ucs = tuple(parse_fraction(value, "ue_figure_fixed_uc") for value in ue_figure_fixed_ucs)
+    cells: list[tuple[Fraction, Fraction]] = []
+    for ue in fixed_ues:
+        for uc in uc_scan:
+            if (uc, ue) not in cells:
+                cells.append((uc, ue))
+    for uc in fixed_ucs:
+        for ue in ue_scan:
+            if (uc, ue) not in cells:
+                cells.append((uc, ue))
+    return tuple(cells)
+
+
+def build_scan_contract(profile: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = normalize_scan_profile(**{
+        key: profile[key] for key in (
+            "uc_scan_values", "ue_scan_values", "uc_figure_fixed_ues",
+            "uc_figure_labels", "axis_display_min", "axis_display_max",
+            "axis_tick_step", "ue_figure_fixed_ucs", "ue_figure_labels",
+        ) if key in profile
+    })
+    cells = build_scan_cells(
+        normalized["uc_scan_values"], normalized["ue_scan_values"],
+        normalized["uc_figure_fixed_ues"], normalized["ue_figure_fixed_ucs"],
+    )
+    normalized["ordered_cells"] = [[fraction_text(uc), fraction_text(ue)] for uc, ue in cells]
+    normalized["unique_cell_count"] = len(cells)
+    return normalized
+
+
+def build_v4_figure_slices(profile: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = normalize_scan_profile(**{
+        key: profile[key] for key in (
+            "uc_scan_values", "ue_scan_values", "uc_figure_fixed_ues",
+            "uc_figure_labels", "ue_figure_fixed_ucs", "ue_figure_labels",
+            "axis_display_min", "axis_display_max", "axis_tick_step",
+        ) if key in profile
+    })
+    uc_scans = []
+    for fixed_ue, label in zip(normalized["uc_figure_fixed_ues"], normalized["uc_figure_labels"]):
+        uc_scans.append({
+            "x_key": "target_uc", "fixed_key": "target_ue",
+            "fixed_value": fixed_ue, "label": label,
+            "x_values": list(normalized["uc_scan_values"]),
+        })
+    ue_scans = []
+    for fixed_uc, label in zip(normalized["ue_figure_fixed_ucs"], normalized["ue_figure_labels"]):
+        ue_scans.append({
+            "x_key": "target_ue", "fixed_key": "target_uc",
+            "fixed_value": fixed_uc, "label": label,
+            "x_values": list(normalized["ue_scan_values"]),
+        })
+    return {"uc_scans": uc_scans, "ue_scans": ue_scans}
+
+
+DEFAULT_CELLS = build_scan_cells(
+    DEFAULT_SCAN_PROFILE["uc_scan_values"], DEFAULT_SCAN_PROFILE["ue_scan_values"],
+    DEFAULT_SCAN_PROFILE["uc_figure_fixed_ues"], DEFAULT_SCAN_PROFILE["ue_figure_fixed_ucs"],
+)
 
 
 def resolve_figure_slices(
@@ -188,9 +410,9 @@ def validate_frozen_main_figure(
         )
 
 
-def _hash(value: Any) -> str:
+def _hash(value: Any, *, domain: str = DOMAIN) -> str:
     return hashlib.sha256(
-        DOMAIN.encode("ascii") + b"\0" + canonical_json(value).encode("utf-8")
+        domain.encode("ascii") + b"\0" + canonical_json(value).encode("utf-8")
     ).hexdigest()
 
 
@@ -325,7 +547,8 @@ def taskset_row(taskset: Any, processors: int) -> dict[str, Any]:
 
 def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fraction]],
                  schedulers: Sequence[str], horizon: int,
-                 priority_policy: str = "RM") -> list[dict[str, Any]]:
+                 priority_policy: str = "RM", *, experiment_name: str = V3_EXPERIMENT,
+                 ) -> list[dict[str, Any]]:
     try:
         policy = normalize_scheduler_priority_policy(priority_policy)
     except RuntimeError as exc:
@@ -348,7 +571,10 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                 if policy == "DM":
                     identity["priority_policy"] = policy
                 rows.append({
-                    "request_id": "scheduler-load-cross-" + _hash(identity)[:32],
+                    "request_id": "scheduler-load-cross-" + _hash(
+                        identity, domain=V4_DOMAIN if experiment_name == V4_EXPERIMENT else V3_DOMAIN,
+                    )[:32],
+                    "experiment": experiment_name,
                     "taskset_id": taskset.taskset_id,
                     "taskset_hash": taskset.semantic_hash,
                     "target_uc": fraction_text(uc), "actual_uc": fraction_text(taskset.actual_utilization / taskset.processors),
