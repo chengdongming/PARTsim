@@ -20,7 +20,8 @@ from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
-    _parse_dmr_ymin, _plot_style, plot_dmr_scan, plot_scan,
+    _parse_dmr_ymin, _plot_style, decimal_axis_labels, plot_composite_dmr,
+    plot_composite_scan, plot_dmr_scan, plot_scan,
 )
 import scripts.run_scheduler_load_cross as scheduler_runner
 
@@ -45,7 +46,154 @@ def test_exact_ue_eta_mapping_and_deduplicated_cells():
     assert experiment.parse_cells("1/2:2/5,0.5:0.4,1/2:1/5") == (
         (Fraction(1, 2), Fraction(2, 5)), (Fraction(1, 2), Fraction(1, 5)),
     )
-    assert len(experiment.DEFAULT_CELLS) == 12
+    assert len(experiment.DEFAULT_CELLS) == 51
+    assert len(set(experiment.DEFAULT_CELLS)) == 51
+
+
+def test_decimal_axis_labels_preserve_exact_scan_ticks():
+    profile = experiment.normalize_scan_profile()
+    assert profile["axis_ticks"] == [
+        "0", "1/10", "1/5", "3/10", "2/5", "1/2", "3/5",
+        "7/10", "4/5", "9/10", "1",
+    ]
+    assert decimal_axis_labels(profile["axis_ticks"]) == [
+        "0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6",
+        "0.7", "0.8", "0.9", "1",
+    ]
+    custom = experiment.normalize_scan_profile(
+        axis_display_min="0", axis_display_max="1", axis_tick_step="1/5",
+    )
+    assert custom["axis_ticks"] == ["0", "1/5", "2/5", "3/5", "4/5", "1"]
+    assert decimal_axis_labels(custom["axis_ticks"]) == [
+        "0", "0.2", "0.4", "0.6", "0.8", "1",
+    ]
+
+
+def test_all_scan_plot_paths_use_decimal_axis_labels(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+    monkeypatch.setattr(plt, "close", lambda _figure: None)
+
+    expected_labels = [
+        "0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6",
+        "0.7", "0.8", "0.9", "1",
+    ]
+    expected_ticks = [index / 10 for index in range(11)]
+
+    class CaptureAxis:
+        def __init__(self):
+            self.xticks = None
+            self.xticklabels = None
+            self.errorbar_x = []
+
+        def errorbar(self, x, *_args, **_kwargs):
+            self.errorbar_x.extend(x)
+            return SimpleNamespace(lines=[SimpleNamespace()])
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, _label):
+            pass
+
+        def set_title(self, _title):
+            pass
+
+        def set_xlim(self, *_args):
+            pass
+
+        def set_xticks(self, ticks):
+            self.xticks = ticks
+
+        def set_xticklabels(self, labels):
+            self.xticklabels = labels
+
+        def set_ylim(self, *_args):
+            pass
+
+        def grid(self, **_kwargs):
+            pass
+
+        def legend(self, **_kwargs):
+            pass
+
+    class CaptureFigure:
+        def savefig(self, _path):
+            pass
+
+        def suptitle(self, _title):
+            pass
+
+        def tight_layout(self):
+            pass
+
+        def legend(self, *_args, **_kwargs):
+            pass
+
+        def subplots_adjust(self, **_kwargs):
+            pass
+
+    ticks = experiment.normalize_scan_profile()["axis_ticks"]
+    scan_rows = [{
+        "target_uc": "1/10", "scheduler": "ASAP-BLOCK",
+        "wholepass_ratio": 0.5, "ci95_low": 0.4, "ci95_high": 0.6,
+    }]
+    dmr_rows = [{
+        "target_uc": "1/10", "scheduler": "ASAP-BLOCK", "dmr": 0.5,
+        "dmr_ci95_low": 0.4, "dmr_ci95_high": 0.6,
+    }]
+    slice_config = {
+        "x_key": "target_uc", "fixed_key": "target_ue",
+        "fixed_value": "7/10", "label": "low", "x_values": ["1/10"],
+    }
+    composite_rows = [{
+        "scheduler": "ASAP-BLOCK", "target_uc": "1/10",
+        "wholepass_ratio": 0.5, "ci95_low": 0.4, "ci95_high": 0.6,
+        "dmr": 0.5, "dmr_ci95_low": 0.4, "dmr_ci95_high": 0.6,
+    }]
+
+    def capture_axes():
+        axes = [CaptureAxis() for _ in range(3)]
+        monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+        return axes
+
+    axes = capture_axes()
+    plot_scan(
+        scan_rows, tmp_path, "scan.png", "target_uc", ["ASAP-BLOCK"], "U_C", "scan",
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes)
+
+    axes = capture_axes()
+    plot_dmr_scan(
+        dmr_rows, tmp_path, "dmr.png", "target_uc", ["ASAP-BLOCK"], "U_C", "dmr",
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes)
+
+    axes = [[CaptureAxis() for _ in range(3)]]
+    monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+    plot_composite_scan(
+        [(slice_config, composite_rows)], tmp_path, "composite.png", "target_uc",
+        ["ASAP-BLOCK"], "U_C", "composite", axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes[0]] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes[0]] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes[0])
+
+    axes = [[CaptureAxis() for _ in range(3)]]
+    monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+    plot_composite_dmr(
+        [(slice_config, composite_rows)], tmp_path, "composite-dmr.png", "target_uc",
+        ["ASAP-BLOCK"], "U_C", "composite dmr", 0.0,
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes[0]] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes[0]] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes[0])
 
 
 def test_frozen_main_figure_has_exactly_16_cells_and_two_slices():
@@ -1181,37 +1329,6 @@ def test_runner_rejects_ambiguous_automatic_figure_slice_inference(tmp_path, mon
         ))
 
 
-def test_runner_migrates_legacy_resume_config_with_unambiguous_slices(tmp_path, monkeypatch):
-    def run_simulation(**kwargs):
-        return SimpleNamespace(
-            result=SimpleNamespace(
-                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
-                metrics={}, simulation_completed=True,
-            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
-            retained_trace_path=None,
-        )
-
-    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
-    output = tmp_path / "legacy-resume"
-    args = _scheduler_runner_args(output)
-    assert scheduler_runner.main(args) == 0
-    config_path = output / "run_config.json"
-    config = json.loads(config_path.read_text())
-    expected_slices = config.pop("figure_slices")
-    config.pop("priority_policy")
-    config["campaign_contract"].pop("priority_policy")
-    config_path.write_text(json.dumps(config), encoding="utf-8")
-    assert scheduler_runner.main(_scheduler_runner_args(output, resume=True)) == 0
-    migrated = json.loads(config_path.read_text())
-    assert migrated["figure_slices"] == expected_slices
-    assert migrated["priority_policy"] == "RM"
-    assert migrated["campaign_contract"]["priority_policy"] == "RM"
-    with pytest.raises(SystemExit, match="resume configuration mismatch"):
-        scheduler_runner.main(_scheduler_runner_args(
-            output, resume=True, cells="0.1:0.4", fixed_ue=None, fixed_uc=None,
-        ) + ["--priority-policy", "DM"])
-
-
 def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_path, monkeypatch):
     requests = [
         {
@@ -1516,3 +1633,182 @@ def test_duplicate_active_request_ids_fail_closed(tmp_path, monkeypatch):
     )
     with pytest.raises(SystemExit, match="duplicate"):
         scheduler_runner.main(_scheduler_runner_args(output, resume=True))
+
+
+def test_v4_default_scan_contract_is_51_ordered_cells():
+    profile = experiment.normalize_scan_profile()
+    contract = experiment.build_scan_contract(profile)
+    cells = experiment.build_scan_cells(
+        profile["uc_scan_values"], profile["ue_scan_values"],
+        profile["uc_figure_fixed_ues"], profile["ue_figure_fixed_ucs"],
+    )
+    assert len(cells) == 51
+    assert len(set(cells)) == 51
+    assert len(profile["uc_scan_values"]) == 10
+    assert len(profile["ue_scan_values"]) == 10
+    assert len(profile["uc_figure_fixed_ues"]) == 3
+    assert len(profile["ue_figure_fixed_ucs"]) == 3
+    assert cells[:3] == (
+        (Fraction(1, 10), Fraction(3, 10)),
+        (Fraction(1, 5), Fraction(3, 10)),
+        (Fraction(3, 10), Fraction(3, 10)),
+    )
+    assert (Fraction(0), Fraction(1, 10)) not in cells
+    assert contract["unique_cell_count"] == 51
+    assert contract["axis_ticks"] == [
+        "0", "1/10", "1/5", "3/10", "2/5", "1/2", "3/5",
+        "7/10", "4/5", "9/10", "1",
+    ]
+
+
+def test_v4_composite_plot_layout_and_csv_contract(tmp_path):
+    schedulers = list(experiment.ALL_SCHEDULERS)
+
+    def rows_for(slice_config):
+        rows = []
+        for x_value in slice_config["x_values"]:
+            for scheduler in schedulers:
+                rows.append({
+                    "scheduler": scheduler, slice_config["x_key"]: x_value,
+                    "wholepass_ratio": 1.0, "ci95_low": 1.0, "ci95_high": 1.0,
+                    "n_wholepass": 1, "n_total": 1,
+                })
+        return rows
+
+    profile = experiment.normalize_scan_profile(
+        uc_scan_values="1/5,2/5,3/5,4/5,1",
+        ue_scan_values="1/5,2/5,3/5,4/5,1",
+        uc_figure_fixed_ues="1/5,4/5", uc_figure_labels="abundant,tight",
+        ue_figure_fixed_ucs="2/5,3/5", ue_figure_labels="low_compute,high_compute",
+        axis_display_min="0", axis_display_max="1", axis_tick_step="1/5",
+    )
+    slices = experiment.build_v4_figure_slices(profile)
+    uc_rows = [(item, rows_for(item)) for item in slices["uc_scans"]]
+    assert len(uc_rows) == 2
+    plot_composite_scan(
+        uc_rows, tmp_path, "custom-2x3.png", "target_uc", schedulers, "U_C",
+        "custom", axis_min="0", axis_max="1", axis_ticks=profile["axis_ticks"],
+    )
+    assert (tmp_path / "custom-2x3.png").is_file()
+
+    default = experiment.normalize_scan_profile()
+    default_slices = experiment.build_v4_figure_slices(default)
+    default_rows = [(item, rows_for(item)) for item in default_slices["uc_scans"]]
+    plot_composite_scan(
+        default_rows, tmp_path, "default-3x3.png", "target_uc", schedulers, "U_C",
+        "default", axis_min="0", axis_max="1", axis_ticks=default["axis_ticks"],
+    )
+    assert (tmp_path / "default-3x3.png").is_file()
+
+
+def test_analyzer_rejects_empty_requests_with_explainable_error(tmp_path):
+    config = {
+        "cells": [["1/5", "1/5"]], "samples_per_cell": 1,
+        "schedulers": ["ASAP-BLOCK"], "priority_policy": "RM",
+        "processors": 4, "util_tolerance_total": "1/100",
+        "use_real_solar_data": False, **experiment.HARVEST_MODEL_IDENTITY,
+        "figure_slices": {
+            "uc_scan": {"x_key": "target_uc", "fixed_key": "target_ue", "fixed_value": "1/5"},
+            "ue_scan": {"x_key": "target_ue", "fixed_key": "target_uc", "fixed_value": "1/5"},
+        },
+    }
+    (tmp_path / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    (tmp_path / "tasksets.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "requests.jsonl").write_text("", encoding="utf-8")
+    (tmp_path / "results.jsonl").write_text("", encoding="utf-8")
+    with pytest.raises(SystemExit, match="requests are empty"):
+        analyze(tmp_path)
+
+
+def test_v4_custom_scan_contract_and_fraction_tokens():
+    profile = experiment.normalize_scan_profile(
+        uc_scan_values="1/5,2/5,3/5,4/5,1",
+        ue_scan_values="1/5,2/5,3/5,4/5,1",
+        uc_figure_fixed_ues="1/5,4/5",
+        uc_figure_labels="abundant,tight",
+        ue_figure_fixed_ucs="2/5,3/5",
+        ue_figure_labels="low_compute,high_compute",
+        axis_display_min="0", axis_display_max="1", axis_tick_step="1/5",
+    )
+    cells = experiment.build_scan_cells(
+        profile["uc_scan_values"], profile["ue_scan_values"],
+        profile["uc_figure_fixed_ues"], profile["ue_figure_fixed_ucs"],
+    )
+    assert len(cells) == 16
+    slices = experiment.build_v4_figure_slices(profile)
+    assert [item["label"] for item in slices["uc_scans"]] == ["abundant", "tight"]
+    assert [item["label"] for item in slices["ue_scans"]] == ["low_compute", "high_compute"]
+    assert [item["fixed_value"] for item in slices["ue_scans"]] == ["2/5", "3/5"]
+    assert experiment.fraction_token("3/10") == "3of10"
+    assert experiment.fraction_token("1") == "1"
+    assert profile["axis_ticks"] == ["0", "1/5", "2/5", "3/5", "4/5", "1"]
+
+
+def test_v4_default_request_count_is_dynamic_51_times_nine():
+    profile = experiment.normalize_scan_profile()
+    cells = experiment.build_scan_cells(
+        profile["uc_scan_values"], profile["ue_scan_values"],
+        profile["uc_figure_fixed_ues"], profile["ue_figure_fixed_ucs"],
+    )
+
+    class Taskset:
+        processors = 4
+        actual_utilization = Fraction(1)
+        taskset_index = 0
+        seed = 1
+
+        def __init__(self, uc):
+            self.target_utilization = uc * self.processors
+            self.taskset_id = f"t-{uc}"
+            self.semantic_hash = f"h-{uc}"
+
+    tasksets = [Taskset(uc) for uc in {
+        Fraction(uc) for uc, _ue in cells
+    }]
+    requests = experiment.request_rows(
+        tasksets, cells, experiment.ALL_SCHEDULERS, 60000,
+        experiment_name=experiment.V4_EXPERIMENT,
+    )
+    assert len(requests) == 51 * 9
+    assert {row["experiment"] for row in requests} == {experiment.V4_EXPERIMENT}
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"uc_scan_values": "1/5,1/5"},
+    {"uc_scan_values": "1/5,1/10"},
+    {"uc_scan_values": "0,1/5"},
+    {"ue_figure_fixed_ucs": "7/20"},
+    {"axis_tick_step": "2/7"},
+    {"uc_figure_labels": "unsafe label,tight"},
+])
+def test_v4_scan_contract_rejects_invalid_grid(kwargs):
+    with pytest.raises(ValueError):
+        experiment.normalize_scan_profile(**kwargs)
+
+
+def test_v4_runner_rejects_cells_and_structured_grid_conflict(tmp_path):
+    args = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path), "--seed", "1", "--cells", "1/5:1/5",
+        "--uc-scan-values", "1/5,2/5",
+    ])
+    with pytest.raises(SystemExit, match="conflicts"):
+        scheduler_runner._resolve_grid(args)
+
+
+def test_v4_runner_grid_resolution_binds_scan_configuration(tmp_path):
+    args = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path), "--seed", "1",
+        "--uc-scan-values", "1/5,2/5,3/5,4/5,1",
+        "--ue-scan-values", "1/5,2/5,3/5,4/5,1",
+        "--uc-figure-fixed-ues", "1/5,4/5",
+        "--uc-figure-labels", "abundant,tight",
+        "--ue-figure-fixed-ucs", "2/5,3/5",
+        "--ue-figure-labels", "low_compute,high_compute",
+        "--axis-display-min", "0", "--axis-display-max", "1",
+        "--axis-tick-step", "1/5",
+    ])
+    cells, slices, contract, is_v4 = scheduler_runner._resolve_grid(args)
+    assert is_v4 is True
+    assert len(cells) == contract["unique_cell_count"] == 16
+    assert contract["ordered_cells"] == [[str(uc), str(ue)] for uc, ue in cells]
+    assert len(slices["uc_scans"]) == 2

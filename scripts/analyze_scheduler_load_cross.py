@@ -13,7 +13,7 @@ from pathlib import Path
 import random
 import sys
 import time
-from typing import Any
+from typing import Any, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -243,6 +243,42 @@ def _figure_slices(config: dict[str, Any], cells: tuple[tuple[Fraction, Fraction
     return normalized
 
 
+def _v4_contract(config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    raw_contract = config.get("scan_contract")
+    if not isinstance(raw_contract, dict):
+        raise SystemExit("v4 run_config scan_contract is missing")
+    try:
+        expected_contract = experiment.build_scan_contract(raw_contract)
+    except (KeyError, TypeError, ValueError) as exc:
+        raise SystemExit(f"v4 run_config scan_contract is invalid: {exc}") from exc
+    if raw_contract != expected_contract:
+        raise SystemExit("v4 run_config scan_contract is not canonical")
+    expected_cells = expected_contract["ordered_cells"]
+    if config.get("cells") != expected_cells:
+        raise SystemExit("v4 run_config cells do not match scan_contract")
+    expected_slices = experiment.build_v4_figure_slices(expected_contract)
+    if config.get("figure_slices") != expected_slices:
+        raise SystemExit("v4 run_config figure_slices do not match scan_contract")
+    return expected_contract, expected_slices
+
+
+def _axis_plot_values(contract: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "axis_min": contract["axis_display_min"],
+        "axis_max": contract["axis_display_max"],
+        "axis_ticks": list(contract["axis_ticks"]),
+    }
+
+
+def decimal_axis_labels(axis_ticks: Sequence[Any]) -> list[str]:
+    """Format exact axis ticks for paper-facing decimal labels."""
+    labels = []
+    for value in axis_ticks:
+        tick = Fraction(value)
+        labels.append("0" if tick == 0 else experiment.decimal_text(tick))
+    return labels
+
+
 def select_scan_rows(
     summaries: list[dict[str, Any]], fixed_key: str, fixed_value: str,
 ) -> list[dict[str, Any]]:
@@ -291,6 +327,20 @@ def _validate_dmr_scan_rows(
             raise SystemExit(f"{label} contains invalid DMR bootstrap bounds")
 
 
+def _validate_v4_slice(
+    rows: list[dict[str, Any]], slice_config: dict[str, Any],
+    schedulers: list[str], label: str,
+) -> None:
+    expected = list(slice_config["x_values"])
+    for scheduler in schedulers:
+        observed = sorted([
+            experiment.fraction_text(Fraction(row[slice_config["x_key"]]))
+            for row in rows if row["scheduler"] == scheduler
+        ], key=Fraction)
+        if observed != sorted(expected, key=Fraction):
+            raise SystemExit(f"{label} has missing, duplicate, or extra scan points")
+
+
 def _validate_dmr_ymin(value: float, label: str = "DMR y-axis lower bound") -> float:
     try:
         lower_bound = float(value)
@@ -327,8 +377,11 @@ def _validate_dmr_ci_lower_bounds(
 
 def plot_scan(
     rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
-    schedulers: list[str], xlabel: str, title: str,
+    schedulers: list[str], xlabel: str, title: str, *, axis_min: str | None = None,
+    axis_max: str | None = None, axis_ticks: list[str] | None = None,
 ) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     figure, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
@@ -360,6 +413,10 @@ def plot_scan(
         axis.set_xlabel(xlabel)
         axis.set_title(panel)
         axis.set_ylim(0, 1)
+        if axis_min is not None and axis_max is not None and axis_ticks is not None:
+            axis.set_xlim(float(Fraction(axis_min)), float(Fraction(axis_max)))
+            axis.set_xticks([float(Fraction(value)) for value in axis_ticks])
+            axis.set_xticklabels(decimal_axis_labels(axis_ticks))
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
     axes[0].set_ylabel("Whole-taskset pass ratio")
@@ -370,18 +427,27 @@ def plot_scan(
 
 
 def _plot_scan_job(job: dict[str, Any]) -> None:
+    axis = {
+        key: job[key] for key in ("axis_min", "axis_max", "axis_ticks")
+        if key in job
+    }
     plot_scan(
         job["rows"], Path(job["output"]), job["filename"], job["xkey"],
         job["schedulers"], job["xlabel"], job["title"],
+        **axis,
     )
 
 
 def plot_dmr_scan(
     rows: list[dict[str, Any]], output: Path, filename: str, xkey: str,
-    schedulers: list[str], xlabel: str, title: str, ymin: float = 0.0,
+    schedulers: list[str], xlabel: str, title: str, ymin: float = 0.0, *,
+    axis_min: str | None = None, axis_max: str | None = None,
+    axis_ticks: list[str] | None = None,
 ) -> None:
     ymin = _validate_dmr_ymin(ymin)
     _validate_dmr_ci_lower_bounds(rows, ymin, filename)
+    import matplotlib
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     figure, axes = plt.subplots(1, 3, figsize=(15, 4), sharey=True)
@@ -420,6 +486,10 @@ def plot_dmr_scan(
         axis.set_xlabel(xlabel)
         axis.set_title(panel)
         axis.set_ylim(ymin, 1.0)
+        if axis_min is not None and axis_max is not None and axis_ticks is not None:
+            axis.set_xlim(float(Fraction(axis_min)), float(Fraction(axis_max)))
+            axis.set_xticks([float(Fraction(value)) for value in axis_ticks])
+            axis.set_xticklabels(decimal_axis_labels(axis_ticks))
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
     axes[0].set_ylabel("Deadline-meeting ratio (DMR)")
@@ -430,17 +500,216 @@ def plot_dmr_scan(
 
 
 def _plot_dmr_scan_job(job: dict[str, Any]) -> None:
+    axis = {
+        key: job[key] for key in ("axis_min", "axis_max", "axis_ticks")
+        if key in job
+    }
     plot_dmr_scan(
         job["rows"], Path(job["output"]), job["filename"], job["xkey"],
         job["schedulers"], job["xlabel"], job["title"], job.get("ymin", 0.0),
+        **axis,
     )
 
 
 def _plot_any_scan_job(job: dict[str, Any]) -> None:
+    if job.get("composite"):
+        if job.get("metric") == "dmr":
+            _plot_composite_dmr_job(job)
+        else:
+            _plot_composite_scan_job(job)
+        return
     if job.get("metric") == "dmr":
         _plot_dmr_scan_job(job)
     else:
         _plot_scan_job(job)
+
+
+def _plot_composite_scan_job(job: dict[str, Any]) -> None:
+    plot_composite_scan(
+        job["slice_rows"], Path(job["output"]), job["filename"],
+        job["xkey"], job["schedulers"], job["xlabel"], job["title"],
+        axis_min=job["axis_min"], axis_max=job["axis_max"],
+        axis_ticks=job["axis_ticks"],
+    )
+
+
+def _plot_composite_dmr_job(job: dict[str, Any]) -> None:
+    plot_composite_dmr(
+        job["slice_rows"], Path(job["output"]), job["filename"],
+        job["xkey"], job["schedulers"], job["xlabel"], job["title"],
+        job["ymin"], axis_min=job["axis_min"], axis_max=job["axis_max"],
+        axis_ticks=job["axis_ticks"],
+    )
+
+
+def _axis_values(contract: dict[str, Any]) -> tuple[float, float, list[float], list[str]]:
+    return (
+        float(Fraction(contract["axis_display_min"])),
+        float(Fraction(contract["axis_display_max"])),
+        [float(Fraction(value)) for value in contract["axis_ticks"]],
+        decimal_axis_labels(contract["axis_ticks"]),
+    )
+
+
+def _draw_composite_axes(
+    figure: Any, axes: Any, slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]],
+    *, xkey: str, schedulers: list[str], xlabel: str, metric: str,
+    axis_min: str, axis_max: str, axis_ticks: list[str], ymin: float = 0.0,
+) -> None:
+    low, high, ticks, ticklabels = _axis_values({
+        "axis_display_min": axis_min, "axis_display_max": axis_max,
+        "axis_ticks": axis_ticks,
+    })
+    handles: dict[str, Any] = {}
+    for row_index, (slice_config, rows) in enumerate(slice_rows):
+        for column_index, (panel, panel_schedulers) in enumerate(experiment.PANEL_GROUPS.items()):
+            axis = axes[row_index][column_index]
+            for scheduler in panel_schedulers:
+                if scheduler not in schedulers:
+                    continue
+                values = [
+                    row for row in rows if row["scheduler"] == scheduler
+                    and row[metric] is not None
+                ]
+                values.sort(key=lambda row: Fraction(row[xkey]))
+                if not values:
+                    continue
+                prefix = scheduler.split("-", 1)[0]
+                style = _plot_style(prefix)
+                if metric == "wholepass_ratio":
+                    lower = [row[metric] - row["ci95_low"] for row in values]
+                    upper = [row["ci95_high"] - row[metric] for row in values]
+                else:
+                    lower = [
+                        row[metric] - row["dmr_ci95_low"]
+                        if row["dmr_ci95_low"] is not None else 0.0 for row in values
+                    ]
+                    upper = [
+                        row["dmr_ci95_high"] - row[metric]
+                        if row["dmr_ci95_high"] is not None else 0.0 for row in values
+                    ]
+                container = axis.errorbar(
+                    [float(Fraction(row[xkey])) for row in values],
+                    [row[metric] for row in values], yerr=[lower, upper],
+                    marker=style["marker"], linestyle=style["linestyle"],
+                    color=style["color"], linewidth=style["linewidth"],
+                    markersize=style["markersize"], zorder=style["zorder"],
+                    capsize=2, label=prefix,
+                )
+                line = container.lines[0]
+                handles.setdefault(prefix, line)
+            axis.set_title(panel if row_index == 0 else "")
+            axis.set_xlabel(xlabel)
+            axis.set_xlim(low, high)
+            axis.set_xticks(ticks)
+            axis.set_xticklabels(ticklabels)
+            axis.set_ylim(ymin, 1.0)
+            axis.grid(alpha=0.25)
+            if column_index == 0:
+                fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
+                axis.set_ylabel(
+                    f"{slice_config['label']}: {fixed_name}="
+                    f"{experiment.decimal_text(slice_config['fixed_value'])}\n"
+                    f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
+                )
+    figure.legend(
+        [handles[name] for name in ("ASAP", "ALAP", "ST") if name in handles],
+        [name for name in ("ASAP", "ALAP", "ST") if name in handles],
+        loc="lower center", ncol=3,
+    )
+    figure.subplots_adjust(bottom=0.16, hspace=0.35, wspace=0.25)
+
+
+def plot_composite_scan(
+    slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]], output: Path,
+    filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
+    *, axis_min: str, axis_max: str, axis_ticks: list[str],
+) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    figure, axes = plt.subplots(
+        len(slice_rows), 3, squeeze=False, figsize=(15, 4 * len(slice_rows)), sharey=True,
+    )
+    _draw_composite_axes(
+        figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
+        metric="wholepass_ratio", axis_min=axis_min, axis_max=axis_max,
+        axis_ticks=axis_ticks,
+    )
+    figure.suptitle(title)
+    figure.savefig(output / filename)
+    plt.close(figure)
+
+
+def plot_composite_dmr(
+    slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]], output: Path,
+    filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
+    ymin: float, *, axis_min: str, axis_max: str, axis_ticks: list[str],
+) -> None:
+    ymin = _validate_dmr_ymin(ymin)
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    figure, axes = plt.subplots(
+        len(slice_rows), 3, squeeze=False, figsize=(15, 4 * len(slice_rows)), sharey=True,
+    )
+    _draw_composite_axes(
+        figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
+        metric="dmr", axis_min=axis_min, axis_max=axis_max, axis_ticks=axis_ticks,
+        ymin=ymin,
+    )
+    figure.suptitle(title)
+    figure.savefig(output / filename)
+    plt.close(figure)
+
+
+def _slice_csv_rows(
+    slice_config: dict[str, Any], rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
+    result = []
+    for row in rows:
+        scheduler = row["scheduler"]
+        timing, blocking = scheduler.split("-", 1)
+        result.append({
+            "scan_label": slice_config["label"],
+            "fixed_key": slice_config["fixed_key"],
+            "fixed_value": slice_config["fixed_value"],
+            "x_key": slice_config["x_key"],
+            "x_value": row[slice_config["x_key"]],
+            "scheduler": scheduler,
+            "timing_policy": timing,
+            "blocking_policy": blocking,
+            "whole_taskset_pass_ratio": row["wholepass_ratio"],
+            "pass_count": row["n_wholepass"],
+            "sample_total": row["n_total"],
+        })
+    return result
+
+
+def _dmr_slice_csv_rows(
+    slice_config: dict[str, Any], rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    result = []
+    for row in rows:
+        scheduler = row["scheduler"]
+        timing, blocking = scheduler.split("-", 1)
+        result.append({
+            "scan_label": slice_config["label"],
+            "fixed_key": slice_config["fixed_key"],
+            "fixed_value": slice_config["fixed_value"],
+            "x_key": slice_config["x_key"],
+            "x_value": row[slice_config["x_key"]],
+            "scheduler": scheduler,
+            "timing_policy": timing,
+            "blocking_policy": blocking,
+            "dmr": row["dmr"],
+            "dmr_ci95_low": row["dmr_ci95_low"],
+            "dmr_ci95_high": row["dmr_ci95_high"],
+            "deadline_miss_count": row["total_deadline_miss_jobs"],
+            "adjudicable_job_total": row["total_adjudicable_jobs"],
+        })
+    return result
 
 
 def analyze(
@@ -459,6 +728,8 @@ def analyze(
     )
     if config.get("use_real_solar_data") is not False:
         raise SystemExit("run_config must disable real solar data")
+    is_v4 = config.get("experiment") == experiment.V4_EXPERIMENT
+    scan_contract = None
     try:
         priority_policy = experiment.normalize_scheduler_priority_policy(
             config.get("priority_policy", "RM")
@@ -466,7 +737,14 @@ def analyze(
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
     cells = _configured_cells(config)
-    figure_slices = _figure_slices(config, cells)
+    if is_v4:
+        scan_contract, figure_slices = _v4_contract(config)
+        cells = tuple(
+            (Fraction(uc), Fraction(ue))
+            for uc, ue in scan_contract["ordered_cells"]
+        )
+    else:
+        figure_slices = _figure_slices(config, cells)
     schedulers = list(config.get("schedulers", ()))
     try:
         parsed_schedulers = experiment.parse_schedulers(",".join(schedulers))
@@ -474,6 +752,8 @@ def analyze(
         raise SystemExit(str(exc)) from exc
     if tuple(parsed_schedulers) != tuple(schedulers):
         raise SystemExit("run_config schedulers are not canonical and unique")
+    if is_v4 and set(schedulers) != set(experiment.ALL_SCHEDULERS):
+        raise SystemExit("v4 campaign requires all nine canonical schedulers")
     if tuple(cells) == tuple(experiment.FORMAL_CELLS) and priority_policy == "RM":
         try:
             experiment.validate_frozen_main_figure(
@@ -485,6 +765,11 @@ def analyze(
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
+    if not is_v4 and any(
+        row.get("experiment") == experiment.V4_EXPERIMENT
+        for row in (*requests, *results)
+    ):
+        raise SystemExit("v3/v4 result mixing is not allowed")
     if not requests:
         raise SystemExit("incomplete campaign: requests are empty")
     expected = {str(row["request_id"]) for row in requests}
@@ -513,6 +798,10 @@ def analyze(
         ):
             if row.get(key) != request.get(key):
                 raise SystemExit(f"result/request identity mismatch for {key}")
+        if is_v4:
+            for key, expected_value in (("experiment", experiment.V4_EXPERIMENT),):
+                if request.get(key) != expected_value or row.get(key) != expected_value:
+                    raise SystemExit(f"v4 result/request identity mismatch for {key}")
         _validate_harvest_model(
             {key: request.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
             "request harvest model",
@@ -695,93 +984,96 @@ def analyze(
                 campaign_seed=campaign_seed,
                 priority_policy=priority_policy,
             ))
-    uc_slice = figure_slices["uc_scan"]
-    ue_slice = figure_slices["ue_scan"]
-    uc_rows = select_scan_rows(
-        summaries, uc_slice["fixed_key"], uc_slice["fixed_value"],
-    )
-    ue_rows = select_scan_rows(
-        summaries, ue_slice["fixed_key"], ue_slice["fixed_value"],
-    )
-    _validate_scan_rows(
-        uc_rows, cells, fixed_key=uc_slice["fixed_key"], x_key=uc_slice["x_key"],
-        fixed_value=uc_slice["fixed_value"], label="U_C",
-    )
-    _validate_scan_rows(
-        ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"],
-        fixed_value=ue_slice["fixed_value"], label="U_E",
-    )
-    dmr_uc_rows = select_scan_rows(
-        dmr_summaries, uc_slice["fixed_key"], uc_slice["fixed_value"],
-    )
-    dmr_ue_rows = select_scan_rows(
-        dmr_summaries, ue_slice["fixed_key"], ue_slice["fixed_value"],
-    )
-    _validate_dmr_scan_rows(
-        dmr_uc_rows, cells, fixed_key=uc_slice["fixed_key"],
-        x_key=uc_slice["x_key"], fixed_value=uc_slice["fixed_value"], label="U_C DMR",
-    )
-    _validate_dmr_scan_rows(
-        dmr_ue_rows, cells, fixed_key=ue_slice["fixed_key"],
-        x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="U_E DMR",
-    )
-    _validate_dmr_ci_lower_bounds(dmr_uc_rows, uc_dmr_ymin, "U_C")
-    _validate_dmr_ci_lower_bounds(dmr_ue_rows, ue_dmr_ymin, "U_E")
     write_csv(root / "summary.csv", summaries)
-    write_csv(root / "figure_scheduler_uc.csv", uc_rows)
-    write_csv(root / "figure_scheduler_ue.csv", ue_rows)
     write_csv(root / "summary_dmr.csv", dmr_summaries)
-    write_csv(root / "figure_scheduler_uc_dmr.csv", dmr_uc_rows)
-    write_csv(root / "figure_scheduler_ue_dmr.csv", dmr_ue_rows)
+    plot_jobs: list[dict[str, Any]] = []
+    if is_v4:
+        axis = _axis_plot_values(scan_contract)
+        uc_slice_rows = []
+        uc_dmr_slice_rows = []
+        for index, uc_slice in enumerate(figure_slices["uc_scans"]):
+            uc_rows = select_scan_rows(summaries, uc_slice["fixed_key"], uc_slice["fixed_value"])
+            dmr_uc_rows = select_scan_rows(dmr_summaries, uc_slice["fixed_key"], uc_slice["fixed_value"])
+            _validate_v4_slice(uc_rows, uc_slice, schedulers, f"U_C[{index}]")
+            _validate_v4_slice(dmr_uc_rows, uc_slice, schedulers, f"U_C DMR[{index}]")
+            uc_slice_rows.append((uc_slice, uc_rows))
+            uc_dmr_slice_rows.append((uc_slice, dmr_uc_rows))
+            _validate_dmr_ci_lower_bounds(dmr_uc_rows, uc_dmr_ymin, f"U_C[{index}]")
+        ue_slice_rows = []
+        ue_dmr_slice_rows = []
+        for index, ue_slice in enumerate(figure_slices["ue_scans"]):
+            ue_rows = select_scan_rows(summaries, ue_slice["fixed_key"], ue_slice["fixed_value"])
+            dmr_ue_rows = select_scan_rows(dmr_summaries, ue_slice["fixed_key"], ue_slice["fixed_value"])
+            _validate_v4_slice(ue_rows, ue_slice, schedulers, f"U_E[{index}]")
+            _validate_v4_slice(dmr_ue_rows, ue_slice, schedulers, f"U_E DMR[{index}]")
+            ue_slice_rows.append((ue_slice, ue_rows))
+            ue_dmr_slice_rows.append((ue_slice, dmr_ue_rows))
+            _validate_dmr_ci_lower_bounds(dmr_ue_rows, ue_dmr_ymin, f"U_E[{index}]")
+        write_csv(root / "figure_scheduler_uc_slices.csv", [
+            row for slice_config, rows in uc_slice_rows for row in _slice_csv_rows(slice_config, rows)
+        ])
+        write_csv(root / "figure_scheduler_ue_slices.csv", [
+            row for slice_config, rows in ue_slice_rows for row in _slice_csv_rows(slice_config, rows)
+        ])
+        write_csv(root / "figure_scheduler_uc_slices_dmr.csv", [
+            row for slice_config, rows in uc_dmr_slice_rows for row in _dmr_slice_csv_rows(slice_config, rows)
+        ])
+        write_csv(root / "figure_scheduler_ue_slices_dmr.csv", [
+            row for slice_config, rows in ue_dmr_slice_rows for row in _dmr_slice_csv_rows(slice_config, rows)
+        ])
+        plot_jobs = [
+            {"composite": True, "slice_rows": uc_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_uc_slices.png", "xkey": "target_uc",
+             "schedulers": schedulers, "xlabel": "U_C",
+             "title": f"{priority_policy} — Whole-taskset pass ratio versus U_C",
+             **axis},
+            {"composite": True, "slice_rows": ue_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_ue_slices.png", "xkey": "target_ue",
+             "schedulers": schedulers, "xlabel": "U_E",
+             "title": f"{priority_policy} — Whole-taskset pass ratio versus U_E",
+             **axis},
+            {"composite": True, "slice_rows": uc_dmr_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_uc_slices_dmr.png", "xkey": "target_uc",
+             "schedulers": schedulers, "xlabel": "U_C", "metric": "dmr",
+             "ymin": uc_dmr_ymin,
+             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_C",
+             **axis},
+            {"composite": True, "slice_rows": ue_dmr_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_ue_slices_dmr.png", "xkey": "target_ue",
+             "schedulers": schedulers, "xlabel": "U_E", "metric": "dmr",
+             "ymin": ue_dmr_ymin,
+             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_E",
+             **axis},
+        ]
+    else:
+        uc_slice = figure_slices["uc_scan"]
+        ue_slice = figure_slices["ue_scan"]
+        uc_rows = select_scan_rows(summaries, uc_slice["fixed_key"], uc_slice["fixed_value"])
+        ue_rows = select_scan_rows(summaries, ue_slice["fixed_key"], ue_slice["fixed_value"])
+        _validate_scan_rows(uc_rows, cells, fixed_key=uc_slice["fixed_key"], x_key=uc_slice["x_key"], fixed_value=uc_slice["fixed_value"], label="U_C")
+        _validate_scan_rows(ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="U_E")
+        dmr_uc_rows = select_scan_rows(dmr_summaries, uc_slice["fixed_key"], uc_slice["fixed_value"])
+        dmr_ue_rows = select_scan_rows(dmr_summaries, ue_slice["fixed_key"], ue_slice["fixed_value"])
+        _validate_dmr_scan_rows(dmr_uc_rows, cells, fixed_key=uc_slice["fixed_key"], x_key=uc_slice["x_key"], fixed_value=uc_slice["fixed_value"], label="U_C DMR")
+        _validate_dmr_scan_rows(dmr_ue_rows, cells, fixed_key=ue_slice["fixed_key"], x_key=ue_slice["x_key"], fixed_value=ue_slice["fixed_value"], label="U_E DMR")
+        _validate_dmr_ci_lower_bounds(dmr_uc_rows, uc_dmr_ymin, "U_C")
+        _validate_dmr_ci_lower_bounds(dmr_ue_rows, ue_dmr_ymin, "U_E")
+        write_csv(root / "figure_scheduler_uc.csv", uc_rows)
+        write_csv(root / "figure_scheduler_ue.csv", ue_rows)
+        write_csv(root / "figure_scheduler_uc_dmr.csv", dmr_uc_rows)
+        write_csv(root / "figure_scheduler_ue_dmr.csv", dmr_ue_rows)
+        plot_jobs = [
+            {"rows": uc_rows, "output": str(root), "filename": "figure_scheduler_uc.png", "xkey": uc_slice["x_key"], "schedulers": schedulers, "xlabel": "U_C", "title": f"{priority_policy} — Whole-taskset pass ratio versus U_C (U_E={uc_slice['fixed_value']})"},
+            {"rows": ue_rows, "output": str(root), "filename": "figure_scheduler_ue.png", "xkey": ue_slice["x_key"], "schedulers": schedulers, "xlabel": "U_E", "title": f"{priority_policy} — Whole-taskset pass ratio versus U_E (U_C={ue_slice['fixed_value']})"},
+            {"rows": dmr_uc_rows, "output": str(root), "filename": "figure_scheduler_uc_dmr.png", "xkey": uc_slice["x_key"], "schedulers": schedulers, "xlabel": "U_C", "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_C (U_E={uc_slice['fixed_value']})" + (f" (zoomed y-axis: {uc_dmr_ymin:g}–1.0)" if uc_dmr_ymin > 0 else ""), "metric": "dmr", "ymin": uc_dmr_ymin},
+            {"rows": dmr_ue_rows, "output": str(root), "filename": "figure_scheduler_ue_dmr.png", "xkey": ue_slice["x_key"], "schedulers": schedulers, "xlabel": "U_E", "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_E (U_C={ue_slice['fixed_value']})" + (f" (zoomed y-axis: {ue_dmr_ymin:g}–1.0)" if ue_dmr_ymin > 0 else ""), "metric": "dmr", "ymin": ue_dmr_ymin},
+        ]
     validation_summary_seconds = time.perf_counter() - validation_started
     plot_started = time.perf_counter()
     try:
         import matplotlib
         matplotlib.use("Agg")
-        run_independent_jobs([
-            {
-                "rows": uc_rows, "output": str(root),
-                "filename": "figure_scheduler_uc.png", "xkey": uc_slice["x_key"],
-                "schedulers": schedulers, "xlabel": "U_C",
-                "title": (
-                    f"{priority_policy} — Whole-taskset pass ratio versus U_C "
-                    f"(U_E={uc_slice['fixed_value']})"
-                ),
-            },
-            {
-                "rows": ue_rows, "output": str(root),
-                "filename": "figure_scheduler_ue.png", "xkey": ue_slice["x_key"],
-                "schedulers": schedulers, "xlabel": "U_E",
-                "title": (
-                    f"{priority_policy} — Whole-taskset pass ratio versus U_E "
-                    f"(U_C={ue_slice['fixed_value']})"
-                ),
-            },
-            {
-                "rows": dmr_uc_rows, "output": str(root),
-                "filename": "figure_scheduler_uc_dmr.png", "xkey": uc_slice["x_key"],
-                "schedulers": schedulers, "xlabel": "U_C",
-                "title": (
-                    f"{priority_policy} — Job-level deadline-meeting ratio (DMR) "
-                    f"versus U_C (U_E={uc_slice['fixed_value']})"
-                    + (f" (zoomed y-axis: {uc_dmr_ymin:g}–1.0)" if uc_dmr_ymin > 0 else "")
-                ),
-                "metric": "dmr",
-                "ymin": uc_dmr_ymin,
-            },
-            {
-                "rows": dmr_ue_rows, "output": str(root),
-                "filename": "figure_scheduler_ue_dmr.png", "xkey": ue_slice["x_key"],
-                "schedulers": schedulers, "xlabel": "U_E",
-                "title": (
-                    f"{priority_policy} — Job-level deadline-meeting ratio (DMR) "
-                    f"versus U_E (U_C={ue_slice['fixed_value']})"
-                    + (f" (zoomed y-axis: {ue_dmr_ymin:g}–1.0)" if ue_dmr_ymin > 0 else "")
-                ),
-                "metric": "dmr",
-                "ymin": ue_dmr_ymin,
-            },
-        ], _plot_any_scan_job, workers=analysis_workers)
+        run_independent_jobs(plot_jobs, _plot_any_scan_job, workers=analysis_workers)
     except ImportError:
         pass
     plot_seconds = time.perf_counter() - plot_started
@@ -790,7 +1082,8 @@ def analyze(
         / Fraction(row["energy"]["target_ue"])
         for row in results
     ]
-    report = {"complete": True, "tasksets": len(tasksets), "requests": len(requests),
+    report = {"complete": True, "experiment": config.get("experiment"),
+              "tasksets": len(tasksets), "requests": len(requests),
               "results": len(results), "duplicate_request_ids": duplicate,
               "missing_request_ids": missing, "unexpected_request_ids": unexpected,
               "summary_rows": len(summaries),
