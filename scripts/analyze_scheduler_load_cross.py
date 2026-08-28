@@ -13,7 +13,7 @@ from pathlib import Path
 import random
 import sys
 import time
-from typing import Any
+from typing import Any, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -270,6 +270,15 @@ def _axis_plot_values(contract: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def decimal_axis_labels(axis_ticks: Sequence[Any]) -> list[str]:
+    """Format exact axis ticks for paper-facing decimal labels."""
+    labels = []
+    for value in axis_ticks:
+        tick = Fraction(value)
+        labels.append("0" if tick == 0 else experiment.decimal_text(tick))
+    return labels
+
+
 def select_scan_rows(
     summaries: list[dict[str, Any]], fixed_key: str, fixed_value: str,
 ) -> list[dict[str, Any]]:
@@ -407,7 +416,7 @@ def plot_scan(
         if axis_min is not None and axis_max is not None and axis_ticks is not None:
             axis.set_xlim(float(Fraction(axis_min)), float(Fraction(axis_max)))
             axis.set_xticks([float(Fraction(value)) for value in axis_ticks])
-            axis.set_xticklabels(axis_ticks)
+            axis.set_xticklabels(decimal_axis_labels(axis_ticks))
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
     axes[0].set_ylabel("Whole-taskset pass ratio")
@@ -480,7 +489,7 @@ def plot_dmr_scan(
         if axis_min is not None and axis_max is not None and axis_ticks is not None:
             axis.set_xlim(float(Fraction(axis_min)), float(Fraction(axis_max)))
             axis.set_xticks([float(Fraction(value)) for value in axis_ticks])
-            axis.set_xticklabels(axis_ticks)
+            axis.set_xticklabels(decimal_axis_labels(axis_ticks))
         axis.grid(alpha=0.25)
         axis.legend(fontsize="small")
     axes[0].set_ylabel("Deadline-meeting ratio (DMR)")
@@ -538,7 +547,7 @@ def _axis_values(contract: dict[str, Any]) -> tuple[float, float, list[float], l
         float(Fraction(contract["axis_display_min"])),
         float(Fraction(contract["axis_display_max"])),
         [float(Fraction(value)) for value in contract["axis_ticks"]],
-        list(contract["axis_ticks"]),
+        decimal_axis_labels(contract["axis_ticks"]),
     )
 
 

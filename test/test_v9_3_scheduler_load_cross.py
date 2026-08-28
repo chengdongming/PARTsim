@@ -20,7 +20,8 @@ from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
-    _parse_dmr_ymin, _plot_style, plot_composite_scan, plot_dmr_scan, plot_scan,
+    _parse_dmr_ymin, _plot_style, decimal_axis_labels, plot_composite_dmr,
+    plot_composite_scan, plot_dmr_scan, plot_scan,
 )
 import scripts.run_scheduler_load_cross as scheduler_runner
 
@@ -47,6 +48,152 @@ def test_exact_ue_eta_mapping_and_deduplicated_cells():
     )
     assert len(experiment.DEFAULT_CELLS) == 51
     assert len(set(experiment.DEFAULT_CELLS)) == 51
+
+
+def test_decimal_axis_labels_preserve_exact_scan_ticks():
+    profile = experiment.normalize_scan_profile()
+    assert profile["axis_ticks"] == [
+        "0", "1/10", "1/5", "3/10", "2/5", "1/2", "3/5",
+        "7/10", "4/5", "9/10", "1",
+    ]
+    assert decimal_axis_labels(profile["axis_ticks"]) == [
+        "0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6",
+        "0.7", "0.8", "0.9", "1",
+    ]
+    custom = experiment.normalize_scan_profile(
+        axis_display_min="0", axis_display_max="1", axis_tick_step="1/5",
+    )
+    assert custom["axis_ticks"] == ["0", "1/5", "2/5", "3/5", "4/5", "1"]
+    assert decimal_axis_labels(custom["axis_ticks"]) == [
+        "0", "0.2", "0.4", "0.6", "0.8", "1",
+    ]
+
+
+def test_all_scan_plot_paths_use_decimal_axis_labels(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+    monkeypatch.setattr(plt, "close", lambda _figure: None)
+
+    expected_labels = [
+        "0", "0.1", "0.2", "0.3", "0.4", "0.5", "0.6",
+        "0.7", "0.8", "0.9", "1",
+    ]
+    expected_ticks = [index / 10 for index in range(11)]
+
+    class CaptureAxis:
+        def __init__(self):
+            self.xticks = None
+            self.xticklabels = None
+            self.errorbar_x = []
+
+        def errorbar(self, x, *_args, **_kwargs):
+            self.errorbar_x.extend(x)
+            return SimpleNamespace(lines=[SimpleNamespace()])
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, _label):
+            pass
+
+        def set_title(self, _title):
+            pass
+
+        def set_xlim(self, *_args):
+            pass
+
+        def set_xticks(self, ticks):
+            self.xticks = ticks
+
+        def set_xticklabels(self, labels):
+            self.xticklabels = labels
+
+        def set_ylim(self, *_args):
+            pass
+
+        def grid(self, **_kwargs):
+            pass
+
+        def legend(self, **_kwargs):
+            pass
+
+    class CaptureFigure:
+        def savefig(self, _path):
+            pass
+
+        def suptitle(self, _title):
+            pass
+
+        def tight_layout(self):
+            pass
+
+        def legend(self, *_args, **_kwargs):
+            pass
+
+        def subplots_adjust(self, **_kwargs):
+            pass
+
+    ticks = experiment.normalize_scan_profile()["axis_ticks"]
+    scan_rows = [{
+        "target_uc": "1/10", "scheduler": "ASAP-BLOCK",
+        "wholepass_ratio": 0.5, "ci95_low": 0.4, "ci95_high": 0.6,
+    }]
+    dmr_rows = [{
+        "target_uc": "1/10", "scheduler": "ASAP-BLOCK", "dmr": 0.5,
+        "dmr_ci95_low": 0.4, "dmr_ci95_high": 0.6,
+    }]
+    slice_config = {
+        "x_key": "target_uc", "fixed_key": "target_ue",
+        "fixed_value": "7/10", "label": "low", "x_values": ["1/10"],
+    }
+    composite_rows = [{
+        "scheduler": "ASAP-BLOCK", "target_uc": "1/10",
+        "wholepass_ratio": 0.5, "ci95_low": 0.4, "ci95_high": 0.6,
+        "dmr": 0.5, "dmr_ci95_low": 0.4, "dmr_ci95_high": 0.6,
+    }]
+
+    def capture_axes():
+        axes = [CaptureAxis() for _ in range(3)]
+        monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+        return axes
+
+    axes = capture_axes()
+    plot_scan(
+        scan_rows, tmp_path, "scan.png", "target_uc", ["ASAP-BLOCK"], "U_C", "scan",
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes)
+
+    axes = capture_axes()
+    plot_dmr_scan(
+        dmr_rows, tmp_path, "dmr.png", "target_uc", ["ASAP-BLOCK"], "U_C", "dmr",
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes)
+
+    axes = [[CaptureAxis() for _ in range(3)]]
+    monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+    plot_composite_scan(
+        [(slice_config, composite_rows)], tmp_path, "composite.png", "target_uc",
+        ["ASAP-BLOCK"], "U_C", "composite", axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes[0]] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes[0]] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes[0])
+
+    axes = [[CaptureAxis() for _ in range(3)]]
+    monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
+    plot_composite_dmr(
+        [(slice_config, composite_rows)], tmp_path, "composite-dmr.png", "target_uc",
+        ["ASAP-BLOCK"], "U_C", "composite dmr", 0.0,
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert [axis.xticklabels for axis in axes[0]] == [expected_labels] * 3
+    assert [axis.xticks for axis in axes[0]] == [expected_ticks] * 3
+    assert all(0 not in axis.errorbar_x for axis in axes[0])
 
 
 def test_frozen_main_figure_has_exactly_16_cells_and_two_slices():
