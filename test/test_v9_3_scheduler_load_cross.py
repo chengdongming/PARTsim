@@ -371,6 +371,79 @@ def test_v5_composite_plots_have_six_axes_and_nine_scheduler_curves(tmp_path, mo
     )
 
 
+def test_v5_composite_slice_labels_follow_rows_for_both_metrics_and_scans(
+    tmp_path, monkeypatch,
+):
+    import matplotlib.pyplot as plt
+
+    figures = []
+    monkeypatch.setattr(plt, "close", lambda figure: figures.append(figure))
+    scheduler = "ASAP-BLOCK"
+    scan_values = [str(value) for value in experiment.normalize_scan_profile()["uc_scan_values"]]
+
+    def slice_rows(fixed_key, x_key):
+        result = []
+        for label, fixed_value in zip(("low", "medium", "high"), ("3/10", "3/5", "9/10")):
+            config = {
+                "x_key": x_key, "fixed_key": fixed_key,
+                "fixed_value": fixed_value, "label": label,
+            }
+            rows = []
+            for mode in experiment.DEADLINE_MODES:
+                for x_value in scan_values:
+                    rows.append({
+                        "scheduler": scheduler, x_key: x_value,
+                        "wholepass_ratio": 0.5, "ci95_low": 0.4,
+                        "ci95_high": 0.6, "dmr": 0.5,
+                        "dmr_ci95_low": 0.4, "dmr_ci95_high": 0.6,
+                    })
+                result.append((config, mode, rows[-len(scan_values):]))
+        return result
+
+    def labels_for(figure):
+        return [figure.axes[row * 2].get_ylabel() for row in range(3)]
+
+    plot_v5_composite_scan(
+        slice_rows("target_ue", "target_uc"), tmp_path, "uc.png", "target_uc",
+        [scheduler], "U_C", "U_C", axis_min="0", axis_max="1",
+        axis_ticks=experiment.normalize_scan_profile()["axis_ticks"],
+    )
+    assert labels_for(figures[-1]) == [
+        "low: U_E=0.3\nWhole-taskset pass ratio",
+        "medium: U_E=0.6\nWhole-taskset pass ratio",
+        "high: U_E=0.9\nWhole-taskset pass ratio",
+    ]
+
+    plot_v5_composite_dmr(
+        slice_rows("target_ue", "target_uc"), tmp_path, "uc-dmr.png", "target_uc",
+        [scheduler], "U_C", "U_C DMR", 0.0, axis_min="0", axis_max="1",
+        axis_ticks=experiment.normalize_scan_profile()["axis_ticks"],
+    )
+    assert labels_for(figures[-1]) == [
+        "low: U_E=0.3\nDMR", "medium: U_E=0.6\nDMR", "high: U_E=0.9\nDMR",
+    ]
+
+    plot_v5_composite_scan(
+        slice_rows("target_uc", "target_ue"), tmp_path, "ue.png", "target_ue",
+        [scheduler], "U_E", "U_E", axis_min="0", axis_max="1",
+        axis_ticks=experiment.normalize_scan_profile()["axis_ticks"],
+    )
+    assert labels_for(figures[-1]) == [
+        "low: U_C=0.3\nWhole-taskset pass ratio",
+        "medium: U_C=0.6\nWhole-taskset pass ratio",
+        "high: U_C=0.9\nWhole-taskset pass ratio",
+    ]
+
+    plot_v5_composite_dmr(
+        slice_rows("target_uc", "target_ue"), tmp_path, "ue-dmr.png", "target_ue",
+        [scheduler], "U_E", "U_E DMR", 0.0, axis_min="0", axis_max="1",
+        axis_ticks=experiment.normalize_scan_profile()["axis_ticks"],
+    )
+    assert labels_for(figures[-1]) == [
+        "low: U_C=0.3\nDMR", "medium: U_C=0.6\nDMR", "high: U_C=0.9\nDMR",
+    ]
+
+
 def test_decimal_axis_labels_preserve_exact_scan_ticks():
     profile = experiment.normalize_scan_profile()
     assert profile["axis_ticks"] == [
