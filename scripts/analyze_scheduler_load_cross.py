@@ -741,7 +741,7 @@ def _draw_v5_axes(
         "axis_ticks": axis_ticks,
     })
     handles: dict[str, Any] = {}
-    row_labels: dict[int, str] = {}
+    row_slice_configs: dict[int, dict[str, Any]] = {}
     for axis_row in axes:
         for axis in axis_row:
             axis.set_xlabel(xlabel)
@@ -754,7 +754,7 @@ def _draw_v5_axes(
         row_index = pair_index // 2
         column_index = 0 if deadline_mode == "constrained" else 1
         axis = axes[row_index][column_index]
-        row_labels[row_index] = slice_config["label"]
+        row_slice_configs[row_index] = slice_config
         for scheduler in schedulers:
             values = [
                 row for row in rows if row["scheduler"] == scheduler
@@ -803,11 +803,11 @@ def _draw_v5_axes(
         axis.set_xticklabels(ticklabels)
         axis.set_ylim(ymin, 1.0)
         axis.grid(alpha=0.25)
-    for row_index, label in row_labels.items():
-        fixed_name = "U_E" if slice_rows[row_index][0]["fixed_key"] == "target_ue" else "U_C"
+    for row_index, slice_config in row_slice_configs.items():
+        fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
         axes[row_index][0].set_ylabel(
-            f"{label}: {fixed_name}="
-            f"{experiment.decimal_text(slice_rows[row_index][0]['fixed_value'])}\n"
+            f"{slice_config['label']}: {fixed_name}="
+            f"{experiment.decimal_text(slice_config['fixed_value'])}\n"
             f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
         )
     legend_handles = [handles[name] for name in schedulers if name in handles]
