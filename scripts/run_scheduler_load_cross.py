@@ -257,20 +257,9 @@ def _resolve_grid(args: argparse.Namespace) -> tuple[
 ]:
     structured = any(getattr(args, name) is not None for name in _V4_GRID_ARGS)
     if args.cells is not None:
-        if structured:
-            raise SystemExit("--cells conflicts with structured v4 grid options")
-        try:
-            cells = experiment.parse_cells(args.cells)
-            slices = experiment.resolve_figure_slices(
-                cells,
-                fixed_ue=(experiment.parse_fraction(args.uc_figure_fixed_ue, "uc-figure-fixed-ue")
-                          if args.uc_figure_fixed_ue is not None else None),
-                fixed_uc=(experiment.parse_fraction(args.ue_figure_fixed_uc, "ue-figure-fixed-uc")
-                          if args.ue_figure_fixed_uc is not None else None),
-            )
-        except ValueError as exc:
-            raise SystemExit(str(exc)) from exc
-        return cells, slices, None, False
+        raise SystemExit(
+            "--cells is a legacy write path and is not supported for new v5 runs"
+        )
     if args.uc_figure_fixed_ue is not None and args.uc_figure_fixed_ues is not None:
         raise SystemExit("singular --uc-figure-fixed-ue conflicts with plural v4 option")
     if args.uc_figure_fixed_ue is not None:
@@ -315,7 +304,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("simulation horizon and timeout must be positive")
     if args.parse_concurrency < 1:
         raise SystemExit("parse-concurrency must be positive")
-    cells, figure_slices, scan_contract, is_v4 = _resolve_grid(args)
+    cells, figure_slices, scan_contract, _structured = _resolve_grid(args)
     schedulers = experiment.parse_schedulers(
         args.schedulers if args.schedulers is not None
         else ",".join(perf_g.FORMAL_SCHEDULERS)
@@ -344,9 +333,11 @@ def main(argv: list[str] | None = None) -> int:
     rho = experiment.parse_fraction(args.rho, "rho")
     latency = experiment.parse_fraction(args.latency, "latency")
     root = args.output
-    experiment_name = experiment.V4_EXPERIMENT if is_v4 else experiment.V3_EXPERIMENT
+    experiment_name = experiment.V5_EXPERIMENT
+    deadline_modes = experiment.DEADLINE_MODES
     config = {
         "experiment": experiment_name, "seed": args.seed, "workers": args.workers,
+        "deadline_modes": list(deadline_modes),
         "samples_per_cell": args.samples_per_cell, "cells": [[str(uc), str(ue)] for uc, ue in cells],
         "schedulers": list(schedulers), "processors": args.processors, "tasks": args.tasks,
         "priority_policy": priority_policy,
@@ -376,10 +367,10 @@ def main(argv: list[str] | None = None) -> int:
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
-        if is_v4 and (stored_config or {}).get("experiment") != experiment.V4_EXPERIMENT:
-            raise SystemExit("resume experiment mismatch: v4 cannot resume v3 results")
-        if not is_v4 and (stored_config or {}).get("experiment") == experiment.V4_EXPERIMENT:
-            raise SystemExit("resume experiment mismatch: v3 cannot resume v4 results")
+        if (stored_config or {}).get("experiment") != experiment.V5_EXPERIMENT:
+            raise SystemExit("resume experiment mismatch: v5 cannot resume non-v5 results")
+        if (stored_config or {}).get("deadline_modes") != list(deadline_modes):
+            raise SystemExit("resume deadline modes mismatch")
         if (stored_config or {}).get("harvest_model") != experiment.HARVEST_MODEL:
             raise SystemExit(
                 "resume harvest model mismatch: expected linear_ramp_v1"
@@ -407,12 +398,22 @@ def main(argv: list[str] | None = None) -> int:
     material = root / "material"
     unique_ucs = tuple(dict.fromkeys(uc for uc, _ue in cells))
     prepare_tasksets_started = time.perf_counter()
-    tasksets, service = experiment.materialize_tasksets(
-        material, seed=args.seed, utilizations=unique_ucs, count=args.samples_per_cell,
-        processors=args.processors, tasks=args.tasks, period_min=args.period_min,
-        period_max=args.period_max, min_task_util=min_util, max_task_util=max_util,
-        tolerance=tolerance, prepare_workers=prepare_workers,
-    )
+    tasksets: list[Any] = []
+    tasksets_by_mode: dict[str, list[Any]] = {}
+    service = None
+    for deadline_mode in deadline_modes:
+        mode_tasksets, mode_service = experiment.materialize_tasksets(
+            material / deadline_mode, seed=args.seed, utilizations=unique_ucs,
+            count=args.samples_per_cell, processors=args.processors, tasks=args.tasks,
+            period_min=args.period_min, period_max=args.period_max,
+            min_task_util=min_util, max_task_util=max_util, tolerance=tolerance,
+            prepare_workers=prepare_workers, deadline_mode=deadline_mode,
+        )
+        if service is not None and mode_service.identity != service.identity:
+            raise SystemExit("deadline modes do not share service-curve identity")
+        service = mode_service
+        tasksets_by_mode[deadline_mode] = mode_tasksets
+        tasksets.extend(mode_tasksets)
     prepare_tasksets_seconds = time.perf_counter() - prepare_tasksets_started
     print(
         f"phase=prepare stage=scheduler-load-cross prepare-tasksets "
@@ -422,11 +423,15 @@ def main(argv: list[str] | None = None) -> int:
     rows = [experiment.taskset_row(taskset, args.processors) for taskset in tasksets]
     write_jsonl(root / "tasksets.jsonl", rows)
     request_started = time.perf_counter()
-    requests = experiment.request_rows(
-        tasksets, cells, schedulers, args.simulation_horizon,
-        priority_policy=priority_policy,
-        experiment_name=experiment_name,
-    )
+    requests = [
+        row
+        for deadline_mode in deadline_modes
+        for row in experiment.request_rows(
+            tasksets_by_mode[deadline_mode], cells, schedulers,
+            args.simulation_horizon, priority_policy=priority_policy,
+            experiment_name=experiment_name, deadline_mode=deadline_mode,
+        )
+    ]
     write_jsonl(root / "requests.jsonl", requests)
     request_build_seconds = time.perf_counter() - request_started
     raw_trace = tuple(experiment.construct_paired_harvest_trace(
@@ -444,11 +449,12 @@ def main(argv: list[str] | None = None) -> int:
         for row in existing
     ):
         raise SystemExit("persisted results harvest model does not match linear_ramp_v1")
-    if is_v4 and any(
-        row.get("experiment") != experiment.V4_EXPERIMENT
+    if any(
+        row.get("experiment") != experiment_name
+        or row.get("deadline_mode") not in deadline_modes
         for row in existing
     ):
-        raise SystemExit("persisted results do not match the v4 experiment")
+        raise SystemExit("persisted results do not match the requested experiment")
     existing_ids = [str(row.get("request_id")) for row in existing]
     expected_ids = {str(row["request_id"]) for row in requests}
     if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
