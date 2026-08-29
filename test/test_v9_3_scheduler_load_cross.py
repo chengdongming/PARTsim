@@ -21,7 +21,8 @@ from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
     _parse_dmr_ymin, _plot_style, decimal_axis_labels, plot_composite_dmr,
-    plot_composite_scan, plot_dmr_scan, plot_scan,
+    plot_composite_scan, plot_dmr_scan, plot_scan, _v5_plot_style,
+    plot_v5_composite_dmr, plot_v5_composite_scan,
 )
 import scripts.run_scheduler_load_cross as scheduler_runner
 
@@ -48,6 +49,101 @@ def test_exact_ue_eta_mapping_and_deduplicated_cells():
     )
     assert len(experiment.DEFAULT_CELLS) == 51
     assert len(set(experiment.DEFAULT_CELLS)) == 51
+
+
+def test_v5_identity_and_deadline_modes_are_fixed():
+    assert experiment.DOMAIN == "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v5"
+    assert experiment.V5_EXPERIMENT == "scheduler-load-cross-v5"
+    assert experiment.DEADLINE_MODES == ("constrained", "implicit")
+    assert len(experiment.FORMAL_CELLS) == 51
+    assert len(set(experiment.FORMAL_CELLS)) == 51
+    with pytest.raises(ValueError, match="deadline_mode"):
+        experiment.normalize_deadline_mode("unknown")
+
+
+def test_v5_request_identity_and_count_include_deadline_mode():
+    class Taskset:
+        processors = 4
+        actual_utilization = Fraction(1)
+        taskset_index = 0
+        seed = 7
+
+        def __init__(self, uc, mode):
+            self.target_utilization = uc * self.processors
+            self.deadline_mode = mode
+            self.taskset_id = f"{mode}-{uc}"
+            self.semantic_hash = f"hash-{mode}-{uc}"
+
+    tasksets = [
+        Taskset(uc, mode)
+        for mode in experiment.DEADLINE_MODES
+        for uc in {Fraction(uc) for uc, _ue in experiment.FORMAL_CELLS}
+    ]
+    rows = [
+        row
+        for mode in experiment.DEADLINE_MODES
+        for row in experiment.request_rows(
+            [taskset for taskset in tasksets if taskset.deadline_mode == mode],
+            experiment.FORMAL_CELLS, experiment.ALL_SCHEDULERS, 60000,
+            experiment_name=experiment.V5_EXPERIMENT, deadline_mode=mode,
+        )
+    ]
+    assert len(rows) == 51 * 9 * 2
+    assert {row["deadline_mode"] for row in rows} == set(experiment.DEADLINE_MODES)
+    assert len({row["request_id"] for row in rows}) == len(rows)
+
+
+def test_v5_scheduler_style_combinations_are_unique():
+    styles = [_v5_plot_style(scheduler) for scheduler in experiment.ALL_SCHEDULERS]
+    assert len({(item["color"], item["marker"], item["linestyle"]) for item in styles}) == 9
+
+
+def test_v5_composite_plots_have_six_axes_and_nine_scheduler_curves(tmp_path, monkeypatch):
+    import matplotlib.pyplot as plt
+
+    profiles = []
+    for index, label in enumerate(("low", "medium", "high")):
+        slice_config = {
+            "x_key": "target_uc", "fixed_key": "target_ue",
+            "fixed_value": str(Fraction(index + 3, 10)),
+            "label": label,
+            "x_values": list(experiment.normalize_scan_profile()["uc_scan_values"]),
+        }
+        for mode in experiment.DEADLINE_MODES:
+            rows = []
+            for scheduler in experiment.ALL_SCHEDULERS:
+                for x_value in slice_config["x_values"]:
+                    rows.append({
+                        "scheduler": scheduler, "target_uc": x_value,
+                        "wholepass_ratio": 0.8, "ci95_low": 0.8,
+                        "ci95_high": 0.8, "dmr": 0.8,
+                        "dmr_ci95_low": 0.8, "dmr_ci95_high": 0.8,
+                    })
+            profiles.append((slice_config, mode, rows))
+
+    figures = []
+    monkeypatch.setattr(plt, "close", lambda figure: figures.append(figure))
+    ticks = experiment.normalize_scan_profile()["axis_ticks"]
+    plot_v5_composite_scan(
+        profiles, tmp_path, "v5.png", "target_uc", list(experiment.ALL_SCHEDULERS),
+        "U_C", "v5", axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert len(figures[-1].axes) == 6
+    assert all(
+        len([line for line in axis.lines if line.get_label() in experiment.ALL_SCHEDULERS]) == 9
+        for axis in figures[-1].axes
+    )
+    assert all(axis.get_xlim() == (0.0, 1.0) for axis in figures[-1].axes)
+
+    plot_v5_composite_dmr(
+        profiles, tmp_path, "v5-dmr.png", "target_uc", list(experiment.ALL_SCHEDULERS),
+        "U_C", "v5 dmr", 0.0, axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+    assert len(figures[-1].axes) == 6
+    assert all(
+        len([line for line in axis.lines if line.get_label() in experiment.ALL_SCHEDULERS]) == 9
+        for axis in figures[-1].axes
+    )
 
 
 def test_decimal_axis_labels_preserve_exact_scan_ticks():
@@ -196,16 +292,16 @@ def test_all_scan_plot_paths_use_decimal_axis_labels(tmp_path, monkeypatch):
     assert all(0 not in axis.errorbar_x for axis in axes[0])
 
 
-def test_frozen_main_figure_has_exactly_16_cells_and_two_slices():
-    assert len(experiment.FORMAL_CELLS) == 16
-    assert len(set(experiment.FORMAL_CELLS)) == 16
-    assert (Fraction(3, 10), Fraction(7, 10)) in experiment.FORMAL_CELLS
-    assert experiment.FORMAL_CELLS.count((Fraction(3, 10), Fraction(7, 10))) == 1
+def test_frozen_main_figure_has_exactly_51_cells_and_three_slices():
+    assert len(experiment.FORMAL_CELLS) == 51
+    assert len(set(experiment.FORMAL_CELLS)) == 51
+    assert (Fraction(3, 10), Fraction(3, 10)) in experiment.FORMAL_CELLS
+    assert experiment.FORMAL_CELLS.count((Fraction(3, 10), Fraction(3, 10))) == 1
     slices = experiment.resolve_figure_slices(
         experiment.FORMAL_CELLS,
-        fixed_ue=Fraction(7, 10), fixed_uc=Fraction(3, 10),
+        fixed_ue=Fraction(3, 10), fixed_uc=Fraction(3, 10),
     )
-    assert slices["uc_scan"]["fixed_value"] == "7/10"
+    assert slices["uc_scan"]["fixed_value"] == "3/10"
     assert slices["ue_scan"]["fixed_value"] == "3/10"
     experiment.validate_frozen_main_figure(
         experiment.FORMAL_CELLS, experiment.ALL_SCHEDULERS, horizon_ms=60000,
@@ -730,11 +826,11 @@ def test_frozen_grid_plans_nine_paired_requests_per_cell_taskset():
     rows = experiment.request_rows(
         tasksets, experiment.FORMAL_CELLS, experiment.ALL_SCHEDULERS, 60000,
     )
-    assert len(rows) == 16 * 9
+    assert len(rows) == 51 * 9
     groups = {}
     for row in rows:
         groups.setdefault((row["target_uc"], row["target_ue"], row["generation_index"]), []).append(row)
-    assert len(groups) == 16
+    assert len(groups) == 51
     assert all(len(group) == 9 for group in groups.values())
     assert all({row["scheduler"] for row in group} == set(experiment.ALL_SCHEDULERS)
                for group in groups.values())
@@ -1063,7 +1159,7 @@ class _FakeTaskset:
 
 def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
     taskset = _FakeTaskset()
-    service = SimpleNamespace(system_path=tmp_path / "system.yml")
+    service = SimpleNamespace(system_path=tmp_path / "system.yml", identity="test-service")
     service.system_path.write_text("system", encoding="utf-8")
     request = {
         "request_id": "scheduler-load-cross-test-request",
@@ -1080,9 +1176,20 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
         scheduler_runner.experiment, "materialize_tasksets",
         lambda *args, **kwargs: ([taskset], service),
     )
+
+    def fake_request_rows(*args, **kwargs):
+        if kwargs.get("deadline_mode") != "constrained":
+            return []
+        row = dict(request)
+        row.update({
+            "experiment": experiment.V5_EXPERIMENT,
+            "deadline_mode": "constrained",
+        })
+        return [row]
+
     monkeypatch.setattr(
         scheduler_runner.experiment, "request_rows",
-        lambda *args, **kwargs: [dict(request)],
+        fake_request_rows,
     )
     monkeypatch.setattr(
         scheduler_runner.experiment, "construct_paired_harvest_trace",
@@ -1131,21 +1238,45 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
 
 def _scheduler_runner_args(
     output, resume=False, keep_traces=False, parse_concurrency=1,
-    cells="0.1:0.4", fixed_ue=None, fixed_uc=None,
+    cells=None, fixed_ue=None, fixed_uc=None,
 ):
     args = [
         "--output", str(output), "--seed", "710213", "--workers", "1",
-        "--samples-per-cell", "1", "--cells", cells,
+        "--samples-per-cell", "1",
         "--schedulers", "ASAP-BLOCK", "--simulation-horizon", "20",
         "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
         "--parse-concurrency", str(parse_concurrency),
         *( ["--keep-traces"] if keep_traces else [] ),
         *( ["--resume"] if resume else [] ),
     ]
+    if cells is None:
+        uc_scan_values = ("1/10", "1/5")
+        ue_scan_values = ("1/5",)
+        fixed_ues = ("1/5",)
+        fixed_ucs = ("1/10",)
+        uc_labels = ("selected",)
+        ue_labels = ("selected",)
+    else:
+        parsed_cells = experiment.parse_cells(cells)
+        uc_scan_values = tuple(str(value) for value in sorted({uc for uc, _ue in parsed_cells}))
+        ue_scan_values = tuple(str(value) for value in sorted({ue for _uc, ue in parsed_cells}))
+        inferred = experiment.resolve_figure_slices(parsed_cells)
+        fixed_ues = (fixed_ue or inferred["uc_scan"]["fixed_value"],)
+        fixed_ucs = (fixed_uc or inferred["ue_scan"]["fixed_value"],)
+        uc_labels = ("selected",)
+        ue_labels = ("selected",)
     if fixed_ue is not None:
-        args.extend(["--uc-figure-fixed-ue", fixed_ue])
+        fixed_ues = (fixed_ue,)
     if fixed_uc is not None:
-        args.extend(["--ue-figure-fixed-uc", fixed_uc])
+        fixed_ucs = (fixed_uc,)
+    args.extend([
+        "--uc-scan-values", ",".join(uc_scan_values),
+        "--ue-scan-values", ",".join(ue_scan_values),
+        "--uc-figure-fixed-ues", ",".join(fixed_ues),
+        "--uc-figure-labels", ",".join(uc_labels),
+        "--ue-figure-fixed-ucs", ",".join(fixed_ucs),
+        "--ue-figure-labels", ",".join(ue_labels),
+    ])
     return args
 
 
@@ -1204,7 +1335,7 @@ def test_scheduler_runner_disables_trace_retention_by_default(tmp_path, monkeypa
     assert configs[0]["retain_trace"] is True
 
 
-def test_runner_uses_v3_runtime_ue_report_name(tmp_path, monkeypatch):
+def test_runner_uses_v5_runtime_ue_report_name(tmp_path, monkeypatch):
     def run_simulation(**kwargs):
         result = SimpleNamespace(
             status=SimulationStatus.PASS_OBSERVED, reason="observed",
@@ -1216,11 +1347,12 @@ def test_runner_uses_v3_runtime_ue_report_name(tmp_path, monkeypatch):
         )
 
     _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
-    output = tmp_path / "v3-runtime-ue"
+    output = tmp_path / "v5-runtime-ue"
     assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
     config = json.loads((output / "run_config.json").read_text())
     report = json.loads((output / "invariant_report.json").read_text())
-    assert config["experiment"] == "scheduler-load-cross-v3"
+    assert config["experiment"] == "scheduler-load-cross-v5"
+    assert config["deadline_modes"] == ["constrained", "implicit"]
     assert report["runtime_config_ue_exact"] is True
     assert "actual_" + "ue_exact" not in report
 
@@ -1256,16 +1388,8 @@ def test_runner_persists_explicit_figure_slices_and_infers_unique_defaults(tmp_p
         explicit, cells=cells, fixed_ue="3/7", fixed_uc="2/5",
     )) == 0
     config = json.loads((explicit / "run_config.json").read_text())
-    assert config["figure_slices"] == {
-        "uc_scan": {
-            "x_key": "target_uc", "fixed_key": "target_ue",
-            "fixed_value": "3/7",
-        },
-        "ue_scan": {
-            "x_key": "target_ue", "fixed_key": "target_uc",
-            "fixed_value": "2/5",
-        },
-    }
+    assert config["figure_slices"]["uc_scans"][0]["fixed_value"] == "3/7"
+    assert config["figure_slices"]["ue_scans"][0]["fixed_value"] == "2/5"
 
     _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
     inferred = tmp_path / "inferred-slices"
@@ -1282,7 +1406,7 @@ def test_runner_persists_explicit_figure_slices_and_infers_unique_defaults(tmp_p
 def test_runner_rejects_figure_slice_absent_from_cells(tmp_path, monkeypatch, option, value):
     _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
     kwargs = {option: value}
-    with pytest.raises(SystemExit, match="absent from cells"):
+    with pytest.raises(SystemExit, match="must be unique values"):
         scheduler_runner.main(_scheduler_runner_args(
             tmp_path / option, cells="0.1:3/7,0.2:3/7,0.4:2/5,0.4:1/2",
             **kwargs,
@@ -1320,13 +1444,35 @@ def test_runner_binds_figure_slices_to_resume_configuration(tmp_path, monkeypatc
         ))
 
 
-def test_runner_rejects_ambiguous_automatic_figure_slice_inference(tmp_path, monkeypatch):
-    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
-    with pytest.raises(SystemExit, match="ambiguous"):
-        scheduler_runner.main(_scheduler_runner_args(
-            tmp_path / "ambiguous",
-            cells="0.1:2/5,0.2:2/5,0.1:3/5,0.2:3/5",
-        ))
+def test_runner_rejects_legacy_cells_before_writes(tmp_path, monkeypatch):
+    output = tmp_path / "legacy-cells"
+    materialized = []
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "materialize_tasksets",
+        lambda *args, **kwargs: materialized.append(True),
+    )
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows",
+        lambda *args, **kwargs: materialized.append(True),
+    )
+    args = [
+        "--output", str(output), "--seed", "1", "--workers", "1",
+        "--cells", "1/5:1/5", "--schedulers", "ASAP-BLOCK",
+    ]
+    with pytest.raises(SystemExit, match="--cells is a legacy write path") as exc_info:
+        scheduler_runner.main(args)
+    assert exc_info.value.code != 0
+    assert materialized == []
+    assert not output.exists()
+
+
+def test_runner_rejects_cells_even_with_structured_options(tmp_path):
+    args = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path), "--seed", "1", "--cells", "1/5:1/5",
+        "--uc-scan-values", "1/5,2/5",
+    ])
+    with pytest.raises(SystemExit, match="--cells is a legacy write path"):
+        scheduler_runner._resolve_grid(args)
 
 
 def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_path, monkeypatch):
@@ -1357,7 +1503,10 @@ def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_pat
     ))
     monkeypatch.setattr(
         scheduler_runner.experiment, "request_rows",
-        lambda *args, **kwargs: [dict(row) for row in requests],
+        lambda *args, **kwargs: (
+            [dict(row, experiment=experiment.V5_EXPERIMENT, deadline_mode="constrained") for row in requests]
+            if kwargs.get("deadline_mode") == "constrained" else []
+        ),
     )
     def reverse_as_completed(future_to_job):
         futures = list(reversed(list(future_to_job)))
@@ -1465,7 +1614,10 @@ def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, 
     _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
     monkeypatch.setattr(
         scheduler_runner.experiment, "request_rows",
-        lambda *args, **kwargs: [dict(row) for row in requests],
+        lambda *args, **kwargs: (
+            [dict(row, experiment=experiment.V5_EXPERIMENT, deadline_mode="constrained") for row in requests]
+            if kwargs.get("deadline_mode") == "constrained" else []
+        ),
     )
     monkeypatch.setattr(
         scheduler_runner, "as_completed",
@@ -1543,6 +1695,7 @@ def test_completed_request_resume_does_not_create_attempt(tmp_path, monkeypatch)
     terminal = {
         "request_id": attempts[0]["request_id"],
         "taskset_id": attempts[0]["taskset_id"], "taskset_hash": attempts[0]["taskset_hash"],
+        "experiment": experiment.V5_EXPERIMENT, "deadline_mode": "constrained",
         "target_uc": "1/10", "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
         "scheduler": "ASAP-BLOCK", "simulation_status": "SIM_PASS_OBSERVED",
         "technical_error": None, **_harvest_model_fields(), "energy": {
@@ -1564,6 +1717,7 @@ def test_legacy_technical_row_in_active_results_fails_closed(tmp_path, monkeypat
     assert scheduler_runner.main(_scheduler_runner_args(output)) == 2
     (output / "results.jsonl").write_text(json.dumps({
         "request_id": "scheduler-load-cross-test-request",
+        "experiment": experiment.V5_EXPERIMENT, "deadline_mode": "constrained",
         "simulation_status": "SIM_INTERNAL_ERROR", "technical_error": "old failure",
         **_harvest_model_fields(),
     }) + "\n", encoding="utf-8")
@@ -1626,6 +1780,7 @@ def test_duplicate_active_request_ids_fail_closed(tmp_path, monkeypatch):
     terminal = {
         "request_id": attempt["request_id"], "taskset_id": attempt["taskset_id"],
         "taskset_hash": attempt["taskset_hash"], "simulation_status": "SIM_PASS_OBSERVED",
+        "experiment": experiment.V5_EXPERIMENT, "deadline_mode": "constrained",
         "technical_error": None, **_harvest_model_fields(),
     }
     (output / "results.jsonl").write_text(
@@ -1791,7 +1946,7 @@ def test_v4_runner_rejects_cells_and_structured_grid_conflict(tmp_path):
         "--output", str(tmp_path), "--seed", "1", "--cells", "1/5:1/5",
         "--uc-scan-values", "1/5,2/5",
     ])
-    with pytest.raises(SystemExit, match="conflicts"):
+    with pytest.raises(SystemExit, match="--cells is a legacy write path"):
         scheduler_runner._resolve_grid(args)
 
 

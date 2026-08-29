@@ -23,9 +23,12 @@ from .parallel_prepare import run_prepare_jobs
 
 V3_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v3"
 V4_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v4"
-DOMAIN = V4_DOMAIN
+V5_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v5"
+DOMAIN = V5_DOMAIN
 V4_EXPERIMENT = "scheduler-load-cross-v4"
 V3_EXPERIMENT = "scheduler-load-cross-v3"
+V5_EXPERIMENT = "scheduler-load-cross-v5"
+DEADLINE_MODES = ("constrained", "implicit")
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
 ORDINARY_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 DEFAULT_KAPPA = Fraction(10)
@@ -37,15 +40,21 @@ HARVEST_MODEL_IDENTITY = {
     "post_horizon_policy": "hold_last",
 }
 FORMAL_UC_SCAN = tuple(Fraction(value) for value in (
-    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",
 ))
-FORMAL_UE_SCAN = tuple(Fraction(value) for value in (
-    "2/5", "9/20", "1/2", "11/20", "3/5", "13/20", "7/10", "3/4", "4/5",
-))
+FORMAL_UE_SCAN = FORMAL_UC_SCAN
 FORMAL_CELLS = tuple(
-    (uc, Fraction("7/10")) for uc in FORMAL_UC_SCAN
+    (uc, fixed_ue) for fixed_ue in (Fraction("3/10"), Fraction("3/5"), Fraction("9/10"))
+    for uc in FORMAL_UC_SCAN
 ) + tuple(
-    (Fraction("3/10"), ue) for ue in FORMAL_UE_SCAN if ue != Fraction("7/10")
+    (fixed_uc, ue)
+    for fixed_uc in (Fraction("3/10"), Fraction("3/5"), Fraction("9/10"))
+    for ue in FORMAL_UE_SCAN
+    if (fixed_uc, ue) not in tuple(
+        (uc, fixed_ue)
+        for fixed_ue in (Fraction("3/10"), Fraction("3/5"), Fraction("9/10"))
+        for uc in FORMAL_UC_SCAN
+    )
 )
 PANEL_GROUPS = {
     "BLOCK": ("ASAP-BLOCK", "ALAP-BLOCK", "ST-BLOCK"),
@@ -59,8 +68,8 @@ SCHEDULER_STYLES = {
 }
 FROZEN_MAIN_FIGURE = {
     "cells": FORMAL_CELLS,
-    "uc_fixed_ue": Fraction("7/10"),
-    "ue_fixed_uc": Fraction("3/10"),
+    "uc_fixed_ues": (Fraction("3/10"), Fraction("3/5"), Fraction("9/10")),
+    "ue_fixed_ucs": (Fraction("3/10"), Fraction("3/5"), Fraction("9/10")),
     "horizon_ms": perf_g.FORMAL_HORIZON_MS,
     "schedulers": tuple(perf_g.FORMAL_SCHEDULERS),
 }
@@ -120,7 +129,7 @@ def parse_cells(text: str | None) -> tuple[tuple[Fraction, Fraction], ...]:
         if not (0 < cell[0] <= 1 and 0 < cell[1] <= 1):
             raise ValueError("U_C and U_E must be in (0, 1]")
         # Generic/custom grids retain the historical deduplication behavior;
-        # the frozen campaign validator below still requires the exact 16-cell
+        # the frozen campaign validator below still requires the exact 51-cell
         # ordered contract before it is treated as a paper run.
         if cell not in cells:
             cells.append(cell)
@@ -398,7 +407,7 @@ def validate_frozen_main_figure(
         raise ValueError("frozen main-figure campaign requires priority policy RM")
     if tuple(cells) != tuple(FORMAL_CELLS):
         raise ValueError(
-            "frozen main-figure campaign must contain exactly the 16 canonical cells"
+            "frozen main-figure campaign must contain exactly the 51 canonical cells"
         )
     if tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
         raise ValueError(
@@ -432,17 +441,29 @@ def eta_for_ue(target_ue: Fraction) -> Fraction:
     return Fraction(1, 1) / target
 
 
+def normalize_deadline_mode(value: Any) -> str:
+    mode = str(value).strip() if value is not None else ""
+    if mode not in DEADLINE_MODES:
+        raise ValueError(
+            "deadline_mode must be one of: " + ", ".join(DEADLINE_MODES)
+        )
+    return mode
+
+
 def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
             processors: int, tasks: int, period_min: int, period_max: int,
             min_task_util: Fraction, max_task_util: Fraction,
             tolerance: Fraction,
+            deadline_mode: str = "constrained",
             system_template: str = ORDINARY_SYSTEM_TEMPLATE) -> dict[str, Any]:
+    deadline_mode = normalize_deadline_mode(deadline_mode)
     config = perf_g._task_generation_config(
         "FORMAL", utilizations, count, system_template=system_template,
     )
     config["grid"]["base_seed"] = int(seed)
     config["platform"] = {"cores": [processors], "task_count": [tasks]}
     config["generation"].update({
+        "deadline_mode": deadline_mode,
         "period_min": period_min, "period_max": period_max,
         "min_task_util": fraction_text(min_task_util),
         "max_task_util": fraction_text(max_task_util),
@@ -482,12 +503,15 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
                          period_min: int, period_max: int,
                          min_task_util: Fraction, max_task_util: Fraction,
                          tolerance: Fraction, prepare_workers: int = 1,
+                         deadline_mode: str = "constrained",
                          system_template: str = ORDINARY_SYSTEM_TEMPLATE) -> tuple[list[Any], Any]:
+    deadline_mode = normalize_deadline_mode(deadline_mode)
     config = _config(
         seed, utilizations=utilizations, count=count, processors=processors,
         tasks=tasks, period_min=period_min, period_max=period_max,
         min_task_util=min_task_util, max_task_util=max_task_util,
-        tolerance=tolerance, system_template=system_template,
+        tolerance=tolerance, deadline_mode=deadline_mode,
+        system_template=system_template,
     )
     service = prepare_service_curve(config, root / "service")
     store = TasksetStore(root / "tasksets", config, service)
@@ -532,6 +556,15 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
         tasksets_by_key[(cell.generation_id, index)]
         for cell in cells for index in range(count)
     ]
+    if any(normalize_deadline_mode(taskset.deadline_mode) != deadline_mode for taskset in tasksets):
+        raise ValueError("materialized taskset deadline mode mismatch")
+    for taskset in tasksets:
+        for item in taskset.task_payload:
+            c, d, t = int(item["C"]), int(item["D"]), int(item["T"])
+            if not (0 < c <= d <= t):
+                raise ValueError("materialized taskset violates C <= D <= T")
+            if deadline_mode == "implicit" and d != t:
+                raise ValueError("implicit taskset must satisfy D == T")
     return tasksets, service
 
 
@@ -548,6 +581,7 @@ def taskset_row(taskset: Any, processors: int) -> dict[str, Any]:
 def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fraction]],
                  schedulers: Sequence[str], horizon: int,
                  priority_policy: str = "RM", *, experiment_name: str = V3_EXPERIMENT,
+                 deadline_mode: str | None = None,
                  ) -> list[dict[str, Any]]:
     try:
         policy = normalize_scheduler_priority_policy(priority_policy)
@@ -557,6 +591,18 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
         (Fraction(taskset.target_utilization, taskset.processors), taskset.taskset_index): taskset
         for taskset in tasksets
     }
+    inferred_modes = {
+        normalize_deadline_mode(getattr(taskset, "deadline_mode", "constrained"))
+        for taskset in tasksets
+    }
+    if deadline_mode is None:
+        if len(inferred_modes) != 1:
+            raise ValueError("request tasksets contain mixed deadline modes")
+        deadline_mode = next(iter(inferred_modes), "constrained")
+    deadline_mode = normalize_deadline_mode(deadline_mode)
+    if inferred_modes and inferred_modes != {deadline_mode}:
+        raise ValueError("request deadline mode does not match tasksets")
+    is_v5 = experiment_name == V5_EXPERIMENT
     rows = []
     for uc, ue in cells:
         eta = eta_for_ue(ue)
@@ -568,12 +614,11 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "scheduler": scheduler,
                     **HARVEST_MODEL_IDENTITY,
                 }
+                if is_v5:
+                    identity["deadline_mode"] = deadline_mode
                 if policy == "DM":
                     identity["priority_policy"] = policy
-                rows.append({
-                    "request_id": "scheduler-load-cross-" + _hash(
-                        identity, domain=V4_DOMAIN if experiment_name == V4_EXPERIMENT else V3_DOMAIN,
-                    )[:32],
+                row = {
                     "experiment": experiment_name,
                     "taskset_id": taskset.taskset_id,
                     "taskset_hash": taskset.semantic_hash,
@@ -584,7 +629,18 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "horizon_ms": horizon,
                     "priority_policy": policy,
                     **HARVEST_MODEL_IDENTITY,
-                })
+                }
+                if is_v5:
+                    row["deadline_mode"] = deadline_mode
+                    request_domain = V5_DOMAIN
+                elif experiment_name == V4_EXPERIMENT:
+                    request_domain = V4_DOMAIN
+                else:
+                    request_domain = V3_DOMAIN
+                row["request_id"] = "scheduler-load-cross-" + _hash(
+                    identity, domain=request_domain,
+                )[:32]
+                rows.append(row)
     return rows
 
 

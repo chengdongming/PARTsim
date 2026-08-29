@@ -32,6 +32,15 @@ _PLOT_COLORS = {
     "ST": "tab:green",
 }
 
+_V5_TIMING_STYLES = {
+    "ASAP": {"color": "#0072B2", "marker": "o"},
+    "ALAP": {"color": "#D55E00", "marker": "s"},
+    "ST": {"color": "#009E73", "marker": "^"},
+}
+_V5_BLOCKING_LINESTYLES = {
+    "BLOCK": "-", "NONBLOCK": "--", "SYNC": "-.",
+}
+
 
 def _plot_style(prefix: str) -> dict[str, Any]:
     """Return the shared three-panel style for one scheduler family."""
@@ -43,6 +52,21 @@ def _plot_style(prefix: str) -> dict[str, Any]:
         "linewidth": 2.2 if is_asap else 1.5,
         "markersize": 6.0 if is_asap else 5.0,
         "zorder": 3 if is_asap else 2,
+    }
+
+
+def _v5_plot_style(scheduler: str) -> dict[str, Any]:
+    """Return the deterministic color/marker/line style for one v5 curve."""
+    try:
+        timing, blocking = scheduler.split("-", 1)
+        style = _V5_TIMING_STYLES[timing]
+        linestyle = _V5_BLOCKING_LINESTYLES[blocking]
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"invalid v5 scheduler style: {scheduler}") from exc
+    return {
+        **style, "linestyle": linestyle, "linewidth": 1.1,
+        "markersize": 3.5, "markerfacecolor": "none",
+        "markeredgewidth": 0.8, "alpha": 0.95, "zorder": 3,
     }
 
 
@@ -82,8 +106,10 @@ wilson_interval = wilson_ci
 
 def _dmr_bootstrap_seed(
     campaign_seed: int, target_uc: str, target_ue: str, scheduler: str,
+    deadline_mode: str | None = None,
 ) -> int:
-    material = f"DMR_CLUSTER_BOOTSTRAP\0{campaign_seed}\0{target_uc}\0{target_ue}\0{scheduler}"
+    suffix = "" if deadline_mode is None else f"\0{deadline_mode}"
+    material = f"DMR_CLUSTER_BOOTSTRAP\0{campaign_seed}\0{target_uc}\0{target_ue}\0{scheduler}{suffix}"
     return int.from_bytes(hashlib.sha256(material.encode("utf-8")).digest()[:8], "big")
 
 
@@ -129,6 +155,7 @@ def summarize_dmr(
     rows: list[dict[str, Any]], *, target_uc: str, target_ue: str,
     scheduler: str, campaign_seed: int, priority_policy: str = "RM",
     bootstrap_replicates: int = DMR_BOOTSTRAP_REPLICATES,
+    deadline_mode: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate DMR from valid taskset outcomes using job-weighted counts."""
     taskset_counts: list[tuple[int, int]] = []
@@ -158,10 +185,12 @@ def summarize_dmr(
     dmr = total_on_time / total_adjudicable
     ci_low, ci_high = dmr_cluster_bootstrap_ci(
         taskset_counts,
-        seed=_dmr_bootstrap_seed(campaign_seed, target_uc, target_ue, scheduler),
+        seed=_dmr_bootstrap_seed(
+            campaign_seed, target_uc, target_ue, scheduler, deadline_mode,
+        ),
         replicates=bootstrap_replicates,
     )
-    return {
+    result = {
         "priority_policy": priority_policy,
         "target_uc": target_uc,
         "target_ue": target_ue,
@@ -174,6 +203,9 @@ def summarize_dmr(
         "dmr_ci95_low": ci_low,
         "dmr_ci95_high": ci_high,
     }
+    if deadline_mode is not None:
+        result["deadline_mode"] = experiment.normalize_deadline_mode(deadline_mode)
+    return result
 
 
 def _configured_cells(config: dict[str, Any]) -> tuple[tuple[Fraction, Fraction], ...]:
@@ -339,6 +371,25 @@ def _validate_v4_slice(
         ], key=Fraction)
         if observed != sorted(expected, key=Fraction):
             raise SystemExit(f"{label} has missing, duplicate, or extra scan points")
+
+
+def _validate_v5_slice(
+    rows: list[dict[str, Any]], slice_config: dict[str, Any],
+    deadline_mode: str, schedulers: list[str], label: str,
+) -> None:
+    expected = sorted(slice_config["x_values"], key=Fraction)
+    for scheduler in schedulers:
+        observed = sorted(
+            [
+                experiment.fraction_text(Fraction(row[slice_config["x_key"]]))
+                for row in rows if row["scheduler"] == scheduler
+            ],
+            key=Fraction,
+        )
+        if observed != expected:
+            raise SystemExit(
+                f"{label} {deadline_mode} has missing, duplicate, or extra scan points"
+            )
 
 
 def _validate_dmr_ymin(value: float, label: str = "DMR y-axis lower bound") -> float:
@@ -512,6 +563,22 @@ def _plot_dmr_scan_job(job: dict[str, Any]) -> None:
 
 
 def _plot_any_scan_job(job: dict[str, Any]) -> None:
+    if job.get("v5_composite"):
+        if job.get("metric") == "dmr":
+            plot_v5_composite_dmr(
+                job["slice_rows"], Path(job["output"]), job["filename"],
+                job["xkey"], job["schedulers"], job["xlabel"], job["title"],
+                job["ymin"], axis_min=job["axis_min"], axis_max=job["axis_max"],
+                axis_ticks=job["axis_ticks"],
+            )
+        else:
+            plot_v5_composite_scan(
+                job["slice_rows"], Path(job["output"]), job["filename"],
+                job["xkey"], job["schedulers"], job["xlabel"], job["title"],
+                axis_min=job["axis_min"], axis_max=job["axis_max"],
+                axis_ticks=job["axis_ticks"],
+            )
+        return
     if job.get("composite"):
         if job.get("metric") == "dmr":
             _plot_composite_dmr_job(job)
@@ -663,6 +730,135 @@ def plot_composite_dmr(
     plt.close(figure)
 
 
+def _draw_v5_axes(
+    figure: Any, axes: Any,
+    slice_rows: list[tuple[dict[str, Any], str, list[dict[str, Any]]]],
+    *, xkey: str, schedulers: list[str], xlabel: str, metric: str,
+    axis_min: str, axis_max: str, axis_ticks: list[str], ymin: float = 0.0,
+) -> None:
+    low, high, ticks, ticklabels = _axis_values({
+        "axis_display_min": axis_min, "axis_display_max": axis_max,
+        "axis_ticks": axis_ticks,
+    })
+    handles: dict[str, Any] = {}
+    row_labels: dict[int, str] = {}
+    for axis_row in axes:
+        for axis in axis_row:
+            axis.set_xlabel(xlabel)
+            axis.set_xlim(low, high)
+            axis.set_xticks(ticks)
+            axis.set_xticklabels(ticklabels)
+            axis.set_ylim(ymin, 1.0)
+            axis.grid(alpha=0.25)
+    for pair_index, (slice_config, deadline_mode, rows) in enumerate(slice_rows):
+        row_index = pair_index // 2
+        column_index = 0 if deadline_mode == "constrained" else 1
+        axis = axes[row_index][column_index]
+        row_labels[row_index] = slice_config["label"]
+        for scheduler in schedulers:
+            values = [
+                row for row in rows if row["scheduler"] == scheduler
+                and row[metric] is not None
+            ]
+            values.sort(key=lambda row: Fraction(row[xkey]))
+            if not values:
+                continue
+            style = _v5_plot_style(scheduler)
+            if metric == "wholepass_ratio":
+                lower = [row[metric] - row["ci95_low"] for row in values]
+                upper = [row["ci95_high"] - row[metric] for row in values]
+            else:
+                lower = [
+                    row[metric] - row["dmr_ci95_low"]
+                    if row["dmr_ci95_low"] is not None else 0.0
+                    for row in values
+                ]
+                upper = [
+                    row["dmr_ci95_high"] - row[metric]
+                    if row["dmr_ci95_high"] is not None else 0.0
+                    for row in values
+                ]
+            container = axis.errorbar(
+                [float(Fraction(row[xkey])) for row in values],
+                [row[metric] for row in values], yerr=[lower, upper],
+                marker=style["marker"], linestyle=style["linestyle"],
+                color=style["color"], linewidth=style["linewidth"],
+                markersize=style["markersize"],
+                markerfacecolor=style["markerfacecolor"],
+                markeredgewidth=style["markeredgewidth"], alpha=style["alpha"],
+                zorder=style["zorder"], capsize=2, label=scheduler,
+            )
+            container.lines[0].set_label(scheduler)
+            handles.setdefault(scheduler, container.lines[0])
+        axis.set_xlabel(xlabel)
+        axis.set_title("C ≤ D ≤ T" if deadline_mode == "constrained" else "D = T")
+        axis.set_xlim(low, high)
+        axis.set_xticks(ticks)
+        axis.set_xticklabels(ticklabels)
+        axis.set_ylim(ymin, 1.0)
+        axis.grid(alpha=0.25)
+    for row_index, label in row_labels.items():
+        fixed_name = "U_E" if slice_rows[row_index][0]["fixed_key"] == "target_ue" else "U_C"
+        axes[row_index][0].set_ylabel(
+            f"{label}: {fixed_name}="
+            f"{experiment.decimal_text(slice_rows[row_index][0]['fixed_value'])}\n"
+            f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
+        )
+    legend_handles = [handles[name] for name in schedulers if name in handles]
+    legend_labels = [name for name in schedulers if name in handles]
+    figure.legend(
+        legend_handles, legend_labels, loc="lower center",
+        bbox_to_anchor=(0.5, 0.015), ncol=3,
+    )
+    figure.subplots_adjust(bottom=0.25, hspace=0.35, wspace=0.25)
+
+
+def plot_v5_composite_scan(
+    slice_rows: list[tuple[dict[str, Any], str, list[dict[str, Any]]]], output: Path,
+    filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
+    *, axis_min: str, axis_max: str, axis_ticks: list[str],
+) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    figure, axes = plt.subplots(
+        3, 2, squeeze=False, figsize=(11, 12), sharey=True,
+    )
+    _draw_v5_axes(
+        figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
+        metric="wholepass_ratio", axis_min=axis_min, axis_max=axis_max,
+        axis_ticks=axis_ticks,
+    )
+    figure.suptitle(title)
+    figure.savefig(output / filename)
+    plt.close(figure)
+
+
+def plot_v5_composite_dmr(
+    slice_rows: list[tuple[dict[str, Any], str, list[dict[str, Any]]]], output: Path,
+    filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
+    ymin: float, *, axis_min: str, axis_max: str, axis_ticks: list[str],
+) -> None:
+    ymin = _validate_dmr_ymin(ymin)
+    _validate_dmr_ci_lower_bounds(
+        [row for _slice, _mode, rows in slice_rows for row in rows], ymin, filename,
+    )
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    figure, axes = plt.subplots(
+        3, 2, squeeze=False, figsize=(11, 12), sharey=True,
+    )
+    _draw_v5_axes(
+        figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
+        metric="dmr", axis_min=axis_min, axis_max=axis_max,
+        axis_ticks=axis_ticks, ymin=ymin,
+    )
+    figure.suptitle(title)
+    figure.savefig(output / filename)
+    plt.close(figure)
+
+
 def _slice_csv_rows(
     slice_config: dict[str, Any], rows: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -671,7 +867,7 @@ def _slice_csv_rows(
     for row in rows:
         scheduler = row["scheduler"]
         timing, blocking = scheduler.split("-", 1)
-        result.append({
+        result_row = {
             "scan_label": slice_config["label"],
             "fixed_key": slice_config["fixed_key"],
             "fixed_value": slice_config["fixed_value"],
@@ -683,7 +879,10 @@ def _slice_csv_rows(
             "whole_taskset_pass_ratio": row["wholepass_ratio"],
             "pass_count": row["n_wholepass"],
             "sample_total": row["n_total"],
-        })
+        }
+        if "deadline_mode" in row:
+            result_row["deadline_mode"] = row["deadline_mode"]
+        result.append(result_row)
     return result
 
 
@@ -694,7 +893,7 @@ def _dmr_slice_csv_rows(
     for row in rows:
         scheduler = row["scheduler"]
         timing, blocking = scheduler.split("-", 1)
-        result.append({
+        result_row = {
             "scan_label": slice_config["label"],
             "fixed_key": slice_config["fixed_key"],
             "fixed_value": slice_config["fixed_value"],
@@ -708,7 +907,10 @@ def _dmr_slice_csv_rows(
             "dmr_ci95_high": row["dmr_ci95_high"],
             "deadline_miss_count": row["total_deadline_miss_jobs"],
             "adjudicable_job_total": row["total_adjudicable_jobs"],
-        })
+        }
+        if "deadline_mode" in row:
+            result_row["deadline_mode"] = row["deadline_mode"]
+        result.append(result_row)
     return result
 
 
@@ -728,7 +930,10 @@ def analyze(
     )
     if config.get("use_real_solar_data") is not False:
         raise SystemExit("run_config must disable real solar data")
+    is_v5 = config.get("experiment") == experiment.V5_EXPERIMENT
     is_v4 = config.get("experiment") == experiment.V4_EXPERIMENT
+    if is_v5 and config.get("deadline_modes") != list(experiment.DEADLINE_MODES):
+        raise SystemExit("v5 run_config must bind constrained and implicit deadline modes")
     scan_contract = None
     try:
         priority_policy = experiment.normalize_scheduler_priority_policy(
@@ -737,7 +942,7 @@ def analyze(
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
     cells = _configured_cells(config)
-    if is_v4:
+    if is_v5 or is_v4:
         scan_contract, figure_slices = _v4_contract(config)
         cells = tuple(
             (Fraction(uc), Fraction(ue))
@@ -752,8 +957,8 @@ def analyze(
         raise SystemExit(str(exc)) from exc
     if tuple(parsed_schedulers) != tuple(schedulers):
         raise SystemExit("run_config schedulers are not canonical and unique")
-    if is_v4 and set(schedulers) != set(experiment.ALL_SCHEDULERS):
-        raise SystemExit("v4 campaign requires all nine canonical schedulers")
+    if (is_v5 or is_v4) and set(schedulers) != set(experiment.ALL_SCHEDULERS):
+        raise SystemExit("v4/v5 campaign requires all nine canonical schedulers")
     if tuple(cells) == tuple(experiment.FORMAL_CELLS) and priority_policy == "RM":
         try:
             experiment.validate_frozen_main_figure(
@@ -765,11 +970,22 @@ def analyze(
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
-    if not is_v4 and any(
-        row.get("experiment") == experiment.V4_EXPERIMENT
+    if is_v5:
+        for collection_name, collection in (
+            ("tasksets", tasksets), ("requests", requests), ("results", results),
+        ):
+            observed_modes = {row.get("deadline_mode") for row in collection}
+            if any(mode not in experiment.DEADLINE_MODES for mode in observed_modes):
+                raise SystemExit(f"{collection_name} contains an invalid deadline_mode")
+            if observed_modes != set(experiment.DEADLINE_MODES):
+                raise SystemExit(
+                    f"v5 {collection_name} must contain both deadline modes"
+                )
+    if not is_v5 and not is_v4 and any(
+        row.get("experiment") in {experiment.V4_EXPERIMENT, experiment.V5_EXPERIMENT}
         for row in (*requests, *results)
     ):
-        raise SystemExit("v3/v4 result mixing is not allowed")
+        raise SystemExit("v3/v4/v5 result mixing is not allowed")
     if not requests:
         raise SystemExit("incomplete campaign: requests are empty")
     expected = {str(row["request_id"]) for row in requests}
@@ -798,10 +1014,13 @@ def analyze(
         ):
             if row.get(key) != request.get(key):
                 raise SystemExit(f"result/request identity mismatch for {key}")
-        if is_v4:
-            for key, expected_value in (("experiment", experiment.V4_EXPERIMENT),):
+        if is_v5 or is_v4:
+            expected_experiment = experiment.V5_EXPERIMENT if is_v5 else experiment.V4_EXPERIMENT
+            for key, expected_value in (("experiment", expected_experiment),):
                 if request.get(key) != expected_value or row.get(key) != expected_value:
-                    raise SystemExit(f"v4 result/request identity mismatch for {key}")
+                    raise SystemExit(f"{expected_experiment} result/request identity mismatch for {key}")
+        if is_v5 and row.get("deadline_mode") != request.get("deadline_mode"):
+            raise SystemExit("v5 result/request deadline_mode mismatch")
         _validate_harvest_model(
             {key: request.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
             "request harvest model",
@@ -814,8 +1033,31 @@ def analyze(
     taskset_by_id = {str(row["taskset_id"]): row for row in tasksets}
     if len(taskset_by_id) != expected_tasksets:
         raise SystemExit("taskset identity count mismatch")
+    if is_v5:
+        for request in requests:
+            taskset = taskset_by_id.get(str(request["taskset_id"]))
+            if taskset is None or request.get("deadline_mode") != taskset.get("deadline_mode"):
+                raise SystemExit("v5 request/taskset deadline_mode mismatch")
     if any(row.get("canonical_task_power") is not True for row in tasksets):
         raise SystemExit("non-canonical task power in taskset store")
+    if is_v5:
+        for taskset in tasksets:
+            mode = experiment.normalize_deadline_mode(taskset["deadline_mode"])
+            try:
+                payload = json.loads(taskset["task_input_json"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise SystemExit("v5 taskset task payload is missing or invalid") from exc
+            if not isinstance(payload, list):
+                raise SystemExit("v5 taskset task payload is invalid")
+            for item in payload:
+                try:
+                    c, d, t = int(item["C"]), int(item["D"]), int(item["T"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise SystemExit("v5 taskset task deadline fields are invalid") from exc
+                if not (0 < c <= d <= t):
+                    raise SystemExit("v5 taskset violates C <= D <= T")
+                if mode == "implicit" and d != t:
+                    raise SystemExit("v5 implicit taskset violates D == T")
     uc_tolerance = Fraction(str(config["util_tolerance_total"])) / Fraction(str(config["processors"]))
     if any(
         abs(Fraction(row["actual_uc"]) - Fraction(row["target_uc"])) > uc_tolerance
@@ -843,6 +1085,8 @@ def analyze(
         taskset = taskset_by_id[str(row["taskset_id"])]
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("scheduler changed taskset identity")
+        if is_v5 and row.get("deadline_mode") != taskset.get("deadline_mode"):
+            raise SystemExit("v5 result/taskset deadline_mode mismatch")
         energy = row["energy"]
         _validate_harvest_model(
             {key: energy.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
@@ -893,13 +1137,25 @@ def analyze(
             )
     if technical_rows:
         raise SystemExit(f"technical failures are not scientific WholePass rows: {len(technical_rows)}")
+    if is_v5:
+        trace_ids = {
+            str(row["energy"].get("harvest_trace_id")) for row in results
+        }
+        if len(trace_ids) != 1:
+            raise SystemExit("v5 deadline modes do not share one harvest trace identity")
 
     # Requests are the authority for the pairing grid.  Every cell/taskset
     # must have exactly one result for every requested scheduler.
-    request_groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    request_groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     for request in requests:
+        group_key = (
+            (str(request["deadline_mode"]),) if is_v5 else ()
+        ) + (
+            str(request["target_uc"]), str(request["target_ue"]),
+            str(request["generation_index"]),
+        )
         request_groups.setdefault(
-            (str(request["target_uc"]), str(request["target_ue"]), str(request["generation_index"])),
+            group_key,
             [],
         ).append(request)
     for key, group in request_groups.items():
@@ -910,11 +1166,15 @@ def analyze(
 
     # Same taskset + U_E must share immutable energy material across all nine
     # schedulers; across U_E, only service scaling may vary.
-    by_taskset_ue: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    by_taskset: dict[str, list[dict[str, Any]]] = {}
+    by_taskset_ue: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    by_taskset: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     for row in results:
-        by_taskset_ue.setdefault((str(row["taskset_id"]), str(row["target_ue"])), []).append(row)
-        by_taskset.setdefault(str(row["taskset_id"]), []).append(row)
+        mode_key = (str(row["deadline_mode"]),) if is_v5 else ()
+        by_taskset_ue.setdefault(
+            mode_key + (str(row["taskset_id"]), str(row["target_ue"])),
+            [],
+        ).append(row)
+        by_taskset.setdefault(mode_key + (str(row["taskset_id"]),), []).append(row)
     invariant_fields = (
         "P_dem_j_per_tick", "E_burst_j", "battery_capacity_j",
         "initial_energy_j", "raw_reference_mean_j_per_tick", "harvest_trace_id",
@@ -929,21 +1189,38 @@ def analyze(
         }
         if any(len(values) != 1 for values in invariants.values()):
             raise SystemExit(f"battery/E0/task demand/trace invariant changed across U_E: {taskset_id}")
-    paired_tasksets: dict[tuple[str, str], set[str]] = {}
+    paired_tasksets: dict[tuple[str, ...], set[str]] = {}
     for request in requests:
+        mode_key = (str(request["deadline_mode"]),) if is_v5 else ()
         paired_tasksets.setdefault(
-            (str(request["target_uc"]), str(request["generation_index"])),
+            mode_key + (str(request["target_uc"]), str(request["generation_index"])),
             set(),
         ).add(str(request["taskset_id"]))
     if any(len(values) != 1 for values in paired_tasksets.values()):
         raise SystemExit("paired CPU taskset identity changed across U_E")
-    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     for row in results:
-        groups.setdefault((str(row["target_uc"]), str(row["target_ue"])), []).append(row)
+        mode_key = (str(row["deadline_mode"]),) if is_v5 else ()
+        groups.setdefault(
+            mode_key + (str(row["target_uc"]), str(row["target_ue"])), []
+        ).append(row)
     summaries = []
     dmr_summaries = []
     campaign_seed = int(config.get("seed", 0))
-    for (uc, ue), group in sorted(groups.items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]))):
+    def group_sort(item: tuple[tuple[str, ...], list[dict[str, Any]]]) -> tuple[Any, ...]:
+        key = item[0]
+        if is_v5:
+            mode, uc, ue = key
+            return (experiment.DEADLINE_MODES.index(mode), Fraction(uc), Fraction(ue))
+        uc, ue = key
+        return (Fraction(uc), Fraction(ue))
+
+    for group_key, group in sorted(groups.items(), key=group_sort):
+        if is_v5:
+            deadline_mode, uc, ue = group_key
+        else:
+            deadline_mode = None
+            uc, ue = group_key
         for scheduler in schedulers:
             selected = [row for row in group if row["scheduler"] == scheduler]
             if len(selected) != int(config["samples_per_cell"]):
@@ -956,7 +1233,7 @@ def analyze(
             n_wholepass = sum(wholepass_values)
             n_miss = sum(row.get("deadline_miss") is True for row in selected)
             ci_low, ci_high = wilson_ci(n_wholepass, n_total)
-            summaries.append({
+            summary_row = {
                 "priority_policy": priority_policy,
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
                 "runtime_configured_average_supply_j_per_tick": selected[0][
@@ -975,7 +1252,10 @@ def analyze(
                 "n_schedulable": n_wholepass,
                 "n_deadline_miss": n_miss,
                 "acceptance_ratio": n_wholepass / n_total,
-            })
+            }
+            if deadline_mode is not None:
+                summary_row["deadline_mode"] = deadline_mode
+            summaries.append(summary_row)
             dmr_summaries.append(summarize_dmr(
                 selected,
                 target_uc=uc,
@@ -983,11 +1263,98 @@ def analyze(
                 scheduler=scheduler,
                 campaign_seed=campaign_seed,
                 priority_policy=priority_policy,
+                deadline_mode=deadline_mode,
             ))
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "summary_dmr.csv", dmr_summaries)
     plot_jobs: list[dict[str, Any]] = []
-    if is_v4:
+    if is_v5:
+        axis = _axis_plot_values(scan_contract)
+        uc_slice_rows = []
+        uc_dmr_slice_rows = []
+        for index, uc_slice in enumerate(figure_slices["uc_scans"]):
+            for deadline_mode in experiment.DEADLINE_MODES:
+                uc_rows = [
+                    row for row in summaries
+                    if row.get("deadline_mode") == deadline_mode
+                    and row[uc_slice["fixed_key"]] == uc_slice["fixed_value"]
+                ]
+                dmr_rows = [
+                    row for row in dmr_summaries
+                    if row.get("deadline_mode") == deadline_mode
+                    and row[uc_slice["fixed_key"]] == uc_slice["fixed_value"]
+                ]
+                _validate_v5_slice(
+                    uc_rows, uc_slice, deadline_mode, schedulers, f"U_C[{index}]",
+                )
+                _validate_v5_slice(
+                    dmr_rows, uc_slice, deadline_mode, schedulers, f"U_C DMR[{index}]",
+                )
+                uc_slice_rows.append((uc_slice, deadline_mode, uc_rows))
+                uc_dmr_slice_rows.append((uc_slice, deadline_mode, dmr_rows))
+        ue_slice_rows = []
+        ue_dmr_slice_rows = []
+        for index, ue_slice in enumerate(figure_slices["ue_scans"]):
+            for deadline_mode in experiment.DEADLINE_MODES:
+                ue_rows = [
+                    row for row in summaries
+                    if row.get("deadline_mode") == deadline_mode
+                    and row[ue_slice["fixed_key"]] == ue_slice["fixed_value"]
+                ]
+                dmr_rows = [
+                    row for row in dmr_summaries
+                    if row.get("deadline_mode") == deadline_mode
+                    and row[ue_slice["fixed_key"]] == ue_slice["fixed_value"]
+                ]
+                _validate_v5_slice(
+                    ue_rows, ue_slice, deadline_mode, schedulers, f"U_E[{index}]",
+                )
+                _validate_v5_slice(
+                    dmr_rows, ue_slice, deadline_mode, schedulers, f"U_E DMR[{index}]",
+                )
+                ue_slice_rows.append((ue_slice, deadline_mode, ue_rows))
+                ue_dmr_slice_rows.append((ue_slice, deadline_mode, dmr_rows))
+        write_csv(root / "figure_scheduler_uc_slices.csv", [
+            row for slice_config, _mode, rows in uc_slice_rows
+            for row in _slice_csv_rows(slice_config, rows)
+        ])
+        write_csv(root / "figure_scheduler_ue_slices.csv", [
+            row for slice_config, _mode, rows in ue_slice_rows
+            for row in _slice_csv_rows(slice_config, rows)
+        ])
+        write_csv(root / "figure_scheduler_uc_slices_dmr.csv", [
+            row for slice_config, _mode, rows in uc_dmr_slice_rows
+            for row in _dmr_slice_csv_rows(slice_config, rows)
+        ])
+        write_csv(root / "figure_scheduler_ue_slices_dmr.csv", [
+            row for slice_config, _mode, rows in ue_dmr_slice_rows
+            for row in _dmr_slice_csv_rows(slice_config, rows)
+        ])
+        plot_jobs = [
+            {"v5_composite": True, "slice_rows": uc_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_uc_slices.png", "xkey": "target_uc",
+             "schedulers": schedulers, "xlabel": "U_C",
+             "title": f"{priority_policy} — Whole-taskset pass ratio versus U_C",
+             **axis},
+            {"v5_composite": True, "slice_rows": ue_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_ue_slices.png", "xkey": "target_ue",
+             "schedulers": schedulers, "xlabel": "U_E",
+             "title": f"{priority_policy} — Whole-taskset pass ratio versus U_E",
+             **axis},
+            {"v5_composite": True, "slice_rows": uc_dmr_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_uc_slices_dmr.png", "xkey": "target_uc",
+             "schedulers": schedulers, "xlabel": "U_C", "metric": "dmr",
+             "ymin": uc_dmr_ymin,
+             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_C",
+             **axis},
+            {"v5_composite": True, "slice_rows": ue_dmr_slice_rows, "output": str(root),
+             "filename": "figure_scheduler_ue_slices_dmr.png", "xkey": "target_ue",
+             "schedulers": schedulers, "xlabel": "U_E", "metric": "dmr",
+             "ymin": ue_dmr_ymin,
+             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_E",
+             **axis},
+        ]
+    elif is_v4:
         axis = _axis_plot_values(scan_contract)
         uc_slice_rows = []
         uc_dmr_slice_rows = []
@@ -1083,6 +1450,7 @@ def analyze(
         for row in results
     ]
     report = {"complete": True, "experiment": config.get("experiment"),
+              "deadline_modes": list(experiment.DEADLINE_MODES) if is_v5 else None,
               "tasksets": len(tasksets), "requests": len(requests),
               "results": len(results), "duplicate_request_ids": duplicate,
               "missing_request_ids": missing, "unexpected_request_ids": unexpected,
