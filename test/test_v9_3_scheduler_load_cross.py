@@ -14,7 +14,7 @@ from experiments.v9_3 import taskset_store
 from experiments.v9_3.simulation_engine import should_retain_failure_trace
 from experiments.v9_3.simulation_engine import (
     _render_taskset_yaml, derive_fixed_priority_ranks,
-    normalize_scheduler_priority_policy,
+    normalize_scheduler_priority_policy, SimulationConfigurationError,
 )
 from experiments.v9_3.simulation_result import SimulationStatus
 from experiments.v9_3.performance_outcome import evaluate_outcome
@@ -24,6 +24,7 @@ from scripts.analyze_scheduler_load_cross import (
     plot_composite_scan, plot_dmr_scan, plot_scan, _v5_plot_style,
     plot_v5_composite_dmr, plot_v5_composite_scan,
 )
+import scripts.analyze_scheduler_load_cross as analyzer_module
 import scripts.run_scheduler_load_cross as scheduler_runner
 
 
@@ -41,6 +42,151 @@ def _harvest_model_fields():
     return dict(experiment.HARVEST_MODEL_IDENTITY)
 
 
+def _v6_fixture_config(priority_policy):
+    profile = experiment.normalize_scan_profile(
+        uc_scan_values="1/10", ue_scan_values="1/5",
+        uc_figure_fixed_ues="1/5", uc_figure_labels="selected",
+        ue_figure_fixed_ucs="1/10", ue_figure_labels="selected",
+    )
+    contract = experiment.build_scan_contract(profile)
+    config = {
+        "experiment": experiment.V6_EXPERIMENT,
+        "domain": experiment.V6_DOMAIN,
+        "campaign_contract": experiment.V6_CAMPAIGN_CONTRACT,
+        "seed": 123, "workers": 1,
+        "deadline_modes": list(experiment.deadline_modes_for_priority_policy(priority_policy)),
+        "priority_policy": priority_policy,
+        "expected_request_count": 1 * 1 * 9 * len(experiment.deadline_modes_for_priority_policy(priority_policy)),
+        "expected_taskset_count": 1 * 1 * len(experiment.deadline_modes_for_priority_policy(priority_policy)),
+        "implicit_priority_equivalence": experiment.V6_IMPLICIT_PRIORITY_EQUIVALENCE,
+        "implicit_canonical_priority_policy": experiment.V6_IMPLICIT_CANONICAL_PRIORITY_POLICY,
+        "implicit_reuse_policy": experiment.V6_IMPLICIT_REUSE_POLICY,
+        "shared_implicit_contract_version": experiment.V6_SHARED_IMPLICIT_CONTRACT_VERSION,
+        "samples_per_cell": 1, "cells": [["1/10", "1/5"]],
+        "schedulers": list(experiment.ALL_SCHEDULERS), "processors": 1, "tasks": 1,
+        "period_min": 10, "period_max": 20,
+        "min_task_util": "1/100", "max_task_util": "4/5",
+        "util_tolerance_total": "1/100", "rho": "11/2", "latency": "2/5",
+        "kappa": "10", "initial_energy_rule": "battery_capacity/2",
+        "normalization_horizon_ms": 60000, "simulation_horizon_ms": 20,
+        "use_real_solar_data": False, **_harvest_model_fields(),
+        "release_semantics": "synchronous arrival_offset=0",
+        "energy_control": "SERVICE_ONLY_SCALING",
+        "energy_unit": "J/tick exact canonical P",
+        "simulator": "build/rtsim/rtsim",
+        "canonical_taskset_source": "PERF-G TasksetStore",
+        "keep_traces": False, "parse_concurrency": 1,
+        "figure_slices": experiment.build_v4_figure_slices(profile),
+        "scan_contract": contract,
+    }
+    config["run_identity"] = experiment.run_identity(config)
+    return config
+
+
+def _write_v6_fixture(root, priority_policy):
+    config = _v6_fixture_config(priority_policy)
+    root.mkdir()
+    (root / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    modes = tuple(config["deadline_modes"])
+    tasksets = []
+    requests = []
+    results = []
+    for mode in modes:
+        taskset_id = f"{priority_policy.lower()}-{mode}-taskset"
+        taskset_hash = f"hash-{priority_policy.lower()}-{mode}"
+        deadline = 10 if mode == "implicit" else 5
+        payload = [{
+            "task_id": "0", "priority_rank": 0, "C": 1,
+            "D": deadline, "T": 10, "P": "1", "workload": "hash",
+            "arrival_offset": 0,
+        }]
+        tasksets.append({
+            "taskset_id": taskset_id, "taskset_hash": taskset_hash,
+            "deadline_mode": mode, "canonical_task_power": True,
+            "task_input_json": json.dumps(payload),
+        })
+        for scheduler in experiment.ALL_SCHEDULERS:
+            request = {
+                "request_id": f"{priority_policy.lower()}-{mode}-{scheduler}",
+                "experiment": experiment.V6_EXPERIMENT, "domain": experiment.V6_DOMAIN,
+                "taskset_id": taskset_id, "taskset_hash": taskset_hash,
+                "target_uc": "1/10", "actual_uc": "1/10", "target_ue": "1/5",
+                "eta": "5", "generation_index": 0, "seed": 123,
+                "scheduler": scheduler, "scheduler_cli": perf_g.SCHEDULER_CLI[scheduler],
+                "horizon_ms": 20, "priority_policy": priority_policy,
+                "deadline_mode": mode, **_harvest_model_fields(),
+            }
+            energy = {
+                "target_ue": "1/5", "eta": "5", "P_dem_j_per_tick": "1",
+                "target_supply_mean_j_per_tick": "5",
+                "raw_reference_mean_j_per_tick": "5", "solar_scale": "1",
+                "runtime_configured_average_supply_j_per_tick": "5",
+                "actual_ue": "1/5", "actual_ue_abs_error": "0",
+                "actual_ue_minus_target_ue": "0", "actual_ue_rel_error": "0",
+                "harvest_trace_id": "raw-trace-fixture", **_harvest_model_fields(),
+            }
+            result = {
+                **request, "simulation_status": "SIM_PASS_OBSERVED",
+                "technical_error": None, "deadline_miss": False,
+                "wholepass": True, "taskset_pass": True,
+                "outcome": _available_outcome(), "energy": energy,
+            }
+            requests.append(request)
+            results.append(result)
+    for name, rows in (("tasksets.jsonl", tasksets), ("requests.jsonl", requests), ("results.jsonl", results)):
+        (root / name).write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8",
+        )
+
+
+def _write_legacy_analyzer_fixture(root, experiment_name):
+    _write_v6_fixture(root, "RM")
+    domains = {
+        experiment.V3_EXPERIMENT: experiment.V3_DOMAIN,
+        experiment.V4_EXPERIMENT: experiment.V4_DOMAIN,
+        experiment.V5_EXPERIMENT: experiment.V5_DOMAIN,
+    }
+    config = json.loads((root / "run_config.json").read_text())
+    config.update({"experiment": experiment_name, "domain": domains[experiment_name]})
+    if experiment_name != experiment.V5_EXPERIMENT:
+        config.update({
+            "deadline_modes": ["constrained"],
+            "expected_request_count": 9,
+            "expected_taskset_count": 1,
+        })
+    (root / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    for name in ("requests.jsonl", "results.jsonl"):
+        rows = [
+            json.loads(line) for line in (root / name).read_text().splitlines()
+            if line.strip()
+        ]
+        if experiment_name != experiment.V5_EXPERIMENT:
+            rows = [row for row in rows if row["deadline_mode"] == "constrained"]
+        for row in rows:
+            row.update({"experiment": experiment_name, "domain": domains[experiment_name]})
+        (root / name).write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8",
+        )
+    if experiment_name != experiment.V5_EXPERIMENT:
+        rows = [
+            json.loads(line) for line in (root / "tasksets.jsonl").read_text().splitlines()
+            if line.strip()
+        ]
+        (root / "tasksets.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows if row["deadline_mode"] == "constrained"),
+            encoding="utf-8",
+        )
+    tasksets = [
+        json.loads(line) for line in (root / "tasksets.jsonl").read_text().splitlines()
+        if line.strip()
+    ]
+    for row in tasksets:
+        row.update({"target_uc": "1/10", "actual_uc": "1/10"})
+    (root / "tasksets.jsonl").write_text(
+        "".join(json.dumps(row) + "\n" for row in tasksets), encoding="utf-8",
+    )
+
+
 def test_exact_ue_eta_mapping_and_deduplicated_cells():
     assert experiment.eta_for_ue(Fraction(2, 5)) == Fraction(5, 2)
     assert experiment.eta_for_ue(Fraction(3, 10)) == Fraction(10, 3)
@@ -52,9 +198,15 @@ def test_exact_ue_eta_mapping_and_deduplicated_cells():
 
 
 def test_v5_identity_and_deadline_modes_are_fixed():
-    assert experiment.DOMAIN == "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v5"
+    assert experiment.DOMAIN == "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v6"
     assert experiment.V5_EXPERIMENT == "scheduler-load-cross-v5"
+    assert experiment.V6_DOMAIN == "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v6"
+    assert experiment.V6_EXPERIMENT == "scheduler-load-cross-v6"
     assert experiment.DEADLINE_MODES == ("constrained", "implicit")
+    assert experiment.deadline_modes_for_priority_policy("RM") == (
+        "constrained", "implicit",
+    )
+    assert experiment.deadline_modes_for_priority_policy("DM") == ("constrained",)
     assert len(experiment.FORMAL_CELLS) == 51
     assert len(set(experiment.FORMAL_CELLS)) == 51
     with pytest.raises(ValueError, match="deadline_mode"):
@@ -91,6 +243,79 @@ def test_v5_request_identity_and_count_include_deadline_mode():
     assert len(rows) == 51 * 9 * 2
     assert {row["deadline_mode"] for row in rows} == set(experiment.DEADLINE_MODES)
     assert len({row["request_id"] for row in rows}) == len(rows)
+
+
+def test_v6_mode_plan_and_request_count_contract():
+    assert experiment.DOMAIN == experiment.V6_DOMAIN
+    assert experiment.V6_EXPERIMENT == "scheduler-load-cross-v6"
+    assert experiment.deadline_modes_for_priority_policy("RM") == (
+        "constrained", "implicit",
+    )
+    assert experiment.deadline_modes_for_priority_policy("DM") == ("constrained",)
+    assert len(experiment.FORMAL_CELLS) == 51
+    assert len(experiment.ALL_SCHEDULERS) == 9
+    assert 51 * 9 * 2 == 918
+    assert 51 * 9 == 459
+    assert 51 * 9 * 3 == 1377
+    assert [1377 * n for n in (20, 100, 120, 200)] == [27540, 137700, 165240, 275400]
+    assert [30 * n for n in (100, 120)] == [3000, 3600]
+
+    class Taskset:
+        processors = 1
+        actual_utilization = Fraction(1, 10)
+        taskset_index = 0
+        seed = 123
+        semantic_hash = "v6-hash"
+
+        def __init__(self, uc, mode):
+            self.target_utilization = uc
+            self.taskset_id = f"{mode}-{uc}"
+            self.deadline_mode = mode
+
+    ucs = tuple(dict.fromkeys(uc for uc, _ue in experiment.FORMAL_CELLS))
+    rm_rows = sum(
+        len(experiment.request_rows(
+            [Taskset(uc, mode) for uc in ucs], experiment.FORMAL_CELLS,
+            experiment.ALL_SCHEDULERS, 60000, priority_policy="RM",
+            experiment_name=experiment.V6_EXPERIMENT, deadline_mode=mode,
+        ))
+        for mode in ("constrained", "implicit")
+    )
+    dm_rows = len(experiment.request_rows(
+        [Taskset(uc, "constrained") for uc in ucs], experiment.FORMAL_CELLS,
+        experiment.ALL_SCHEDULERS, 60000, priority_policy="DM",
+        experiment_name=experiment.V6_EXPERIMENT, deadline_mode="constrained",
+    ))
+    assert rm_rows == 918
+    assert dm_rows == 459
+
+
+def test_v6_request_identity_distinguishes_policy_and_mode():
+    class Taskset:
+        processors = 1
+        actual_utilization = Fraction(1, 10)
+        target_utilization = Fraction(1, 10)
+        taskset_index = 0
+        seed = 123
+        taskset_id = "v6-taskset"
+        semantic_hash = "v6-hash"
+        deadline_mode = "implicit"
+
+    rm = experiment.request_rows(
+        [Taskset()], ((Fraction(1, 10), Fraction(1, 5)),),
+        ("ASAP-BLOCK",), 60000, priority_policy="RM",
+        experiment_name=experiment.V6_EXPERIMENT, deadline_mode="implicit",
+    )[0]
+    dm = experiment.request_rows(
+        [Taskset()], ((Fraction(1, 10), Fraction(1, 5)),),
+        ("ASAP-BLOCK",), 60000, priority_policy="DM",
+        experiment_name=experiment.V6_EXPERIMENT, deadline_mode="implicit",
+    )[0]
+    assert rm["domain"] == experiment.V6_DOMAIN
+    assert rm["deadline_mode"] == "implicit"
+    assert rm["priority_policy"] == "RM"
+    assert dm["priority_policy"] == "DM"
+    assert rm["request_id"] != dm["request_id"]
 
 
 def test_v5_scheduler_style_combinations_are_unique():
@@ -365,6 +590,36 @@ def test_dm_priority_tie_breaks_are_deterministic_and_d_equals_t_matches_rm():
         {"task_id": "B", "priority_rank": 1, "C": 1, "D": 20, "T": 20},
     ]
     assert derive_fixed_priority_ranks(implicit, "DM") == {"A": 0, "B": 1}
+
+
+def test_implicit_same_period_tie_preserves_rm_order_for_dm():
+    payload = [
+        {"task_id": "C", "priority_rank": 0, "C": 1, "D": 10, "T": 10},
+        {"task_id": "A", "priority_rank": 1, "C": 1, "D": 20, "T": 20},
+        {"task_id": "B", "priority_rank": 2, "C": 1, "D": 20, "T": 20},
+    ]
+    assert all(row["D"] == row["T"] for row in payload)
+    assert derive_fixed_priority_ranks(payload, "RM") is None
+    rm_order = [row["task_id"] for row in payload]
+    dm_ranks = derive_fixed_priority_ranks(payload, "DM")
+    dm_order = [task_id for task_id, _rank in sorted(dm_ranks.items(), key=lambda item: item[1])]
+    assert rm_order == ["C", "A", "B"]
+    assert dm_order == rm_order
+
+
+def test_implicit_payload_order_is_the_frozen_rm_priority_invariant():
+    payload = [
+        {"task_id": "C", "priority_rank": 0, "C": 1, "D": 10, "T": 10},
+        {"task_id": "B", "priority_rank": 2, "C": 1, "D": 20, "T": 20},
+        {"task_id": "A", "priority_rank": 1, "C": 1, "D": 20, "T": 20},
+    ]
+    assert all(row["D"] == row["T"] for row in payload)
+    for policy in ("RM", "DM"):
+        with pytest.raises(
+            SimulationConfigurationError,
+            match="contiguous priority order",
+        ):
+            derive_fixed_priority_ranks(payload, policy)
 
 
 def test_rm_and_dm_request_identity_is_paired_but_distinct():
@@ -1178,14 +1433,21 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
     )
 
     def fake_request_rows(*args, **kwargs):
-        if kwargs.get("deadline_mode") != "constrained":
-            return []
         row = dict(request)
+        mode = kwargs["deadline_mode"]
         row.update({
-            "experiment": experiment.V5_EXPERIMENT,
-            "deadline_mode": "constrained",
+            "experiment": experiment.V6_EXPERIMENT,
+            "domain": experiment.V6_DOMAIN,
+            "priority_policy": kwargs.get("priority_policy", "RM"),
+            "deadline_mode": mode,
         })
-        return [row]
+        rows = []
+        for index, (uc, ue) in enumerate(args[1]):
+            item = dict(row, target_uc=str(uc), target_ue=str(ue))
+            suffix = "" if index == 0 and mode == "constrained" else f"-{index}-{mode}"
+            item["request_id"] = f"{request['request_id']}{suffix}"
+            rows.append(item)
+        return rows
 
     monkeypatch.setattr(
         scheduler_runner.experiment, "request_rows",
@@ -1238,19 +1500,21 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
 
 def _scheduler_runner_args(
     output, resume=False, keep_traces=False, parse_concurrency=1,
-    cells=None, fixed_ue=None, fixed_uc=None,
+    cells=None, fixed_ue=None, fixed_uc=None, priority_policy="DM",
+    samples_per_cell=1,
 ):
     args = [
         "--output", str(output), "--seed", "710213", "--workers", "1",
-        "--samples-per-cell", "1",
+        "--samples-per-cell", str(samples_per_cell),
         "--schedulers", "ASAP-BLOCK", "--simulation-horizon", "20",
+        "--priority-policy", priority_policy,
         "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
         "--parse-concurrency", str(parse_concurrency),
         *( ["--keep-traces"] if keep_traces else [] ),
         *( ["--resume"] if resume else [] ),
     ]
     if cells is None:
-        uc_scan_values = ("1/10", "1/5")
+        uc_scan_values = ("1/10",)
         ue_scan_values = ("1/5",)
         fixed_ues = ("1/5",)
         fixed_ucs = ("1/10",)
@@ -1335,7 +1599,7 @@ def test_scheduler_runner_disables_trace_retention_by_default(tmp_path, monkeypa
     assert configs[0]["retain_trace"] is True
 
 
-def test_runner_uses_v5_runtime_ue_report_name(tmp_path, monkeypatch):
+def test_runner_uses_v6_runtime_ue_report_name(tmp_path, monkeypatch):
     def run_simulation(**kwargs):
         result = SimpleNamespace(
             status=SimulationStatus.PASS_OBSERVED, reason="observed",
@@ -1347,12 +1611,14 @@ def test_runner_uses_v5_runtime_ue_report_name(tmp_path, monkeypatch):
         )
 
     _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
-    output = tmp_path / "v5-runtime-ue"
-    assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
+    output = tmp_path / "v6-runtime-ue"
+    assert scheduler_runner.main(_scheduler_runner_args(output, priority_policy="RM")) == 0
     config = json.loads((output / "run_config.json").read_text())
     report = json.loads((output / "invariant_report.json").read_text())
-    assert config["experiment"] == "scheduler-load-cross-v5"
+    assert config["experiment"] == "scheduler-load-cross-v6"
+    assert config["domain"] == "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v6"
     assert config["deadline_modes"] == ["constrained", "implicit"]
+    assert config["expected_request_count"] == 2
     assert report["runtime_config_ue_exact"] is True
     assert "actual_" + "ue_exact" not in report
 
@@ -1504,7 +1770,7 @@ def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_pat
     monkeypatch.setattr(
         scheduler_runner.experiment, "request_rows",
         lambda *args, **kwargs: (
-            [dict(row, experiment=experiment.V5_EXPERIMENT, deadline_mode="constrained") for row in requests]
+            [dict(row, experiment=experiment.V6_EXPERIMENT, domain=experiment.V6_DOMAIN, priority_policy="DM", deadline_mode="constrained") for row in requests]
             if kwargs.get("deadline_mode") == "constrained" else []
         ),
     )
@@ -1527,7 +1793,7 @@ def test_completion_order_persists_early_and_canonicalizes_final_results(tmp_pat
         return original_append(path, row)
 
     monkeypatch.setattr(scheduler_runner, "_append_jsonl", record_append)
-    assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
+    assert scheduler_runner.main(_scheduler_runner_args(output, samples_per_cell=2)) == 0
     assert appended_ids == ["request-2", "request-1"]
     final_ids = [
         json.loads(line)["request_id"]
@@ -1615,7 +1881,7 @@ def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, 
     monkeypatch.setattr(
         scheduler_runner.experiment, "request_rows",
         lambda *args, **kwargs: (
-            [dict(row, experiment=experiment.V5_EXPERIMENT, deadline_mode="constrained") for row in requests]
+            [dict(row, experiment=experiment.V6_EXPERIMENT, domain=experiment.V6_DOMAIN, priority_policy="DM", deadline_mode="constrained") for row in requests]
             if kwargs.get("deadline_mode") == "constrained" else []
         ),
     )
@@ -1626,14 +1892,14 @@ def test_completed_results_survive_later_technical_failure_and_resume(tmp_path, 
         ),
     )
     output = tmp_path / "partial-resume"
-    assert scheduler_runner.main(_scheduler_runner_args(output)) == 2
+    assert scheduler_runner.main(_scheduler_runner_args(output, samples_per_cell=2)) == 2
     results_path = output / "results.jsonl"
     assert [
         json.loads(line)["request_id"] for line in results_path.read_text().splitlines()
     ] == ["request-1"]
 
     fail_second["value"] = False
-    assert scheduler_runner.main(_scheduler_runner_args(output, resume=True)) == 0
+    assert scheduler_runner.main(_scheduler_runner_args(output, resume=True, samples_per_cell=2)) == 0
     assert [
         json.loads(line)["request_id"] for line in results_path.read_text().splitlines()
     ] == ["request-1", "request-2"]
@@ -1695,7 +1961,8 @@ def test_completed_request_resume_does_not_create_attempt(tmp_path, monkeypatch)
     terminal = {
         "request_id": attempts[0]["request_id"],
         "taskset_id": attempts[0]["taskset_id"], "taskset_hash": attempts[0]["taskset_hash"],
-        "experiment": experiment.V5_EXPERIMENT, "deadline_mode": "constrained",
+        "experiment": experiment.V6_EXPERIMENT, "domain": experiment.V6_DOMAIN,
+        "priority_policy": "DM", "deadline_mode": "constrained",
         "target_uc": "1/10", "actual_uc": "1/10", "target_ue": "2/5", "eta": "5/2",
         "scheduler": "ASAP-BLOCK", "simulation_status": "SIM_PASS_OBSERVED",
         "technical_error": None, **_harvest_model_fields(), "energy": {
@@ -1717,7 +1984,8 @@ def test_legacy_technical_row_in_active_results_fails_closed(tmp_path, monkeypat
     assert scheduler_runner.main(_scheduler_runner_args(output)) == 2
     (output / "results.jsonl").write_text(json.dumps({
         "request_id": "scheduler-load-cross-test-request",
-        "experiment": experiment.V5_EXPERIMENT, "deadline_mode": "constrained",
+        "experiment": experiment.V6_EXPERIMENT, "domain": experiment.V6_DOMAIN,
+        "priority_policy": "DM", "deadline_mode": "constrained",
         "simulation_status": "SIM_INTERNAL_ERROR", "technical_error": "old failure",
         **_harvest_model_fields(),
     }) + "\n", encoding="utf-8")
@@ -1780,7 +2048,8 @@ def test_duplicate_active_request_ids_fail_closed(tmp_path, monkeypatch):
     terminal = {
         "request_id": attempt["request_id"], "taskset_id": attempt["taskset_id"],
         "taskset_hash": attempt["taskset_hash"], "simulation_status": "SIM_PASS_OBSERVED",
-        "experiment": experiment.V5_EXPERIMENT, "deadline_mode": "constrained",
+        "experiment": experiment.V6_EXPERIMENT, "domain": experiment.V6_DOMAIN,
+        "priority_policy": "DM", "deadline_mode": "constrained",
         "technical_error": None, **_harvest_model_fields(),
     }
     (output / "results.jsonl").write_text(
@@ -1873,6 +2142,167 @@ def test_analyzer_rejects_empty_requests_with_explainable_error(tmp_path):
     (tmp_path / "results.jsonl").write_text("", encoding="utf-8")
     with pytest.raises(SystemExit, match="requests are empty"):
         analyze(tmp_path)
+
+
+def test_v6_dm_analyzer_requires_shared_implicit_source(tmp_path):
+    target = tmp_path / "dm"
+    _write_v6_fixture(target, "DM")
+    with pytest.raises(SystemExit, match="shared-implicit-run-dir"):
+        analyze(target)
+    assert not (target / "summary.csv").exists()
+    assert not (target / "figure_scheduler_uc_slices.csv").exists()
+
+
+@pytest.mark.parametrize("legacy_experiment", [
+    experiment.V3_EXPERIMENT, experiment.V4_EXPERIMENT, experiment.V5_EXPERIMENT,
+])
+def test_historical_analyzer_rejects_shared_implicit_argument(
+    tmp_path, legacy_experiment, capsys,
+):
+    root = tmp_path / legacy_experiment
+    _write_legacy_analyzer_fixture(root, legacy_experiment)
+    with pytest.raises(SystemExit) as exc_info:
+        analyzer_module.main([
+            "--input", str(root),
+            "--shared-implicit-run-dir", str(tmp_path / "missing-shared-source"),
+        ])
+    assert exc_info.value.code != 0
+    captured = capsys.readouterr()
+    message = str(exc_info.value)
+    assert "--shared-implicit-run-dir" in message
+    assert "only valid for scheduler-load-cross-v6" in message
+    assert "cannot be read" not in message
+    assert "Traceback" not in captured.out + captured.err
+    assert not list(root.glob("*.csv"))
+    assert not list(root.glob("*.png"))
+
+
+def test_v6_shared_implicit_source_is_read_and_marked_without_rewriting(tmp_path):
+    source = tmp_path / "rm"
+    target = tmp_path / "dm"
+    _write_v6_fixture(source, "RM")
+    _write_v6_fixture(target, "DM")
+    source_before = {
+        name: (source / name).read_bytes()
+        for name in ("run_config.json", "tasksets.jsonl", "requests.jsonl", "results.jsonl")
+    }
+    assert analyze(source)["implicit_data_reused"] is False
+    assert analyze(target, shared_implicit_run_dir=source)["implicit_data_reused"] is True
+    assert source_before == {
+        name: (source / name).read_bytes()
+        for name in source_before
+    }
+    with (target / "figure_scheduler_uc_slices.csv").open(newline="") as handle:
+        uc_rows = list(csv.DictReader(handle))
+    implicit = [row for row in uc_rows if row["deadline_mode"] == "implicit"]
+    assert len(implicit) == 9
+    assert {row["figure_priority_policy"] for row in implicit} == {"DM"}
+    assert {row["source_priority_policy"] for row in implicit} == {"RM"}
+    assert {row["implicit_data_reused"] for row in implicit} == {"True"}
+    assert {row["implicit_canonical_priority_policy"] for row in implicit} == {"RM"}
+    assert {row["implicit_priority_equivalence"] for row in implicit} == {
+        "RM_equals_DM_when_D_equals_T"
+    }
+    assert {row["source_run_identity"] for row in implicit} == {
+        json.loads((source / "run_config.json").read_text())["run_identity"]
+    }
+
+
+@pytest.mark.parametrize("bad_source", ["v3", "v4", "DM", "missing"])
+def test_v6_shared_implicit_source_rejects_invalid_source(tmp_path, bad_source):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    _write_v6_fixture(source, "RM")
+    _write_v6_fixture(target, "DM")
+    if bad_source == "missing":
+        (source / "requests.jsonl").unlink()
+        match = "cannot be read"
+    else:
+        config = json.loads((source / "run_config.json").read_text())
+        if bad_source == "v3":
+            config["experiment"] = experiment.V3_EXPERIMENT
+        elif bad_source == "v4":
+            config["experiment"] = experiment.V4_EXPERIMENT
+        else:
+            config["priority_policy"] = "DM"
+            config["deadline_modes"] = ["constrained"]
+            config["expected_request_count"] = 9
+            config["expected_taskset_count"] = 1
+            config["run_identity"] = experiment.run_identity(config)
+        (source / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+        match = "scheduler-load-cross-v6" if bad_source in {"v3", "v4"} else "priority policy"
+    with pytest.raises(SystemExit, match=match):
+        analyze(target, shared_implicit_run_dir=source)
+    assert not (target / "summary.csv").exists()
+
+
+def test_v6_shared_source_rejects_configuration_drift_before_output(tmp_path):
+    source = tmp_path / "rm"
+    target = tmp_path / "dm"
+    _write_v6_fixture(source, "RM")
+    _write_v6_fixture(target, "DM")
+    config = json.loads((source / "run_config.json").read_text())
+    config["seed"] = 999
+    config["run_identity"] = experiment.run_identity(config)
+    (source / "run_config.json").write_text(json.dumps(config), encoding="utf-8")
+    with pytest.raises(SystemExit, match="configurations do not match"):
+        analyze(target, shared_implicit_run_dir=source)
+    assert not (target / "summary.csv").exists()
+
+
+def test_v6_runner_dm_config_has_only_constrained_mode(tmp_path, monkeypatch):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: SimpleNamespace(
+        result=SimpleNamespace(
+            status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+            metrics={}, simulation_completed=True,
+        ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+        retained_trace_path=None,
+    ))
+    output = tmp_path / "dm-v6"
+    assert scheduler_runner.main(_scheduler_runner_args(output, priority_policy="DM")) == 0
+    config = json.loads((output / "run_config.json").read_text())
+    assert config["experiment"] == experiment.V6_EXPERIMENT
+    assert config["domain"] == experiment.V6_DOMAIN
+    assert config["deadline_modes"] == ["constrained"]
+    assert config["expected_request_count"] == 1
+
+
+@pytest.mark.parametrize("legacy_experiment", [
+    experiment.V3_EXPERIMENT, experiment.V4_EXPERIMENT, experiment.V5_EXPERIMENT,
+])
+def test_v6_runner_rejects_legacy_resume_identity(tmp_path, legacy_experiment):
+    output = tmp_path / legacy_experiment
+    output.mkdir()
+    (output / "run_config.json").write_text(
+        json.dumps({"experiment": legacy_experiment}), encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="cannot resume non-v6"):
+        scheduler_runner.main(_scheduler_runner_args(output, resume=True))
+
+
+def test_v6_rm_and_dm_implicit_aggregates_are_identical(tmp_path):
+    source = tmp_path / "rm"
+    target = tmp_path / "dm"
+    _write_v6_fixture(source, "RM")
+    _write_v6_fixture(target, "DM")
+    analyze(source)
+    analyze(target, shared_implicit_run_dir=source)
+    def implicit_rows(path):
+        with (path / "figure_scheduler_uc_slices.csv").open(newline="") as handle:
+            return sorted(
+                (row["scheduler"], row["x_value"], row["whole_taskset_pass_ratio"])
+                for row in csv.DictReader(handle)
+                if row["deadline_mode"] == "implicit"
+            )
+    def implicit_dmr_rows(path):
+        with (path / "figure_scheduler_uc_slices_dmr.csv").open(newline="") as handle:
+            return sorted(
+                (row["scheduler"], row["x_value"], row["dmr"], row["dmr_ci95_low"], row["dmr_ci95_high"])
+                for row in csv.DictReader(handle)
+                if row["deadline_mode"] == "implicit"
+            )
+    assert implicit_rows(source) == implicit_rows(target)
+    assert implicit_dmr_rows(source) == implicit_dmr_rows(target)
 
 
 def test_v4_custom_scan_contract_and_fraction_tokens():
