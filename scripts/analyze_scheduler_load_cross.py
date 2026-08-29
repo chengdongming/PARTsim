@@ -791,7 +791,13 @@ def _draw_v5_axes(
             container.lines[0].set_label(scheduler)
             handles.setdefault(scheduler, container.lines[0])
         axis.set_xlabel(xlabel)
-        axis.set_title("C ≤ D ≤ T" if deadline_mode == "constrained" else "D = T")
+        if deadline_mode == "constrained":
+            axis_title = "C ≤ D ≤ T"
+        elif any(row.get("implicit_data_reused") for row in rows):
+            axis_title = "Implicit deadlines (D=T; RM=DM; shared RM run)"
+        else:
+            axis_title = "Implicit deadlines (D=T; canonical RM run)"
+        axis.set_title(axis_title)
         axis.set_xlim(low, high)
         axis.set_xticks(ticks)
         axis.set_xticklabels(ticklabels)
@@ -882,6 +888,13 @@ def _slice_csv_rows(
         }
         if "deadline_mode" in row:
             result_row["deadline_mode"] = row["deadline_mode"]
+        for key in (
+            "figure_priority_policy", "source_priority_policy",
+            "implicit_data_reused", "implicit_canonical_priority_policy",
+            "implicit_priority_equivalence", "source_run_identity",
+        ):
+            if key in row:
+                result_row[key] = row[key]
         result.append(result_row)
     return result
 
@@ -910,14 +923,551 @@ def _dmr_slice_csv_rows(
         }
         if "deadline_mode" in row:
             result_row["deadline_mode"] = row["deadline_mode"]
+        for key in (
+            "figure_priority_policy", "source_priority_policy",
+            "implicit_data_reused", "implicit_canonical_priority_policy",
+            "implicit_priority_equivalence", "source_run_identity",
+        ):
+            if key in row:
+                result_row[key] = row[key]
         result.append(result_row)
     return result
+
+
+def _v6_config_signature(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value for key, value in config.items()
+        if key not in {
+            "priority_policy", "deadline_modes", "expected_request_count",
+            "expected_taskset_count", "run_identity", "status", "telemetry",
+            "execution", "workers", "keep_traces", "parse_concurrency",
+        }
+    }
+
+
+def _v6_validate_config(
+    root: Path, *, expected_policy: str | None = None,
+) -> tuple[dict[str, Any], tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any], str]:
+    try:
+        config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError) as exc:
+        raise SystemExit(f"v6 run_config cannot be read: {root}") from exc
+    if config.get("experiment") != experiment.V6_EXPERIMENT:
+        raise SystemExit("v6 shared source requires scheduler-load-cross-v6")
+    if config.get("domain") != experiment.V6_DOMAIN:
+        raise SystemExit("v6 run_config domain mismatch")
+    if config.get("campaign_contract") != experiment.V6_CAMPAIGN_CONTRACT:
+        raise SystemExit("v6 campaign contract mismatch")
+    for key, expected in (
+        ("implicit_priority_equivalence", experiment.V6_IMPLICIT_PRIORITY_EQUIVALENCE),
+        ("implicit_canonical_priority_policy", experiment.V6_IMPLICIT_CANONICAL_PRIORITY_POLICY),
+        ("implicit_reuse_policy", experiment.V6_IMPLICIT_REUSE_POLICY),
+        ("shared_implicit_contract_version", experiment.V6_SHARED_IMPLICIT_CONTRACT_VERSION),
+    ):
+        if config.get(key) != expected:
+            raise SystemExit(f"v6 {key} mismatch")
+    _validate_harvest_model(
+        {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+        "v6 run_config harvest model",
+    )
+    if config.get("use_real_solar_data") is not False:
+        raise SystemExit("v6 run_config must disable real solar data")
+    try:
+        priority_policy = experiment.normalize_scheduler_priority_policy(
+            config.get("priority_policy")
+        )
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+    if expected_policy is not None and priority_policy != expected_policy:
+        raise SystemExit(
+            f"v6 run_config priority policy mismatch: expected {expected_policy}"
+        )
+    expected_modes = list(experiment.deadline_modes_for_priority_policy(priority_policy))
+    if config.get("deadline_modes") != expected_modes:
+        raise SystemExit("v6 deadline mode plan does not match priority policy")
+    cells = _configured_cells(config)
+    scan_contract, figure_slices = _v4_contract(config)
+    canonical_cells = tuple(
+        (Fraction(uc), Fraction(ue))
+        for uc, ue in scan_contract["ordered_cells"]
+    )
+    if canonical_cells != cells:
+        raise SystemExit("v6 cells do not match scan_contract")
+    schedulers = list(config.get("schedulers", ()))
+    try:
+        if tuple(experiment.parse_schedulers(",".join(schedulers))) != tuple(schedulers):
+            raise SystemExit("v6 schedulers are not canonical and unique")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if tuple(schedulers) != tuple(experiment.ALL_SCHEDULERS):
+        raise SystemExit("v6 campaign requires all nine canonical schedulers")
+    if tuple(cells) == tuple(experiment.FORMAL_CELLS):
+        try:
+            experiment.validate_v6_main_figure(
+                cells, schedulers,
+                horizon_ms=int(config.get("simulation_horizon_ms", 0)),
+                priority_policy=priority_policy,
+            )
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    samples = int(config.get("samples_per_cell", 0))
+    expected_requests = len(cells) * samples * len(schedulers) * len(expected_modes)
+    expected_tasksets = len({uc for uc, _ue in cells}) * samples * len(expected_modes)
+    if config.get("expected_request_count") != expected_requests:
+        raise SystemExit("v6 expected_request_count is inconsistent")
+    if config.get("expected_taskset_count") != expected_tasksets:
+        raise SystemExit("v6 expected_taskset_count is inconsistent")
+    if config.get("run_identity") != experiment.run_identity(config):
+        raise SystemExit("v6 run_identity is invalid")
+    return config, cells, scan_contract, figure_slices, priority_policy
+
+
+def _v6_validate_energy(row: dict[str, Any]) -> None:
+    energy = row.get("energy")
+    if not isinstance(energy, dict):
+        raise SystemExit("v6 result energy material is missing")
+    _validate_harvest_model(
+        {key: energy.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+        "v6 energy harvest model",
+    )
+    try:
+        ue = Fraction(row["target_ue"])
+        if Fraction(energy["eta"]) != experiment.eta_for_ue(ue):
+            raise SystemExit("v6 eta != 1/U_E")
+        demand = Fraction(energy["P_dem_j_per_tick"])
+        supply = Fraction(energy["target_supply_mean_j_per_tick"])
+        raw = Fraction(energy["raw_reference_mean_j_per_tick"])
+        if demand / supply != ue or Fraction(energy["solar_scale"]) * raw != supply:
+            raise SystemExit("v6 U_E service identity mismatch")
+        runtime_supply = Fraction(
+            energy["runtime_configured_average_supply_j_per_tick"]
+        )
+        actual_ue = Fraction(energy["actual_ue"])
+        abs_error = Fraction(energy["actual_ue_abs_error"])
+        rel_error = Fraction(energy["actual_ue_rel_error"])
+        minus_error = Fraction(energy["actual_ue_minus_target_ue"])
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+        raise SystemExit("v6 runtime average supply and actual U_E are invalid") from exc
+    if runtime_supply <= 0 or actual_ue <= 0:
+        raise SystemExit("v6 runtime average supply and actual U_E must be positive")
+    calculated = demand / runtime_supply
+    calculated_abs = abs(calculated - ue)
+    calculated_rel = calculated_abs / ue
+    if (
+        actual_ue != calculated or abs_error != calculated_abs
+        or rel_error != calculated_rel or minus_error != calculated - ue
+    ):
+        raise SystemExit("v6 actual U_E does not match runtime average supply")
+    if calculated_rel > ACTUAL_UE_RELATIVE_TOLERANCE:
+        raise SystemExit("v6 actual U_E relative error exceeds 1e-12")
+
+
+def _v6_load_dataset(
+    root: Path, *, expected_policy: str | None = None,
+) -> dict[str, Any]:
+    config, cells, scan_contract, figure_slices, priority_policy = _v6_validate_config(
+        root, expected_policy=expected_policy,
+    )
+    try:
+        tasksets = read_jsonl(root / "tasksets.jsonl")
+        requests = read_jsonl(root / "requests.jsonl")
+        results = read_jsonl(root / "results.jsonl")
+    except OSError as exc:
+        raise SystemExit(f"v6 dataset cannot be read: {root}") from exc
+    modes = tuple(config["deadline_modes"])
+    samples = int(config["samples_per_cell"])
+    schedulers = list(config["schedulers"])
+    if {row.get("deadline_mode") for row in tasksets} != set(modes):
+        raise SystemExit("v6 tasksets do not contain exactly the configured modes")
+    if {row.get("deadline_mode") for row in requests} != set(modes):
+        raise SystemExit("v6 requests do not contain exactly the configured modes")
+    if {row.get("deadline_mode") for row in results} != set(modes):
+        raise SystemExit("v6 results do not contain exactly the configured modes")
+    expected_request_count = int(config["expected_request_count"])
+    expected_taskset_count = int(config["expected_taskset_count"])
+    if len(tasksets) != expected_taskset_count:
+        raise SystemExit("v6 taskset count does not match the run contract")
+    if len(requests) != expected_request_count or len(results) != expected_request_count:
+        raise SystemExit("v6 request/result count does not match the run contract")
+    taskset_by_id = {str(row.get("taskset_id")): row for row in tasksets}
+    if len(taskset_by_id) != len(tasksets):
+        raise SystemExit("v6 tasksets contain duplicate identities")
+    for taskset in tasksets:
+        mode = experiment.normalize_deadline_mode(taskset.get("deadline_mode"))
+        try:
+            payload = json.loads(taskset["task_input_json"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SystemExit("v6 taskset task payload is missing or invalid") from exc
+        if not isinstance(payload, list):
+            raise SystemExit("v6 taskset task payload is invalid")
+        if taskset.get("canonical_task_power") is False:
+            raise SystemExit("v6 taskset uses non-canonical task power")
+        for item in payload:
+            try:
+                c, d, t = int(item["C"]), int(item["D"]), int(item["T"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise SystemExit("v6 taskset deadline fields are invalid") from exc
+            if not (0 < c <= d <= t):
+                raise SystemExit("v6 taskset violates C <= D <= T")
+            if mode == "implicit" and d != t:
+                raise SystemExit("v6 implicit taskset violates D == T")
+    request_by_id: dict[str, dict[str, Any]] = {}
+    for request in requests:
+        request_id = str(request.get("request_id"))
+        if request_id in request_by_id:
+            raise SystemExit("v6 requests contain duplicate request IDs")
+        request_by_id[request_id] = request
+        if (
+            request.get("experiment") != experiment.V6_EXPERIMENT
+            or request.get("domain") != experiment.V6_DOMAIN
+            or request.get("priority_policy") != priority_policy
+            or request.get("deadline_mode") not in modes
+        ):
+            raise SystemExit("v6 request identity does not match run_config")
+        taskset = taskset_by_id.get(str(request.get("taskset_id")))
+        if taskset is None or taskset.get("deadline_mode") != request.get("deadline_mode"):
+            raise SystemExit("v6 request/taskset identity mismatch")
+        _validate_harvest_model(
+            {key: request.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+            "v6 request harvest model",
+        )
+    observed_ids = [str(row.get("request_id")) for row in results]
+    if len(observed_ids) != len(set(observed_ids)) or set(observed_ids) != set(request_by_id):
+        raise SystemExit("v6 results have duplicate, missing, or unexpected request IDs")
+    technical = 0
+    for result in results:
+        request = request_by_id[str(result["request_id"])]
+        if (
+            result.get("experiment") != experiment.V6_EXPERIMENT
+            or result.get("domain") != experiment.V6_DOMAIN
+            or result.get("priority_policy") != priority_policy
+            or result.get("deadline_mode") != request.get("deadline_mode")
+            or result.get("simulation_status") not in {"SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS"}
+            or result.get("technical_error") is not None
+        ):
+            technical += 1
+            continue
+        for key in (
+            "taskset_id", "taskset_hash", "target_uc", "target_ue",
+            "generation_index", "scheduler", "scheduler_cli",
+        ):
+            if result.get(key) != request.get(key):
+                raise SystemExit(f"v6 result/request identity mismatch for {key}")
+        if result.get("scheduler") not in schedulers:
+            raise SystemExit("v6 result contains an unknown scheduler")
+        _validate_harvest_model(
+            {key: result.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+            "v6 result harvest model",
+        )
+        _validate_energy = _v6_validate_energy(result)
+        del _validate_energy
+    groups: dict[tuple[str, str, str, int], list[dict[str, Any]]] = {}
+    for request in requests:
+        key = (
+            str(request["deadline_mode"]), str(request["target_uc"]),
+            str(request["target_ue"]), int(request["generation_index"]),
+        )
+        groups.setdefault(key, []).append(request)
+    expected_groups = {
+        (mode, str(uc), str(ue), index)
+        for mode in modes
+        for uc, ue in cells
+        for index in range(samples)
+    }
+    if set(groups) != expected_groups:
+        raise SystemExit("v6 requests contain missing or extra cells/samples")
+    for key, group in groups.items():
+        if len(group) != len(schedulers) or {row["scheduler"] for row in group} != set(schedulers):
+            raise SystemExit(f"v6 scheduler coverage is incomplete: {key}")
+    if technical:
+        raise SystemExit(f"v6 technical failures are not scientific rows: {technical}")
+    return {
+        "root": root, "config": config, "cells": cells,
+        "scan_contract": scan_contract, "figure_slices": figure_slices,
+        "priority_policy": priority_policy, "tasksets": tasksets,
+        "requests": requests, "results": results, "modes": modes,
+        "schedulers": schedulers, "samples": samples,
+        "run_identity": config["run_identity"],
+    }
+
+
+def _v6_validate_shared_source(
+    target: dict[str, Any], source_root: Path,
+) -> dict[str, Any]:
+    if source_root.resolve() == target["root"].resolve():
+        raise SystemExit("shared implicit source must be a separate v6 RM run")
+    source = _v6_load_dataset(source_root, expected_policy="RM")
+    if source["modes"] != experiment.DEADLINE_MODES:
+        raise SystemExit("shared RM source must contain constrained and implicit modes")
+    if target["priority_policy"] != "DM" or target["modes"] != ("constrained",):
+        raise SystemExit("shared implicit source is only valid for a DM v6 run")
+    if _v6_config_signature(source["config"]) != _v6_config_signature(target["config"]):
+        raise SystemExit("shared v6 source and DM run configurations do not match")
+    implicit_requests = [
+        row for row in source["requests"] if row.get("deadline_mode") == "implicit"
+    ]
+    implicit_results = [
+        row for row in source["results"] if row.get("deadline_mode") == "implicit"
+    ]
+    implicit_tasksets = [
+        row for row in source["tasksets"] if row.get("deadline_mode") == "implicit"
+    ]
+    expected = len(source["cells"]) * source["samples"] * len(source["schedulers"])
+    if len(implicit_requests) != expected or len(implicit_results) != expected:
+        raise SystemExit("shared RM source implicit data is incomplete")
+    if len(implicit_tasksets) != len({uc for uc, _ue in source["cells"]}) * source["samples"]:
+        raise SystemExit("shared RM source implicit tasksets are incomplete")
+    if any(row.get("priority_policy") != "RM" for row in (*implicit_requests, *implicit_results)):
+        raise SystemExit("shared implicit source contains non-RM data")
+    return {
+        **source,
+        "requests": implicit_requests,
+        "results": implicit_results,
+        "tasksets": implicit_tasksets,
+        "modes": ("implicit",),
+    }
+
+
+def _v6_build_summaries(
+    rows: list[dict[str, Any]], *, config: dict[str, Any],
+    figure_priority_policy: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    schedulers = list(config["schedulers"])
+    samples = int(config["samples_per_cell"])
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in rows:
+        groups.setdefault(
+            (str(row["deadline_mode"]), str(row["target_uc"]), str(row["target_ue"])),
+            [],
+        ).append(row)
+    summaries: list[dict[str, Any]] = []
+    dmr_summaries: list[dict[str, Any]] = []
+    for (mode, uc, ue), group in sorted(
+        groups.items(), key=lambda item: (
+            experiment.DEADLINE_MODES.index(item[0][0]),
+            Fraction(item[0][1]), Fraction(item[0][2]),
+        ),
+    ):
+        for scheduler in schedulers:
+            selected = [row for row in group if row["scheduler"] == scheduler]
+            if len(selected) != samples:
+                raise SystemExit("v6 missing scheduler result in cell")
+            n_total = len(selected)
+            n_wholepass = sum(
+                row.get("wholepass", row.get("taskset_pass")) is True
+                for row in selected
+            )
+            n_miss = sum(row.get("deadline_miss") is True for row in selected)
+            ci_low, ci_high = wilson_ci(n_wholepass, n_total)
+            source_policy = str(selected[0]["priority_policy"])
+            metadata = {
+                "figure_priority_policy": figure_priority_policy,
+                "source_priority_policy": source_policy,
+                "implicit_data_reused": bool(selected[0].get("_v6_implicit_data_reused", False)),
+                "implicit_canonical_priority_policy": experiment.V6_IMPLICIT_CANONICAL_PRIORITY_POLICY,
+                "implicit_priority_equivalence": experiment.V6_IMPLICIT_PRIORITY_EQUIVALENCE,
+                "source_run_identity": selected[0]["_v6_source_run_identity"],
+            }
+            summary = {
+                "priority_policy": source_policy,
+                "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
+                "runtime_configured_average_supply_j_per_tick": selected[0]["energy"][
+                    "runtime_configured_average_supply_j_per_tick"
+                ],
+                "actual_ue": selected[0]["energy"]["actual_ue"],
+                "actual_ue_minus_target_ue": selected[0]["energy"][
+                    "actual_ue_minus_target_ue"
+                ],
+                "n_total": n_total, "n_valid_tasksets": n_total,
+                "n_technical": 0, "n_wholepass": n_wholepass,
+                "wholepass_ratio": n_wholepass / n_total,
+                "ci95_low": ci_low, "ci95_high": ci_high,
+                "n_schedulable": n_wholepass, "n_deadline_miss": n_miss,
+                "acceptance_ratio": n_wholepass / n_total,
+                "deadline_mode": mode, **metadata,
+            }
+            summaries.append(summary)
+            dmr = summarize_dmr(
+                selected, target_uc=uc, target_ue=ue, scheduler=scheduler,
+                campaign_seed=int(config.get("seed", 0)),
+                priority_policy=source_policy, deadline_mode=mode,
+            )
+            dmr.update(metadata)
+            dmr_summaries.append(dmr)
+    return summaries, dmr_summaries
+
+
+def _analyze_v6(
+    root: Path, *, shared_implicit_run_dir: Path | None,
+    analysis_workers: int, uc_dmr_ymin: float, ue_dmr_ymin: float,
+) -> dict[str, Any]:
+    target = _v6_load_dataset(root)
+    source = None
+    if target["priority_policy"] == "DM":
+        if shared_implicit_run_dir is None:
+            raise SystemExit(
+                "DM v6 analysis requires --shared-implicit-run-dir before plotting"
+            )
+        source = _v6_validate_shared_source(target, shared_implicit_run_dir)
+    elif shared_implicit_run_dir is not None:
+        raise SystemExit("--shared-implicit-run-dir is only valid for DM v6 analysis")
+    rows: list[dict[str, Any]] = []
+    for row in target["results"]:
+        rows.append({
+            **row,
+            "_v6_source_run_identity": target["run_identity"],
+            "_v6_implicit_data_reused": False,
+        })
+    if source is not None:
+        for row in source["results"]:
+            if row.get("deadline_mode") == "implicit":
+                rows.append({
+                    **row,
+                    "_v6_source_run_identity": source["run_identity"],
+                    "_v6_implicit_data_reused": True,
+                })
+    summaries, dmr_summaries = _v6_build_summaries(
+        rows, config=target["config"],
+        figure_priority_policy=target["priority_policy"],
+    )
+    scan_contract = target["scan_contract"]
+    figure_slices = target["figure_slices"]
+    axis = _axis_plot_values(scan_contract)
+    uc_slice_rows = []
+    uc_dmr_slice_rows = []
+    for index, uc_slice in enumerate(figure_slices["uc_scans"]):
+        for mode in experiment.DEADLINE_MODES:
+            uc_rows = [
+                row for row in summaries
+                if row["deadline_mode"] == mode
+                and row[uc_slice["fixed_key"]] == uc_slice["fixed_value"]
+            ]
+            dmr_rows = [
+                row for row in dmr_summaries
+                if row["deadline_mode"] == mode
+                and row[uc_slice["fixed_key"]] == uc_slice["fixed_value"]
+            ]
+            _validate_v5_slice(uc_rows, uc_slice, mode, target["schedulers"], f"U_C[{index}]")
+            _validate_v5_slice(dmr_rows, uc_slice, mode, target["schedulers"], f"U_C DMR[{index}]")
+            uc_slice_rows.append((uc_slice, mode, uc_rows))
+            uc_dmr_slice_rows.append((uc_slice, mode, dmr_rows))
+    ue_slice_rows = []
+    ue_dmr_slice_rows = []
+    for index, ue_slice in enumerate(figure_slices["ue_scans"]):
+        for mode in experiment.DEADLINE_MODES:
+            ue_rows = [
+                row for row in summaries
+                if row["deadline_mode"] == mode
+                and row[ue_slice["fixed_key"]] == ue_slice["fixed_value"]
+            ]
+            dmr_rows = [
+                row for row in dmr_summaries
+                if row["deadline_mode"] == mode
+                and row[ue_slice["fixed_key"]] == ue_slice["fixed_value"]
+            ]
+            _validate_v5_slice(ue_rows, ue_slice, mode, target["schedulers"], f"U_E[{index}]")
+            _validate_v5_slice(dmr_rows, ue_slice, mode, target["schedulers"], f"U_E DMR[{index}]")
+            ue_slice_rows.append((ue_slice, mode, ue_rows))
+            ue_dmr_slice_rows.append((ue_slice, mode, dmr_rows))
+    write_csv(root / "summary.csv", summaries)
+    write_csv(root / "summary_dmr.csv", dmr_summaries)
+    write_csv(root / "figure_scheduler_uc_slices.csv", [
+        row for slice_config, _mode, values in uc_slice_rows
+        for row in _slice_csv_rows(slice_config, values)
+    ])
+    write_csv(root / "figure_scheduler_ue_slices.csv", [
+        row for slice_config, _mode, values in ue_slice_rows
+        for row in _slice_csv_rows(slice_config, values)
+    ])
+    write_csv(root / "figure_scheduler_uc_slices_dmr.csv", [
+        row for slice_config, _mode, values in uc_dmr_slice_rows
+        for row in _dmr_slice_csv_rows(slice_config, values)
+    ])
+    write_csv(root / "figure_scheduler_ue_slices_dmr.csv", [
+        row for slice_config, _mode, values in ue_dmr_slice_rows
+        for row in _dmr_slice_csv_rows(slice_config, values)
+    ])
+    plot_jobs = [
+        {"v5_composite": True, "slice_rows": uc_slice_rows, "output": str(root),
+         "filename": "figure_scheduler_uc_slices.png", "xkey": "target_uc",
+         "schedulers": target["schedulers"], "xlabel": "U_C",
+         "title": f"{target['priority_policy']} — Whole-taskset pass ratio versus U_C", **axis},
+        {"v5_composite": True, "slice_rows": ue_slice_rows, "output": str(root),
+         "filename": "figure_scheduler_ue_slices.png", "xkey": "target_ue",
+         "schedulers": target["schedulers"], "xlabel": "U_E",
+         "title": f"{target['priority_policy']} — Whole-taskset pass ratio versus U_E", **axis},
+        {"v5_composite": True, "slice_rows": uc_dmr_slice_rows, "output": str(root),
+         "filename": "figure_scheduler_uc_slices_dmr.png", "xkey": "target_uc",
+         "schedulers": target["schedulers"], "xlabel": "U_C", "metric": "dmr",
+         "ymin": uc_dmr_ymin,
+         "title": f"{target['priority_policy']} — Job-level deadline-meeting ratio (DMR) versus U_C", **axis},
+        {"v5_composite": True, "slice_rows": ue_dmr_slice_rows, "output": str(root),
+         "filename": "figure_scheduler_ue_slices_dmr.png", "xkey": "target_ue",
+         "schedulers": target["schedulers"], "xlabel": "U_E", "metric": "dmr",
+         "ymin": ue_dmr_ymin,
+         "title": f"{target['priority_policy']} — Job-level deadline-meeting ratio (DMR) versus U_E", **axis},
+    ]
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        run_independent_jobs(plot_jobs, _plot_any_scan_job, workers=analysis_workers)
+    except ImportError:
+        pass
+    report = {
+        "complete": True, "experiment": experiment.V6_EXPERIMENT,
+        "domain": experiment.V6_DOMAIN,
+        "priority_policy": target["priority_policy"],
+        "deadline_modes": list(target["modes"]),
+        "shared_implicit_run_identity": source["run_identity"] if source else None,
+        "implicit_data_reused": source is not None,
+        "tasksets": len(target["tasksets"]), "requests": len(rows),
+        "results": len(rows), "summary_rows": len(summaries),
+        "dmr_summary_rows": len(dmr_summaries), "technical": 0,
+        "harvest_model": experiment.HARVEST_MODEL,
+        "expected_request_count": target["config"]["expected_request_count"],
+    }
+    (root / "analysis_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8",
+    )
+    return report
 
 
 def analyze(
     root: Path, *, analysis_workers: int = 1,
     uc_dmr_ymin: float = 0.0, ue_dmr_ymin: float = 0.0,
+    shared_implicit_run_dir: Path | None = None,
 ) -> dict[str, Any]:
+    try:
+        initial_config = json.loads(
+            (root / "run_config.json").read_text(encoding="utf-8")
+        )
+    except (OSError, TypeError, ValueError):
+        initial_config = {}
+    if shared_implicit_run_dir is not None and (
+        initial_config.get("experiment") in {
+            experiment.V3_EXPERIMENT,
+            experiment.V4_EXPERIMENT,
+            experiment.V5_EXPERIMENT,
+        }
+        or initial_config.get("domain") in {
+            experiment.V3_DOMAIN,
+            experiment.V4_DOMAIN,
+            experiment.V5_DOMAIN,
+        }
+    ):
+        raise SystemExit(
+            "--shared-implicit-run-dir is only valid for "
+            "scheduler-load-cross-v6"
+        )
+    if initial_config.get("experiment") == experiment.V6_EXPERIMENT:
+        validate_workers(analysis_workers, "analysis-workers")
+        uc_dmr_ymin = _validate_dmr_ymin(uc_dmr_ymin, "U_C DMR y-axis lower bound")
+        ue_dmr_ymin = _validate_dmr_ymin(ue_dmr_ymin, "U_E DMR y-axis lower bound")
+        return _analyze_v6(
+            root, shared_implicit_run_dir=shared_implicit_run_dir,
+            analysis_workers=analysis_workers, uc_dmr_ymin=uc_dmr_ymin,
+            ue_dmr_ymin=ue_dmr_ymin,
+        )
     validate_workers(analysis_workers, "analysis-workers")
     uc_dmr_ymin = _validate_dmr_ymin(uc_dmr_ymin, "U_C DMR y-axis lower bound")
     ue_dmr_ymin = _validate_dmr_ymin(ue_dmr_ymin, "U_E DMR y-axis lower bound")
@@ -1475,6 +2025,10 @@ def analyze(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument(
+        "--shared-implicit-run-dir", type=Path, default=None,
+        help="v6 DM analysis source directory containing the canonical RM implicit run",
+    )
     parser.add_argument("--analysis-workers", type=int, default=1)
     parser.add_argument(
         "--uc-dmr-ymin", type=_parse_dmr_ymin, default=0.0,
@@ -1491,6 +2045,7 @@ def main(argv: list[str] | None = None) -> int:
             analysis_workers=args.analysis_workers,
             uc_dmr_ymin=args.uc_dmr_ymin,
             ue_dmr_ymin=args.ue_dmr_ymin,
+            shared_implicit_run_dir=args.shared_implicit_run_dir,
         )
     except ValueError as exc:
         parser.error(str(exc))

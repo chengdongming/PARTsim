@@ -24,11 +24,21 @@ from .parallel_prepare import run_prepare_jobs
 V3_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v3"
 V4_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v4"
 V5_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v5"
-DOMAIN = V5_DOMAIN
+V6_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v6"
+DOMAIN = V6_DOMAIN
 V4_EXPERIMENT = "scheduler-load-cross-v4"
 V3_EXPERIMENT = "scheduler-load-cross-v3"
 V5_EXPERIMENT = "scheduler-load-cross-v5"
+V6_EXPERIMENT = "scheduler-load-cross-v6"
 DEADLINE_MODES = ("constrained", "implicit")
+V6_CAMPAIGN_CONTRACT = (
+    "ordinary-general-random-nine-scheduler-shared-implicit-deadline-panels-v1"
+)
+V6_MODE_PLAN = {"RM": ("constrained", "implicit"), "DM": ("constrained",)}
+V6_IMPLICIT_PRIORITY_EQUIVALENCE = "RM_equals_DM_when_D_equals_T"
+V6_IMPLICIT_CANONICAL_PRIORITY_POLICY = "RM"
+V6_IMPLICIT_REUSE_POLICY = "shared_across_rm_and_dm_figures"
+V6_SHARED_IMPLICIT_CONTRACT_VERSION = 1
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
 ORDINARY_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 DEFAULT_KAPPA = Fraction(10)
@@ -419,10 +429,48 @@ def validate_frozen_main_figure(
         )
 
 
+def validate_v6_main_figure(
+    cells: Sequence[tuple[Fraction, Fraction]],
+    schedulers: Sequence[str],
+    *,
+    horizon_ms: int,
+    priority_policy: str,
+) -> None:
+    """Validate the frozen grid for either v6 priority-policy run."""
+    try:
+        policy = normalize_scheduler_priority_policy(priority_policy)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    if policy not in V6_MODE_PLAN:
+        raise ValueError("v6 campaign requires priority policy RM or DM")
+    if tuple(cells) != tuple(FORMAL_CELLS):
+        raise ValueError(
+            "v6 main-figure campaign must contain exactly the 51 canonical cells"
+        )
+    if tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
+        raise ValueError(
+            "v6 main-figure campaign must contain all 9 schedulers in canonical order"
+        )
+    if int(horizon_ms) != perf_g.FORMAL_HORIZON_MS:
+        raise ValueError(
+            "v6 main-figure campaign requires simulation horizon 60000 ms"
+        )
+
+
 def _hash(value: Any, *, domain: str = DOMAIN) -> str:
     return hashlib.sha256(
         domain.encode("ascii") + b"\0" + canonical_json(value).encode("utf-8")
     ).hexdigest()
+
+
+def run_identity(config: Mapping[str, Any]) -> str:
+    comparable = {
+        key: value for key, value in config.items()
+        if key not in {"run_identity", "status", "telemetry", "execution"}
+    }
+    return "scheduler-load-cross-v6-" + _hash(
+        comparable, domain=V6_DOMAIN,
+    )[:32]
 
 
 def harvest_trace_identity(raw_trace: Sequence[Fraction]) -> str:
@@ -448,6 +496,14 @@ def normalize_deadline_mode(value: Any) -> str:
             "deadline_mode must be one of: " + ", ".join(DEADLINE_MODES)
         )
     return mode
+
+
+def deadline_modes_for_priority_policy(priority_policy: str) -> tuple[str, ...]:
+    try:
+        policy = normalize_scheduler_priority_policy(priority_policy)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return V6_MODE_PLAN[policy]
 
 
 def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
@@ -603,6 +659,7 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
     if inferred_modes and inferred_modes != {deadline_mode}:
         raise ValueError("request deadline mode does not match tasksets")
     is_v5 = experiment_name == V5_EXPERIMENT
+    is_v6 = experiment_name == V6_EXPERIMENT
     rows = []
     for uc, ue in cells:
         eta = eta_for_ue(ue)
@@ -614,12 +671,17 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "scheduler": scheduler,
                     **HARVEST_MODEL_IDENTITY,
                 }
-                if is_v5:
+                if is_v5 or is_v6:
                     identity["deadline_mode"] = deadline_mode
                 if policy == "DM":
                     identity["priority_policy"] = policy
                 row = {
                     "experiment": experiment_name,
+                    "domain": (
+                        V6_DOMAIN if is_v6 else
+                        V5_DOMAIN if is_v5 else
+                        V4_DOMAIN if experiment_name == V4_EXPERIMENT else V3_DOMAIN
+                    ),
                     "taskset_id": taskset.taskset_id,
                     "taskset_hash": taskset.semantic_hash,
                     "target_uc": fraction_text(uc), "actual_uc": fraction_text(taskset.actual_utilization / taskset.processors),
@@ -630,9 +692,9 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     "priority_policy": policy,
                     **HARVEST_MODEL_IDENTITY,
                 }
-                if is_v5:
+                if is_v5 or is_v6:
                     row["deadline_mode"] = deadline_mode
-                    request_domain = V5_DOMAIN
+                    request_domain = V6_DOMAIN if is_v6 else V5_DOMAIN
                 elif experiment_name == V4_EXPERIMENT:
                     request_domain = V4_DOMAIN
                 else:

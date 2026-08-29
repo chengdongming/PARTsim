@@ -310,10 +310,7 @@ def main(argv: list[str] | None = None) -> int:
         else ",".join(perf_g.FORMAL_SCHEDULERS)
     )
     priority_policy = args.priority_policy
-    is_frozen_main_figure = (
-        tuple(cells) == tuple(experiment.FORMAL_CELLS)
-        and priority_policy == "RM"
-    )
+    is_frozen_main_figure = tuple(cells) == tuple(experiment.FORMAL_CELLS)
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
     max_util = experiment.parse_fraction(args.max_task_util, "max-task-util")
     tolerance = experiment.parse_fraction(args.util_tolerance_total, "util-tolerance-total")
@@ -322,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("scheduler LOAD-CROSS freezes kappa=10")
     if is_frozen_main_figure:
         try:
-            experiment.validate_frozen_main_figure(
+            experiment.validate_v6_main_figure(
                 cells, schedulers, horizon_ms=args.simulation_horizon,
                 priority_policy=priority_policy,
             )
@@ -333,14 +330,24 @@ def main(argv: list[str] | None = None) -> int:
     rho = experiment.parse_fraction(args.rho, "rho")
     latency = experiment.parse_fraction(args.latency, "latency")
     root = args.output
-    experiment_name = experiment.V5_EXPERIMENT
-    deadline_modes = experiment.DEADLINE_MODES
+    experiment_name = experiment.V6_EXPERIMENT
+    deadline_modes = experiment.deadline_modes_for_priority_policy(priority_policy)
+    expected_request_count = len(cells) * args.samples_per_cell * len(schedulers) * len(deadline_modes)
+    expected_taskset_count = len(set(uc for uc, _ue in cells)) * args.samples_per_cell * len(deadline_modes)
     config = {
-        "experiment": experiment_name, "seed": args.seed, "workers": args.workers,
+        "experiment": experiment_name, "domain": experiment.V6_DOMAIN,
+        "campaign_contract": experiment.V6_CAMPAIGN_CONTRACT,
+        "seed": args.seed, "workers": args.workers,
         "deadline_modes": list(deadline_modes),
+        "priority_policy": priority_policy,
+        "expected_request_count": expected_request_count,
+        "expected_taskset_count": expected_taskset_count,
+        "implicit_priority_equivalence": experiment.V6_IMPLICIT_PRIORITY_EQUIVALENCE,
+        "implicit_canonical_priority_policy": experiment.V6_IMPLICIT_CANONICAL_PRIORITY_POLICY,
+        "implicit_reuse_policy": experiment.V6_IMPLICIT_REUSE_POLICY,
+        "shared_implicit_contract_version": experiment.V6_SHARED_IMPLICIT_CONTRACT_VERSION,
         "samples_per_cell": args.samples_per_cell, "cells": [[str(uc), str(ue)] for uc, ue in cells],
         "schedulers": list(schedulers), "processors": args.processors, "tasks": args.tasks,
-        "priority_policy": priority_policy,
         "period_min": args.period_min, "period_max": args.period_max,
         "min_task_util": str(min_util), "max_task_util": str(max_util),
         "util_tolerance_total": str(tolerance), "rho": str(rho), "latency": str(latency),
@@ -364,13 +371,18 @@ def main(argv: list[str] | None = None) -> int:
     }
     if scan_contract is not None:
         config["scan_contract"] = scan_contract
+    config["run_identity"] = experiment.run_identity(config)
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
-        if (stored_config or {}).get("experiment") != experiment.V5_EXPERIMENT:
-            raise SystemExit("resume experiment mismatch: v5 cannot resume non-v5 results")
+        if (stored_config or {}).get("experiment") != experiment.V6_EXPERIMENT:
+            raise SystemExit("resume experiment mismatch: v6 cannot resume non-v6 results")
+        if (stored_config or {}).get("domain") != experiment.V6_DOMAIN:
+            raise SystemExit("resume domain mismatch: v6 cannot resume another domain")
         if (stored_config or {}).get("deadline_modes") != list(deadline_modes):
             raise SystemExit("resume deadline modes mismatch")
+        if (stored_config or {}).get("priority_policy") != priority_policy:
+            raise SystemExit("resume priority policy mismatch")
         if (stored_config or {}).get("harvest_model") != experiment.HARVEST_MODEL:
             raise SystemExit(
                 "resume harvest model mismatch: expected linear_ramp_v1"
@@ -432,6 +444,11 @@ def main(argv: list[str] | None = None) -> int:
             experiment_name=experiment_name, deadline_mode=deadline_mode,
         )
     ]
+    if len(requests) != expected_request_count:
+        raise SystemExit(
+            "generated request count does not match v6 contract: "
+            f"expected {expected_request_count}, observed {len(requests)}"
+        )
     write_jsonl(root / "requests.jsonl", requests)
     request_build_seconds = time.perf_counter() - request_started
     raw_trace = tuple(experiment.construct_paired_harvest_trace(
@@ -684,7 +701,11 @@ def main(argv: list[str] | None = None) -> int:
             Fraction(row["energy"]["target_ue"])
             for row in results_by_id.values()
         ),
-        "experiment": experiment_name,
+        "experiment": experiment_name, "domain": experiment.V6_DOMAIN,
+        "priority_policy": priority_policy,
+        "deadline_modes": list(deadline_modes),
+        "expected_request_count": expected_request_count,
+        "expected_taskset_count": expected_taskset_count,
         "harvest_model": experiment.HARVEST_MODEL,
         "canonical_task_power": all(row.get("canonical_task_power") for row in rows),
         "scheduler_input_hashes_stable": all(len({row["taskset_hash"] for row in requests if row["taskset_id"] == taskset.taskset_id}) == 1 for taskset in tasksets),
