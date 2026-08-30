@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import asdict
+from datetime import datetime, timezone
 import json
 from fractions import Fraction
 import multiprocessing
@@ -46,6 +48,36 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+_RESUME_RUNTIME_CONFIG_KEYS = frozenset({
+    "execution", "keep_traces", "parse_concurrency", "run_identity",
+    "status", "telemetry", "workers",
+})
+
+
+def _resume_comparable_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return the scientific configuration used for a strict resume check."""
+    return {
+        key: value for key, value in config.items()
+        if key not in _RESUME_RUNTIME_CONFIG_KEYS
+    }
+
+
+def _resume_configs_match(
+    stored_config: dict[str, Any], requested_config: dict[str, Any],
+) -> bool:
+    """Compare every scientific field while allowing only runtime resources to vary."""
+    return _resume_comparable_config(stored_config) == _resume_comparable_config(
+        requested_config
+    )
+
+
+def effective_concurrent_parsers(workers: int, parse_concurrency: int) -> int:
+    """Return the maximum number of parsers that can actually run concurrently."""
+    if workers < 1 or parse_concurrency < 1:
+        raise ValueError("workers and parse_concurrency must be positive")
+    return min(workers, parse_concurrency)
 
 
 def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
@@ -150,22 +182,42 @@ def _assert_no_live_attempt_lock(request_root: Path) -> None:
             raise RuntimeError(f"request has an active execution lock: {lock_path} (pid={pid})")
 
 
-def _next_attempt_root(root: Path, request_id: str, attempts: list[dict[str, Any]]) -> tuple[int, Path]:
+def _index_attempt_history(attempts: list[dict[str, Any]]) -> dict[str, set[int]]:
+    """Validate attempts once and index used attempt numbers by request."""
+    indexed: dict[str, set[int]] = {}
+    for row in attempts:
+        if not isinstance(row, dict):
+            raise ValueError("attempt history contains an invalid row")
+        request_id = row.get("request_id")
+        attempt_index = row.get("attempt_index")
+        if not isinstance(request_id, str) or not request_id:
+            raise ValueError("attempt history contains an invalid request_id")
+        if (
+            isinstance(attempt_index, bool)
+            or not isinstance(attempt_index, int)
+            or attempt_index < 1
+        ):
+            raise ValueError(f"invalid attempt history for {request_id}")
+        used = indexed.setdefault(request_id, set())
+        if attempt_index in used:
+            raise ValueError(
+                f"duplicate attempt history for {request_id}: {attempt_index}"
+            )
+        used.add(attempt_index)
+    return indexed
+
+
+def _next_attempt_root(
+    root: Path, request_id: str, attempts_by_request: dict[str, set[int]],
+) -> tuple[int, Path]:
     request_root = root / "simulations" / request_id
     _assert_no_live_attempt_lock(request_root)
-    used: set[int] = set()
+    used = set(attempts_by_request.get(request_id, set()))
     if request_root.is_dir():
         for child in request_root.iterdir():
             match = _ATTEMPT_DIR_RE.match(child.name)
             if match and child.is_dir():
                 used.add(int(match.group(1)))
-    for row in attempts:
-        if str(row.get("request_id")) != request_id:
-            continue
-        try:
-            used.add(int(row["attempt_index"]))
-        except (KeyError, TypeError, ValueError) as exc:
-            raise RuntimeError(f"invalid attempt history for {request_id}") from exc
     attempt_index = 1
     while attempt_index in used:
         attempt_index += 1
@@ -176,6 +228,7 @@ def _next_attempt_root(root: Path, request_id: str, attempts: list[dict[str, Any
         # A concurrent invocation won the allocation race.  Do not overwrite
         # or reuse its directory; fail closed and let the caller retry.
         raise RuntimeError(f"attempt directory allocation raced: {attempt_root}")
+    attempts_by_request.setdefault(request_id, set()).add(attempt_index)
     return attempt_index, attempt_root
 
 
@@ -185,6 +238,91 @@ def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
         handle.write(json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n")
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def _append_resume_history(
+    run_config: Path, stored_config: dict[str, Any], *, workers: int,
+    prepare_workers: int, parse_concurrency: int, keep_traces: bool,
+    completed_result_count: int, remaining_request_count: int,
+) -> dict[str, Any]:
+    """Append runtime resume metadata without changing the original config."""
+    execution = stored_config.get("execution")
+    if not isinstance(execution, dict):
+        raise SystemExit("resume execution metadata is invalid")
+    history = execution.get("resume_history", [])
+    if not isinstance(history, list):
+        raise SystemExit("resume history is invalid")
+    record = {
+        "workers": workers,
+        "prepare_workers": prepare_workers,
+        "parse_concurrency": parse_concurrency,
+        "keep_traces": bool(keep_traces),
+        "completed_result_count_at_resume_start": completed_result_count,
+        "remaining_request_count_at_resume_start": remaining_request_count,
+        "stored_run_identity": stored_config.get("run_identity"),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat().replace(
+            "+00:00", "Z"
+        ),
+    }
+    updated = dict(stored_config)
+    updated_execution = dict(execution)
+    updated_execution["resume_history"] = [*history, record]
+    updated["execution"] = updated_execution
+    write_json(run_config, updated)
+    return updated
+
+
+_FAILURE_CLEANUP_TIMEOUT_SECONDS = 2.0
+
+
+def _abort_executor(executor: Any, futures: Any) -> None:
+    """Cancel work and perform bounded cleanup of this runner's executor only."""
+    for future in futures:
+        future.cancel()
+
+    # ProcessPoolExecutor.shutdown(wait=False) is the public first step.  Keep
+    # a snapshot because shutdown may clear the executor's private process map.
+    process_map = getattr(executor, "_processes", {}) or {}
+    processes = tuple(process_map.values())
+    shutdown = getattr(executor, "shutdown", None)
+    if shutdown is None:
+        # Compatibility with the existing inline test executor.  Production
+        # ProcessPoolExecutor always exposes shutdown and takes the bounded
+        # path below.
+        executor.__exit__(None, None, None)
+        return
+    try:
+        shutdown(wait=False, cancel_futures=True)
+    except TypeError:
+        # Compatibility with small test doubles and older Python runtimes.
+        shutdown(wait=False)
+
+    # If workers are still executing, terminate only processes owned by this
+    # executor.  This bounded fallback prevents interpreter shutdown from
+    # waiting indefinitely after a BrokenProcessPool.
+    deadline = time.monotonic() + _FAILURE_CLEANUP_TIMEOUT_SECONDS
+    for process in processes:
+        try:
+            if process.is_alive():
+                process.terminate()
+        except (AttributeError, OSError):
+            continue
+    for process in processes:
+        try:
+            remaining = max(0.0, deadline - time.monotonic())
+            process.join(remaining)
+        except (AttributeError, OSError):
+            continue
+
+
+def _close_executor_normally(executor: Any) -> None:
+    """Preserve the normal wait-for-all-workers executor behavior."""
+    shutdown = getattr(executor, "shutdown", None)
+    if shutdown is not None:
+        shutdown(wait=True)
+    else:
+        # Compatibility with the existing inline test executor.
+        executor.__exit__(None, None, None)
 
 
 def _persisted_metrics(metrics: dict[str, Any]) -> dict[str, Any]:
@@ -304,6 +442,12 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("simulation horizon and timeout must be positive")
     if args.parse_concurrency < 1:
         raise SystemExit("parse-concurrency must be positive")
+    try:
+        parser_limit = effective_concurrent_parsers(
+            args.workers, args.parse_concurrency
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     cells, figure_slices, scan_contract, _structured = _resolve_grid(args)
     schedulers = experiment.parse_schedulers(
         args.schedulers if args.schedulers is not None
@@ -379,28 +523,11 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit("resume experiment mismatch: v6 cannot resume non-v6 results")
         if (stored_config or {}).get("domain") != experiment.V6_DOMAIN:
             raise SystemExit("resume domain mismatch: v6 cannot resume another domain")
-        if (stored_config or {}).get("deadline_modes") != list(deadline_modes):
-            raise SystemExit("resume deadline modes mismatch")
-        if (stored_config or {}).get("priority_policy") != priority_policy:
-            raise SystemExit("resume priority policy mismatch")
-        if (stored_config or {}).get("harvest_model") != experiment.HARVEST_MODEL:
-            raise SystemExit(
-                "resume harvest model mismatch: expected linear_ramp_v1"
-            )
-        if (stored_config or {}).get("use_real_solar_data") is not False:
-            raise SystemExit(
-                "resume solar mode mismatch: scheduler LOAD-CROSS requires "
-                "use_real_solar_data=false"
-            )
-        runtime_keys = {"execution", "status", "telemetry"}
-        stored_comparable = {
-            key: value for key, value in (stored_config or {}).items()
-            if key not in runtime_keys
-        }
-        requested_comparable = {
-            key: value for key, value in config.items() if key not in runtime_keys
-        }
-        if stored_comparable != requested_comparable:
+        if not isinstance((stored_config or {}).get("run_identity"), str):
+            raise SystemExit("resume configuration mismatch")
+        if experiment.run_identity(stored_config) != stored_config["run_identity"]:
+            raise SystemExit("resume configuration mismatch")
+        if not _resume_configs_match(stored_config, config):
             raise SystemExit("resume configuration mismatch")
     elif run_config.exists() or (root / "results.jsonl").exists():
         raise SystemExit("output exists; use --resume or choose a new output")
@@ -481,9 +608,19 @@ def main(argv: list[str] | None = None) -> int:
             "active results contain a technical row; migration/recovery is required"
         )
     attempts = read_jsonl(attempts_path) if args.resume else []
-    for attempt in attempts:
-        if not attempt.get("request_id") or "attempt_index" not in attempt:
-            raise SystemExit("attempt history contains an invalid row")
+    try:
+        attempts_by_request = _index_attempt_history(attempts)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if args.resume:
+        stored_config = _append_resume_history(
+            run_config, stored_config, workers=args.workers,
+            prepare_workers=prepare_workers,
+            parse_concurrency=args.parse_concurrency,
+            keep_traces=args.keep_traces,
+            completed_result_count=len(existing),
+            remaining_request_count=len(expected_ids - set(existing_ids)),
+        )
     results_by_id = {str(row["request_id"]): row for row in existing}
     completed_ids = set(existing_ids)
     taskset_by_id = {taskset.taskset_id: taskset for taskset in tasksets}
@@ -495,7 +632,9 @@ def main(argv: list[str] | None = None) -> int:
             continue
         taskset = taskset_by_id[request["taskset_id"]]
         try:
-            attempt_index, attempt_root = _next_attempt_root(root, request_id, attempts)
+            attempt_index, attempt_root = _next_attempt_root(
+                root, request_id, attempts_by_request
+            )
         except RuntimeError as exc:
             print(f"scheduler-load-cross resume blocked: {exc}", file=sys.stderr)
             return 2
@@ -568,17 +707,23 @@ def main(argv: list[str] | None = None) -> int:
 
     execution_started = time.perf_counter()
     mp_context = multiprocessing.get_context("fork")
-    parse_semaphore = mp_context.Semaphore(args.parse_concurrency)
-    with ProcessPoolExecutor(
+    parse_semaphore = mp_context.Semaphore(parser_limit)
+    executor = ProcessPoolExecutor(
         max_workers=args.workers,
         mp_context=mp_context,
         initializer=_initialize_simulation_worker,
         initargs=(parse_semaphore,),
-    ) as executor:
-        future_to_job = {
-            executor.submit(_run_simulation_job, job): job
-            for job in pending_jobs
-        }
+    )
+    future_to_job: dict[Any, dict[str, Any]] = {}
+    recorded_attempt_ids: set[str] = set()
+    current_submitting_job: dict[str, Any] | None = None
+    executor_failed = False
+    try:
+        for job in pending_jobs:
+            current_submitting_job = job
+            future = executor.submit(_run_simulation_job, job)
+            future_to_job[future] = job
+            current_submitting_job = None
         progress_started = time.perf_counter()
         completed_at_start = len(existing)
         completed_count = completed_at_start
@@ -590,6 +735,9 @@ def main(argv: list[str] | None = None) -> int:
             task_payload = job["task_payload"]
             try:
                 execution, technical = future.result()
+            except BrokenProcessPool as exc:
+                execution = None
+                technical = f"worker failure: BrokenProcessPool: {exc}"
             except Exception as exc:
                 execution = None
                 technical = f"worker failure: {type(exc).__name__}: {exc}"
@@ -602,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 status = "TECHNICAL_FAILURE"
                 reason = technical
+                technical_error = technical
                 runtime_seconds = 0.0
                 metrics: dict[str, Any] = {}
                 stdout_tail = ""
@@ -650,7 +799,7 @@ def main(argv: list[str] | None = None) -> int:
                 "target_ue": request["target_ue"],
                 "eta": request["eta"],
                 "simulation_status": status,
-                "technical_error": technical if execution is None else technical_error,
+                "technical_error": technical_error,
                 "runtime_seconds": runtime_seconds,
                 "stdout_tail": stdout_tail,
                 "stderr_tail": stderr_tail,
@@ -659,6 +808,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             _append_jsonl(attempts_path, attempt_row)
             attempts.append(attempt_row)
+            recorded_attempt_ids.add(request_id)
             completed_count += 1
             if _progress_due(
                 completed=completed_count,
@@ -679,10 +829,56 @@ def main(argv: list[str] | None = None) -> int:
                     f"{request_id}: {status}: {reason}",
                     file=sys.stderr,
                 )
-                return 2
+                executor_failed = True
+                break
             _append_jsonl(results_path, row)
             results_by_id[request_id] = row
             completed_ids.add(request_id)
+    except Exception as exc:
+        executor_failed = True
+        technical = f"worker failure: {type(exc).__name__}: {exc}"
+        if isinstance(exc, BrokenProcessPool):
+            technical = f"worker failure: BrokenProcessPool: {exc}"
+        if current_submitting_job is None:
+            print(
+                f"scheduler-load-cross runner-level technical failure: {technical}",
+                file=sys.stderr,
+            )
+            jobs_with_attributable_failure: tuple[dict[str, Any], ...] = ()
+        else:
+            jobs_with_attributable_failure = (current_submitting_job,)
+        for job in jobs_with_attributable_failure:
+            request_id = str(job["request_id"])
+            if request_id in recorded_attempt_ids:
+                continue
+            request = job["request"]
+            attempt_row = {
+                **request,
+                "request_id": request_id,
+                "attempt_index": job["attempt_index"],
+                "attempt_root": str(Path(job["attempt_root"]).relative_to(root)),
+                "taskset_id": job["taskset_id"],
+                "taskset_hash": job["taskset_hash"],
+                "target_uc": request["target_uc"],
+                "actual_uc": request["actual_uc"],
+                "target_ue": request["target_ue"],
+                "eta": request["eta"],
+                "simulation_status": "TECHNICAL_FAILURE",
+                "technical_error": technical,
+                "runtime_seconds": 0.0,
+                "stdout_tail": "",
+                "stderr_tail": "",
+                "retained_trace_path": None,
+                "simulation_reason": technical,
+            }
+            _append_jsonl(attempts_path, attempt_row)
+    finally:
+        if executor_failed:
+            _abort_executor(executor, future_to_job)
+        else:
+            _close_executor_normally(executor)
+    if executor_failed:
+        return 2
     observed_ids = list(results_by_id)
     if len(results_by_id) == len(requests) and set(results_by_id) == expected_ids:
         canonical_results = [results_by_id[str(request["request_id"])] for request in requests]

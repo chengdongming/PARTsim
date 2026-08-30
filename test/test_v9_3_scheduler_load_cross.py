@@ -1,4 +1,5 @@
 import csv
+from concurrent.futures.process import BrokenProcessPool
 import json
 from concurrent.futures import Future
 from fractions import Fraction
@@ -1560,6 +1561,9 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
         def __exit__(self, *args):
             return False
 
+        def shutdown(self, **kwargs):
+            pass
+
         def submit(self, function, job):
             future = Future()
             try:
@@ -1574,10 +1578,10 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
 def _scheduler_runner_args(
     output, resume=False, keep_traces=False, parse_concurrency=1,
     cells=None, fixed_ue=None, fixed_uc=None, priority_policy="DM",
-    samples_per_cell=1,
+    samples_per_cell=1, workers=1, prepare_workers=None,
 ):
     args = [
-        "--output", str(output), "--seed", "710213", "--workers", "1",
+        "--output", str(output), "--seed", "710213", "--workers", str(workers),
         "--samples-per-cell", str(samples_per_cell),
         "--schedulers", "ASAP-BLOCK", "--simulation-horizon", "20",
         "--priority-policy", priority_policy,
@@ -1586,6 +1590,8 @@ def _scheduler_runner_args(
         *( ["--keep-traces"] if keep_traces else [] ),
         *( ["--resume"] if resume else [] ),
     ]
+    if prepare_workers is not None:
+        args.extend(["--prepare-workers", str(prepare_workers)])
     if cells is None:
         uc_scan_values = ("1/10",)
         ue_scan_values = ("1/5",)
@@ -1696,18 +1702,346 @@ def test_runner_uses_v6_runtime_ue_report_name(tmp_path, monkeypatch):
     assert "actual_" + "ue_exact" not in report
 
 
-def test_parse_concurrency_is_configured_and_resume_bound(tmp_path, monkeypatch):
-    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
-    output = tmp_path / "parse-concurrency"
-    assert scheduler_runner.main(
-        _scheduler_runner_args(output, parse_concurrency=2)
-    ) == 2
-    config = json.loads((output / "run_config.json").read_text())
-    assert config["parse_concurrency"] == 2
-    with pytest.raises(SystemExit, match="resume configuration mismatch"):
-        scheduler_runner.main(
-            _scheduler_runner_args(output, resume=True, parse_concurrency=4)
+def test_effective_parser_concurrency_keeps_worker_pool_independent():
+    assert scheduler_runner.effective_concurrent_parsers(30, 8) == 8
+    assert scheduler_runner.effective_concurrent_parsers(8, 30) == 8
+
+
+def test_parse_concurrency_can_change_on_v6_resume_and_history_is_append_only(
+    tmp_path, monkeypatch,
+):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
         )
+
+    output = tmp_path / "parse-concurrency"
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, workers=30, prepare_workers=30, parse_concurrency=30,
+    )) == 0
+    original = json.loads((output / "run_config.json").read_text())
+    original_identity = original["run_identity"]
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, resume=True, workers=30, prepare_workers=30, parse_concurrency=8,
+    )) == 0
+    config = json.loads((output / "run_config.json").read_text())
+    assert config["workers"] == 30
+    assert config["parse_concurrency"] == 30
+    assert config["execution"]["workers"] == 30
+    assert config["execution"]["parse_concurrency"] == 30
+    assert config["run_identity"] == original_identity
+    assert len(config["execution"]["resume_history"]) == 1
+    first_resume = config["execution"]["resume_history"][0]
+    assert first_resume["workers"] == 30
+    assert first_resume["prepare_workers"] == 30
+    assert first_resume["parse_concurrency"] == 8
+    assert first_resume["completed_result_count_at_resume_start"] == 1
+    assert first_resume["remaining_request_count_at_resume_start"] == 0
+    assert first_resume["stored_run_identity"] == original_identity
+    assert first_resume["timestamp_utc"].endswith("Z")
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, resume=True, workers=30, prepare_workers=30, parse_concurrency=6,
+    )) == 0
+    history = json.loads((output / "run_config.json").read_text())[
+        "execution"]["resume_history"]
+    assert [row["parse_concurrency"] for row in history] == [8, 6]
+    assert all(row["stored_run_identity"] == original_identity for row in history)
+
+
+def test_resume_comparison_allows_only_explicit_runtime_fields():
+    stored = _v6_fixture_config("RM")
+    requested = json.loads(json.dumps(stored))
+    requested["workers"] = 30
+    requested["keep_traces"] = True
+    requested["parse_concurrency"] = 8
+    requested["execution"] = {
+        "workers": 30, "prepare_workers": 30, "parse_concurrency": 8,
+        "keep_traces": True,
+    }
+    assert scheduler_runner._resume_configs_match(stored, requested)
+    for field in ("experiment", "domain", "seed", "cells", "priority_policy", "simulation_horizon_ms"):
+        changed = json.loads(json.dumps(requested))
+        changed[field] = "changed"
+        assert not scheduler_runner._resume_configs_match(stored, changed)
+
+
+def test_resume_configuration_failure_does_not_append_history(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    output = tmp_path / "invalid-resume-history"
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
+    before = json.loads((output / "run_config.json").read_text())
+    with pytest.raises(SystemExit, match="resume configuration mismatch"):
+        scheduler_runner.main(_scheduler_runner_args(
+            output, resume=True, priority_policy="RM",
+        ))
+    after = json.loads((output / "run_config.json").read_text())
+    assert "resume_history" not in before["execution"]
+    assert "resume_history" not in after["execution"]
+
+
+def test_attempt_history_is_indexed_once_and_allocation_uses_directory_state(tmp_path, monkeypatch):
+    history = [
+        {"request_id": "request-a", "attempt_index": 1},
+        {"request_id": "request-a", "attempt_index": 2},
+        {"request_id": "request-b", "attempt_index": 4},
+    ]
+    indexed = scheduler_runner._index_attempt_history(history)
+    assert indexed == {"request-a": {1, 2}, "request-b": {4}}
+
+    request_root = tmp_path / "simulations" / "request-a"
+    (request_root / "attempt_0001").mkdir(parents=True)
+    (request_root / "attempt_0002").mkdir()
+    attempt_index, attempt_root = scheduler_runner._next_attempt_root(
+        tmp_path, "request-a", indexed,
+    )
+    assert attempt_index == 3
+    assert attempt_root.name == "attempt_0003"
+    assert (request_root / "attempt_0001").is_dir()
+    assert (request_root / "attempt_0002").is_dir()
+
+    with pytest.raises(ValueError):
+        scheduler_runner._index_attempt_history([{"request_id": "request-a"}])
+    with pytest.raises(ValueError):
+        scheduler_runner._index_attempt_history([
+            {"request_id": "request-a", "attempt_index": "1"},
+        ])
+
+
+def test_attempt_history_preindex_is_not_rebuilt_for_each_pending_request(
+    tmp_path, monkeypatch,
+):
+    calls = []
+    original = scheduler_runner._index_attempt_history
+
+    def counting_index(rows):
+        calls.append(rows)
+        return original(rows)
+
+    monkeypatch.setattr(scheduler_runner, "_index_attempt_history", counting_index)
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    assert scheduler_runner.main(
+        _scheduler_runner_args(tmp_path / "indexed-attempts")
+    ) == 2
+    assert len(calls) == 1
+
+
+def test_broken_process_pool_is_persisted_as_technical_attempt_and_shutdown_is_bounded(
+    tmp_path, monkeypatch,
+):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    shutdown_calls = []
+
+    class _BrokenExecutor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def submit(self, function, job):
+            future = Future()
+            future.set_exception(BrokenProcessPool("worker exited"))
+            return future
+
+        def shutdown(self, **kwargs):
+            shutdown_calls.append(kwargs)
+
+    monkeypatch.setattr(scheduler_runner, "ProcessPoolExecutor", _BrokenExecutor)
+    output = tmp_path / "broken-pool"
+    assert scheduler_runner.main(_scheduler_runner_args(output)) == 2
+    attempts = [
+        json.loads(line) for line in (output / "attempts.jsonl").read_text().splitlines()
+    ]
+    assert len(attempts) == 1
+    assert attempts[0]["simulation_status"] == "TECHNICAL_FAILURE"
+    assert "BrokenProcessPool" in attempts[0]["technical_error"]
+    assert not (output / "results.jsonl").exists()
+    assert shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+def test_submit_broken_process_pool_records_only_current_job(tmp_path, monkeypatch):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    base_request_rows = scheduler_runner.experiment.request_rows
+
+    def three_request_rows(*args, **kwargs):
+        row = base_request_rows(*args, **kwargs)[0]
+        return [dict(row, request_id=f"submit-request-{index}", generation_index=index)
+                for index in range(3)]
+
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows", three_request_rows,
+    )
+    submitted_futures = []
+    shutdown_calls = []
+
+    class _TrackedFuture(Future):
+        def __init__(self):
+            super().__init__()
+            self.cancel_calls = 0
+
+        def cancel(self):
+            self.cancel_calls += 1
+            return super().cancel()
+
+    class _SubmitBrokenExecutor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def submit(self, function, job):
+            if len(submitted_futures) == 1:
+                raise BrokenProcessPool("executor broke while submitting")
+            future = _TrackedFuture()
+            submitted_futures.append((job, future))
+            return future
+
+        def shutdown(self, **kwargs):
+            shutdown_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        scheduler_runner, "ProcessPoolExecutor", _SubmitBrokenExecutor,
+    )
+    output = tmp_path / "submit-broken"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, samples_per_cell=3,
+    )) == 2
+    attempts = [
+        json.loads(line) for line in (output / "attempts.jsonl").read_text().splitlines()
+    ]
+    assert [row["request_id"] for row in attempts] == ["submit-request-1"]
+    assert not (output / "results.jsonl").exists()
+    assert submitted_futures[0][1].cancel_calls == 1
+    assert shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+def test_unattributed_executor_exception_does_not_batch_mark_pending_jobs(
+    tmp_path, monkeypatch, capsys,
+):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    base_request_rows = scheduler_runner.experiment.request_rows
+
+    def three_request_rows(*args, **kwargs):
+        row = base_request_rows(*args, **kwargs)[0]
+        return [dict(row, request_id=f"unattributed-request-{index}", generation_index=index)
+                for index in range(3)]
+
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows", three_request_rows,
+    )
+
+    def fail_as_completed(_future_to_job):
+        raise RuntimeError("executor infrastructure failed")
+
+    monkeypatch.setattr(scheduler_runner, "as_completed", fail_as_completed)
+    output = tmp_path / "unattributed-exception"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, samples_per_cell=3,
+    )) == 2
+    assert not (output / "attempts.jsonl").exists()
+    assert not (output / "results.jsonl").exists()
+    assert "runner-level technical failure" in capsys.readouterr().err
+
+
+def test_future_broken_process_pool_only_records_its_request_among_three_pending(
+    tmp_path, monkeypatch,
+):
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: None)
+    base_request_rows = scheduler_runner.experiment.request_rows
+
+    def three_request_rows(*args, **kwargs):
+        row = base_request_rows(*args, **kwargs)[0]
+        return [dict(row, request_id=f"future-request-{index}", generation_index=index)
+                for index in range(3)]
+
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows", three_request_rows,
+    )
+    futures_by_request = {}
+    shutdown_calls = []
+
+    class _FutureBrokenExecutor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def submit(self, function, job):
+            future = Future()
+            request_id = job["request_id"]
+            if request_id == "future-request-1":
+                future.set_exception(BrokenProcessPool("worker exited"))
+            else:
+                future.set_result(function(job))
+            futures_by_request[request_id] = future
+            return future
+
+        def shutdown(self, **kwargs):
+            shutdown_calls.append(kwargs)
+
+    def broken_first(future_to_job):
+        return sorted(
+            future_to_job,
+            key=lambda future: future_to_job[future]["request_id"] != "future-request-1",
+        )
+
+    monkeypatch.setattr(
+        scheduler_runner, "ProcessPoolExecutor", _FutureBrokenExecutor,
+    )
+    monkeypatch.setattr(scheduler_runner, "as_completed", broken_first)
+    output = tmp_path / "future-broken"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, samples_per_cell=3,
+    )) == 2
+    attempts = [
+        json.loads(line) for line in (output / "attempts.jsonl").read_text().splitlines()
+    ]
+    assert len(attempts) == 1
+    assert attempts[0]["request_id"] == "future-request-1"
+    assert not (output / "results.jsonl").exists()
+    assert shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+def test_normal_completion_waits_for_all_futures(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    shutdown_calls = []
+
+    class _WaitingExecutor:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def submit(self, function, job):
+            future = Future()
+            future.set_result(function(job))
+            return future
+
+        def shutdown(self, **kwargs):
+            shutdown_calls.append(kwargs)
+
+    monkeypatch.setattr(scheduler_runner, "ProcessPoolExecutor", _WaitingExecutor)
+    output = tmp_path / "normal-wait"
+    assert scheduler_runner.main(_scheduler_runner_args(output)) == 0
+    assert shutdown_calls == [{"wait": True}]
 
 
 def test_runner_persists_explicit_figure_slices_and_infers_unique_defaults(tmp_path, monkeypatch):
