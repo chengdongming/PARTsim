@@ -14,6 +14,7 @@ import multiprocessing
 from pathlib import Path
 import os
 import re
+import signal
 import shutil
 import sys
 import time
@@ -102,6 +103,9 @@ def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
 
 
 def _initialize_simulation_worker(parse_semaphore: Any) -> None:
+    if os.name != "posix":
+        raise RuntimeError("worker process-group isolation requires POSIX")
+    os.setsid()
     simulation_engine._set_trace_parse_semaphore(parse_semaphore)
 
 
@@ -273,46 +277,202 @@ def _append_resume_history(
 
 
 _FAILURE_CLEANUP_TIMEOUT_SECONDS = 2.0
+_FAILURE_TERMINATION_GRACE_SECONDS = 0.5
+_WORKER_GROUP_CAPTURE_TIMEOUT_SECONDS = 1.0
 
 
-def _abort_executor(executor: Any, futures: Any) -> None:
-    """Cancel work and perform bounded cleanup of this runner's executor only."""
+def _capture_worker_process_groups(executor: Any) -> set[int]:
+    """Capture and validate the independent process groups owned by executor."""
+    if os.name != "posix":
+        raise RuntimeError("worker process-group cleanup requires POSIX")
+    own_pid = os.getpid()
+    own_group = os.getpgrp()
+    deadline = time.monotonic() + _WORKER_GROUP_CAPTURE_TIMEOUT_SECONDS
+    while True:
+        process_map = getattr(executor, "_processes", None)
+        if process_map is None:
+            raise RuntimeError("cannot determine executor worker processes")
+        groups: set[int] = set()
+        initializing = False
+        for process in process_map.values():
+            pid = getattr(process, "pid", None)
+            if not isinstance(pid, int) or pid <= 1:
+                raise RuntimeError("cannot determine executor worker PID")
+            try:
+                group_id = os.getpgid(pid)
+            except ProcessLookupError as exc:
+                raise RuntimeError(
+                    f"executor worker {pid} exited before process-group verification"
+                ) from exc
+            if group_id != pid:
+                initializing = True
+                continue
+            if group_id in {own_pid, own_group} or group_id <= 1:
+                raise RuntimeError(f"refusing unsafe worker process group {group_id}")
+            groups.add(group_id)
+        if not initializing:
+            return groups
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                "executor worker did not establish an independent process group"
+            )
+        time.sleep(0.01)
+
+
+def _validate_worker_process_groups(worker_process_groups: set[int]) -> bool:
+    """Return whether all target groups are safe to signal from this runner."""
+    if os.name != "posix":
+        return False
+    own_pid = os.getpid()
+    own_group = os.getpgrp()
+    return bool(worker_process_groups) and all(
+        isinstance(group_id, int)
+        and group_id > 1
+        and group_id not in {own_pid, own_group}
+        for group_id in worker_process_groups
+    )
+
+
+def _process_group_state(group_id: int) -> bool | None:
+    """Return alive/dead, or None when liveness cannot be verified safely."""
+    try:
+        os.killpg(group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return None
+    proc_root = Path("/proc")
+    if proc_root.is_dir():
+        try:
+            entries = tuple(proc_root.iterdir())
+        except OSError:
+            return None
+        live_member = False
+        for entry in entries:
+            if not entry.name.isdigit():
+                continue
+            try:
+                stat = (entry / "stat").read_text(
+                    encoding="ascii", errors="replace",
+                )
+                suffix = stat.rsplit(")", 1)[1].split()
+                member_group = int(suffix[2])
+            except (OSError, IndexError, ValueError):
+                continue
+            if member_group == group_id and suffix[0] != "Z":
+                live_member = True
+                break
+        return live_member
+    return True
+
+
+def _wait_for_worker_process_groups(
+    worker_process_groups: set[int], deadline: float,
+) -> bool:
+    while True:
+        states = [_process_group_state(group_id) for group_id in worker_process_groups]
+        if any(state is None for state in states):
+            return False
+        if not any(states):
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(0.01, remaining))
+
+
+def _abort_executor(
+    executor: Any, futures: Any,
+    worker_process_groups: set[int] | None = None,
+) -> bool:
+    """Cancel work and boundedly clean only this executor's worker groups."""
     for future in futures:
         future.cancel()
+
+    cleanup_started = time.monotonic()
+    deadline = cleanup_started + _FAILURE_CLEANUP_TIMEOUT_SECONDS
 
     # ProcessPoolExecutor.shutdown(wait=False) is the public first step.  Keep
     # a snapshot because shutdown may clear the executor's private process map.
     process_map = getattr(executor, "_processes", {}) or {}
     processes = tuple(process_map.values())
+    cleanup_complete = True
+    if worker_process_groups is None:
+        try:
+            worker_process_groups = _capture_worker_process_groups(executor)
+        except RuntimeError:
+            worker_process_groups = set()
+            cleanup_complete = False
+    if not _validate_worker_process_groups(worker_process_groups):
+        cleanup_complete = False
     shutdown = getattr(executor, "shutdown", None)
     if shutdown is None:
         # Compatibility with the existing inline test executor.  Production
         # ProcessPoolExecutor always exposes shutdown and takes the bounded
         # path below.
         executor.__exit__(None, None, None)
-        return
+        return cleanup_complete
     try:
         shutdown(wait=False, cancel_futures=True)
     except TypeError:
         # Compatibility with small test doubles and older Python runtimes.
         shutdown(wait=False)
 
-    # If workers are still executing, terminate only processes owned by this
-    # executor.  This bounded fallback prevents interpreter shutdown from
-    # waiting indefinitely after a BrokenProcessPool.
-    deadline = time.monotonic() + _FAILURE_CLEANUP_TIMEOUT_SECONDS
-    for process in processes:
-        try:
-            if process.is_alive():
-                process.terminate()
-        except (AttributeError, OSError):
-            continue
+    if cleanup_complete:
+        # The group IDs were verified before signaling.  A missing group means
+        # its worker and all descendants have already exited.
+        for group_id in worker_process_groups:
+            state = _process_group_state(group_id)
+            if state is None:
+                cleanup_complete = False
+                continue
+            if state:
+                try:
+                    os.killpg(group_id, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    cleanup_complete = False
+
+    # TERM gets a short grace period; the shared deadline bounds all waits.
+    term_deadline = min(
+        deadline, cleanup_started + _FAILURE_TERMINATION_GRACE_SECONDS,
+    )
+    if cleanup_complete and not _wait_for_worker_process_groups(
+        worker_process_groups, term_deadline,
+    ):
+        for group_id in worker_process_groups:
+            state = _process_group_state(group_id)
+            if state is None:
+                cleanup_complete = False
+                continue
+            if state:
+                try:
+                    os.killpg(group_id, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    cleanup_complete = False
+        if cleanup_complete:
+            cleanup_complete = _wait_for_worker_process_groups(
+                worker_process_groups, deadline,
+            )
+
+    # Reap only the process objects belonging to this executor, without ever
+    # waiting beyond the same cleanup deadline.
     for process in processes:
         try:
             remaining = max(0.0, deadline - time.monotonic())
             process.join(remaining)
         except (AttributeError, OSError):
-            continue
+            cleanup_complete = False
+    for process in processes:
+        try:
+            if process.is_alive():
+                cleanup_complete = False
+        except (AttributeError, OSError):
+            cleanup_complete = False
+    return cleanup_complete
 
 
 def _close_executor_normally(executor: Any) -> None:
@@ -715,6 +875,7 @@ def main(argv: list[str] | None = None) -> int:
         initargs=(parse_semaphore,),
     )
     future_to_job: dict[Any, dict[str, Any]] = {}
+    worker_process_groups: set[int] = set()
     recorded_attempt_ids: set[str] = set()
     current_submitting_job: dict[str, Any] | None = None
     executor_failed = False
@@ -724,6 +885,7 @@ def main(argv: list[str] | None = None) -> int:
             future = executor.submit(_run_simulation_job, job)
             future_to_job[future] = job
             current_submitting_job = None
+            worker_process_groups.update(_capture_worker_process_groups(executor))
         progress_started = time.perf_counter()
         completed_at_start = len(existing)
         completed_count = completed_at_start
@@ -874,7 +1036,14 @@ def main(argv: list[str] | None = None) -> int:
             _append_jsonl(attempts_path, attempt_row)
     finally:
         if executor_failed:
-            _abort_executor(executor, future_to_job)
+            cleanup_complete = _abort_executor(
+                executor, future_to_job, worker_process_groups,
+            )
+            if not cleanup_complete:
+                print(
+                    "scheduler-load-cross executor cleanup incomplete",
+                    file=sys.stderr,
+                )
         else:
             _close_executor_normally(executor)
     if executor_failed:

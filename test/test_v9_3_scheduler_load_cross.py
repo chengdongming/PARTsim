@@ -3,8 +3,13 @@ from concurrent.futures.process import BrokenProcessPool
 import json
 from concurrent.futures import Future
 from fractions import Fraction
+import multiprocessing
 import os
 from pathlib import Path
+import signal
+import subprocess
+import sys
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +42,58 @@ def _available_outcome(adjudicable_jobs=1, deadline_miss_jobs=0, wholepass=True)
         "wholepass": wholepass,
         "taskset_pass": wholepass,
     }
+
+
+def _real_process_group_worker(
+    child_pid_path, ignore_sigterm=False, exit_leader=False, leader_release_path=None,
+):
+    child_code = "import time\n"
+    if ignore_sigterm:
+        child_code += "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    child_code += "time.sleep(300)\n"
+    child = subprocess.Popen([sys.executable, "-c", child_code])
+    Path(child_pid_path).write_text(str(child.pid), encoding="utf-8")
+    if exit_leader:
+        while not Path(leader_release_path).exists():
+            time.sleep(0.01)
+        os._exit(17)
+    time.sleep(300)
+
+
+def _wait_for_test_pid(path, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.is_file():
+            try:
+                return int(path.read_text(encoding="utf-8"))
+            except ValueError:
+                pass
+        time.sleep(0.01)
+    raise AssertionError(f"child PID was not published: {path}")
+
+
+def _test_pid_is_alive(pid):
+    proc_stat = Path(f"/proc/{pid}/stat")
+    if proc_stat.is_file():
+        fields = proc_stat.read_text(encoding="utf-8").split()
+        if len(fields) > 2 and fields[2] == "Z":
+            return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _wait_for_test_pid_exit(pid, timeout):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _test_pid_is_alive(pid):
+            return True
+        time.sleep(0.01)
+    return not _test_pid_is_alive(pid)
 
 
 def _harvest_model_fields():
@@ -1553,7 +1610,7 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
 
     class _InlineExecutor:
         def __init__(self, *args, initializer=None, initargs=(), **kwargs):
-            pass
+            self._processes = {}
 
         def __enter__(self):
             return self
@@ -1843,6 +1900,104 @@ def test_attempt_history_preindex_is_not_rebuilt_for_each_pending_request(
     assert len(calls) == 1
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def _run_real_process_group_abort_case(tmp_path, *, exit_leader, ignore_sigterm):
+    executor = None
+    worker_processes = ()
+    worker_process_groups = set()
+    child_pid = None
+    try:
+        context = multiprocessing.get_context("fork")
+        parse_semaphore = context.Semaphore(1)
+        executor = scheduler_runner.ProcessPoolExecutor(
+            max_workers=1,
+            mp_context=context,
+            initializer=scheduler_runner._initialize_simulation_worker,
+            initargs=(parse_semaphore,),
+        )
+        child_pid_path = tmp_path / "child.pid"
+        leader_release_path = tmp_path / "release-leader"
+        future = executor.submit(
+            _real_process_group_worker,
+            str(child_pid_path), ignore_sigterm, exit_leader,
+            str(leader_release_path),
+        )
+        worker_processes = tuple(executor._processes.values())
+        worker_process_groups = scheduler_runner._capture_worker_process_groups(
+            executor
+        )
+        child_pid = _wait_for_test_pid(child_pid_path)
+        if exit_leader:
+            leader_release_path.write_text("release", encoding="utf-8")
+        started = time.monotonic()
+        assert scheduler_runner._abort_executor(
+            executor, {future}, worker_process_groups,
+        )
+        assert time.monotonic() - started <= (
+            scheduler_runner._FAILURE_CLEANUP_TIMEOUT_SECONDS + 0.5
+        )
+        assert all(not process.is_alive() for process in worker_processes)
+        assert _wait_for_test_pid_exit(
+            child_pid, scheduler_runner._FAILURE_CLEANUP_TIMEOUT_SECONDS,
+        )
+    finally:
+        if executor is not None:
+            if exit_leader:
+                leader_release_path.write_text("release", encoding="utf-8")
+            if not worker_process_groups and child_pid is not None:
+                try:
+                    child_group = os.getpgid(child_pid)
+                    if scheduler_runner._validate_worker_process_groups({child_group}):
+                        worker_process_groups = {child_group}
+                except ProcessLookupError:
+                    pass
+            if worker_process_groups:
+                scheduler_runner._abort_executor(
+                    executor, (), worker_process_groups,
+                )
+            else:
+                try:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                except TypeError:
+                    executor.shutdown(wait=False)
+                for process in worker_processes:
+                    if process.is_alive():
+                        process.terminate()
+                        process.join(1.0)
+        if child_pid is not None and _test_pid_is_alive(child_pid):
+            try:
+                os.kill(child_pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            _wait_for_test_pid_exit(child_pid, 1.0)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_real_worker_and_simulator_child_are_cleaned_on_abort(tmp_path):
+    _run_real_process_group_abort_case(
+        tmp_path, exit_leader=False, ignore_sigterm=False,
+    )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_orphaned_simulator_child_is_cleaned_after_worker_leader_exits(tmp_path):
+    _run_real_process_group_abort_case(
+        tmp_path, exit_leader=True, ignore_sigterm=False,
+    )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_sigterm_ignoring_simulator_child_is_escalated_to_sigkill(tmp_path):
+    _run_real_process_group_abort_case(
+        tmp_path, exit_leader=False, ignore_sigterm=True,
+    )
+
+
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_process_group_cleanup_rejects_runner_process_group():
+    assert not scheduler_runner._validate_worker_process_groups({os.getpgrp()})
+
+
 def test_broken_process_pool_is_persisted_as_technical_attempt_and_shutdown_is_bounded(
     tmp_path, monkeypatch,
 ):
@@ -1851,7 +2006,7 @@ def test_broken_process_pool_is_persisted_as_technical_attempt_and_shutdown_is_b
 
     class _BrokenExecutor:
         def __init__(self, *args, **kwargs):
-            pass
+            self._processes = {}
 
         def submit(self, function, job):
             future = Future()
@@ -1900,7 +2055,7 @@ def test_submit_broken_process_pool_records_only_current_job(tmp_path, monkeypat
 
     class _SubmitBrokenExecutor:
         def __init__(self, *args, **kwargs):
-            pass
+            self._processes = {}
 
         def submit(self, function, job):
             if len(submitted_futures) == 1:
@@ -1975,7 +2130,7 @@ def test_future_broken_process_pool_only_records_its_request_among_three_pending
 
     class _FutureBrokenExecutor:
         def __init__(self, *args, **kwargs):
-            pass
+            self._processes = {}
 
         def submit(self, function, job):
             future = Future()
@@ -2028,7 +2183,7 @@ def test_normal_completion_waits_for_all_futures(tmp_path, monkeypatch):
 
     class _WaitingExecutor:
         def __init__(self, *args, **kwargs):
-            pass
+            self._processes = {}
 
         def submit(self, function, job):
             future = Future()
