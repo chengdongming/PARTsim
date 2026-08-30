@@ -45,11 +45,16 @@ def _available_outcome(adjudicable_jobs=1, deadline_miss_jobs=0, wholepass=True)
 
 
 def _real_process_group_worker(
-    child_pid_path, ignore_sigterm=False, exit_leader=False, leader_release_path=None,
+    child_pid_path, child_ready_path, ignore_sigterm=False, exit_leader=False,
+    leader_release_path=None,
 ):
     child_code = "import time\n"
     if ignore_sigterm:
         child_code += "import signal\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+    child_code += (
+        "from pathlib import Path\n"
+        f"Path({str(child_ready_path)!r}).write_text('ready')\n"
+    )
     child_code += "time.sleep(300)\n"
     child = subprocess.Popen([sys.executable, "-c", child_code])
     Path(child_pid_path).write_text(str(child.pid), encoding="utf-8")
@@ -70,6 +75,15 @@ def _wait_for_test_pid(path, timeout=2.0):
                 pass
         time.sleep(0.01)
     raise AssertionError(f"child PID was not published: {path}")
+
+
+def _wait_for_test_file(path, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if path.is_file():
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"readiness file was not published: {path}")
 
 
 def _test_pid_is_alive(pid):
@@ -94,6 +108,13 @@ def _wait_for_test_pid_exit(pid, timeout):
             return True
         time.sleep(0.01)
     return not _test_pid_is_alive(pid)
+
+
+def _wait_for_test_process_exit(process, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while process.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    return not process.is_alive()
 
 
 def _harvest_model_fields():
@@ -1916,10 +1937,11 @@ def _run_real_process_group_abort_case(tmp_path, *, exit_leader, ignore_sigterm)
             initargs=(parse_semaphore,),
         )
         child_pid_path = tmp_path / "child.pid"
+        child_ready_path = tmp_path / "child.ready"
         leader_release_path = tmp_path / "release-leader"
         future = executor.submit(
             _real_process_group_worker,
-            str(child_pid_path), ignore_sigterm, exit_leader,
+            str(child_pid_path), str(child_ready_path), ignore_sigterm, exit_leader,
             str(leader_release_path),
         )
         worker_processes = tuple(executor._processes.values())
@@ -1927,8 +1949,14 @@ def _run_real_process_group_abort_case(tmp_path, *, exit_leader, ignore_sigterm)
             executor
         )
         child_pid = _wait_for_test_pid(child_pid_path)
+        _wait_for_test_file(child_ready_path)
+        assert _test_pid_is_alive(child_pid)
         if exit_leader:
             leader_release_path.write_text("release", encoding="utf-8")
+            assert _wait_for_test_process_exit(worker_processes[0])
+            assert not worker_processes[0].is_alive()
+            assert _test_pid_is_alive(child_pid)
+            assert os.getpgid(child_pid) == next(iter(worker_process_groups))
         started = time.monotonic()
         assert scheduler_runner._abort_executor(
             executor, {future}, worker_process_groups,
