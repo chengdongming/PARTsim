@@ -9,6 +9,7 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import threading
 import time
 from types import SimpleNamespace
 
@@ -63,6 +64,130 @@ def _real_process_group_worker(
             time.sleep(0.01)
         os._exit(17)
     time.sleep(300)
+
+
+def _broken_pool_probe_blocking_worker(child_pid_path, ready_path):
+    child = subprocess.Popen([
+        sys.executable, "-c", "import time; time.sleep(300)",
+    ])
+    Path(child_pid_path).write_text(str(child.pid), encoding="utf-8")
+    Path(ready_path).write_text("ready", encoding="utf-8")
+    time.sleep(300)
+
+
+def _broken_pool_probe_crashing_worker(release_path):
+    while not Path(release_path).exists():
+        time.sleep(0.01)
+    os._exit(17)
+
+
+def _broken_pool_probe_hold_shutdown_lock(shutdown_lock, ready_path):
+    with shutdown_lock:
+        Path(ready_path).write_text("held", encoding="utf-8")
+        time.sleep(300)
+
+
+def _broken_pool_probe_queued_worker(payload):
+    time.sleep(30)
+    return len(payload)
+
+
+def _broken_pool_probe(state_path):
+    context = multiprocessing.get_context("fork")
+    parse_semaphore = context.Semaphore(1)
+    executor = scheduler_runner.ProcessPoolExecutor(
+        max_workers=2,
+        mp_context=context,
+        initializer=scheduler_runner._initialize_simulation_worker,
+        initargs=(parse_semaphore,),
+    )
+    child_pid_path = Path(state_path).with_name("probe-child.pid")
+    child_ready_path = Path(state_path).with_name("probe-child.ready")
+    release_path = Path(state_path).with_name("probe-release")
+    shutdown_lock_ready_path = Path(state_path).with_name("probe-shutdown-lock.ready")
+    futures = []
+    try:
+        futures.append(executor.submit(
+            _broken_pool_probe_blocking_worker,
+            str(child_pid_path), str(child_ready_path),
+        ))
+        crash_future = executor.submit(
+            _broken_pool_probe_crashing_worker, str(release_path),
+        )
+        worker_process_groups = scheduler_runner._capture_worker_process_groups(
+            executor
+        )
+        worker_processes = tuple(executor._processes.values())
+        Path(state_path).write_text(json.dumps({
+            "worker_pids": [process.pid for process in worker_processes],
+            "worker_process_groups": sorted(worker_process_groups),
+        }), encoding="utf-8")
+        deadline = time.monotonic() + 2.0
+        while not child_ready_path.is_file() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert child_ready_path.is_file()
+        child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        futures.extend(
+            executor.submit(_broken_pool_probe_queued_worker, b"x" * 1_000_000)
+            for _ in range(64)
+        )
+        lock_thread = threading.Thread(
+            target=_broken_pool_probe_hold_shutdown_lock,
+            args=(executor._shutdown_lock, str(shutdown_lock_ready_path)),
+            daemon=True,
+        )
+        lock_thread.start()
+        deadline = time.monotonic() + 2.0
+        while not shutdown_lock_ready_path.is_file() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert shutdown_lock_ready_path.is_file()
+        release_path.write_text("release", encoding="utf-8")
+        try:
+            crash_future.result(timeout=3.0)
+        except BrokenProcessPool:
+            pass
+        worker_diagnostics = scheduler_runner._worker_diagnostics(executor)
+        scheduler_runner._abort_executor(
+            executor, futures, worker_process_groups,
+        )
+        Path(state_path).write_text(json.dumps({
+            "child_pid": child_pid,
+            "worker_pids": [process.pid for process in worker_processes],
+            "worker_process_groups": sorted(worker_process_groups),
+            "worker_diagnostics": worker_diagnostics,
+        }), encoding="utf-8")
+        os._exit(2)
+    finally:
+        # The parent test process owns the hard timeout and performs final
+        # process-group cleanup if this probe is stuck in broken-pool teardown.
+        pass
+
+
+def _cleanup_broken_pool_probe(state_path):
+    if not state_path.is_file():
+        return
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    for group_id in state.get("worker_process_groups", []):
+        if scheduler_runner._validate_worker_process_groups({group_id}):
+            try:
+                os.killpg(group_id, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    child_pid = state.get("child_pid")
+    if not isinstance(child_pid, int):
+        child_pid_path = state_path.with_name("probe-child.pid")
+        try:
+            child_pid = int(child_pid_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            child_pid = None
+    if isinstance(child_pid, int) and _test_pid_is_alive(child_pid):
+        try:
+            os.kill(child_pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def _wait_for_test_pid(path, timeout=2.0):
@@ -2026,6 +2151,42 @@ def test_process_group_cleanup_rejects_runner_process_group():
     assert not scheduler_runner._validate_worker_process_groups({os.getpgrp()})
 
 
+@pytest.mark.skipif(os.name != "posix", reason="requires POSIX process groups")
+def test_real_broken_pool_with_queued_work_exits_within_hard_deadline(tmp_path):
+    state_path = tmp_path / "probe-state.json"
+    probe = multiprocessing.Process(target=_broken_pool_probe, args=(str(state_path),))
+    probe.start()
+    try:
+        probe.join(5.0)
+        if probe.is_alive():
+            _cleanup_broken_pool_probe(state_path)
+            probe.terminate()
+            probe.join(1.0)
+        assert not probe.is_alive(), "broken pool probe exceeded hard timeout"
+        assert probe.exitcode == 2
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert any(
+            diagnostic["exitcode"] == 17
+            for diagnostic in state["worker_diagnostics"]
+        )
+        for diagnostic in state["worker_diagnostics"]:
+            if isinstance(diagnostic["exitcode"], int) and diagnostic["exitcode"] < 0:
+                assert diagnostic["signal_name"] == signal.Signals(
+                    -diagnostic["exitcode"]
+                ).name
+        assert all(not _test_pid_is_alive(pid) for pid in state["worker_pids"])
+        assert not _test_pid_is_alive(state["child_pid"])
+        assert all(
+            scheduler_runner._process_group_state(group_id) is False
+            for group_id in state["worker_process_groups"]
+        )
+    finally:
+        _cleanup_broken_pool_probe(state_path)
+        if probe.is_alive():
+            probe.terminate()
+            probe.join(1.0)
+
+
 def test_broken_process_pool_is_persisted_as_technical_attempt_and_shutdown_is_bounded(
     tmp_path, monkeypatch,
 ):
@@ -2055,6 +2216,19 @@ def test_broken_process_pool_is_persisted_as_technical_attempt_and_shutdown_is_b
     assert "BrokenProcessPool" in attempts[0]["technical_error"]
     assert not (output / "results.jsonl").exists()
     assert shutdown_calls == [{"wait": False, "cancel_futures": True}]
+
+
+def test_worker_diagnostics_name_negative_exit_signals():
+    class _Process:
+        pid = 12345
+        exitcode = -signal.SIGKILL
+
+    class _Executor:
+        _processes = {12345: _Process()}
+
+    assert scheduler_runner._worker_diagnostics(_Executor()) == [{
+        "pid": 12345, "exitcode": -signal.SIGKILL, "signal_name": "SIGKILL",
+    }]
 
 
 def test_submit_broken_process_pool_records_only_current_job(tmp_path, monkeypatch):
