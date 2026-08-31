@@ -11,10 +11,19 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from fractions import Fraction
+from contextlib import contextmanager
+import errno
 import json
 import math
+import os
 from pathlib import Path
+import time
 from typing import Any, Dict, Mapping, Optional, Sequence, Tuple
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX import compatibility
+    fcntl = None
 
 from .rta4_core3_contracts_v6 import (
     RTA4Core3ContractV6Error,
@@ -33,6 +42,92 @@ class SimulationStatus(str, Enum):
 
 class SimulationTraceError(RuntimeError):
     """Raised when a simulator trace is not an admissible observation."""
+
+
+_TRACE_PARSE_CONCURRENCY_ENV = "PARTSIM_TRACE_PARSE_CONCURRENCY"
+_TRACE_PARSE_SLOT_DIR_ENV = "PARTSIM_TRACE_PARSE_SLOT_DIR"
+_DEFAULT_TRACE_PARSE_SLOT_DIR = Path("/tmp/partsim_trace_parse_slots")
+
+
+def _trace_parse_concurrency() -> Optional[int]:
+    raw = os.environ.get(_TRACE_PARSE_CONCURRENCY_ENV)
+    if raw is None:
+        return None
+    try:
+        value = int(raw, 10)
+    except (TypeError, ValueError) as exc:
+        raise SimulationTraceError(
+            f"invalid {_TRACE_PARSE_CONCURRENCY_ENV}: {raw!r}"
+        ) from exc
+    if value < 1:
+        raise SimulationTraceError(
+            f"invalid {_TRACE_PARSE_CONCURRENCY_ENV}: must be positive"
+        )
+    return value
+
+
+@contextmanager
+def _trace_parse_slot():
+    """Hold one shared POSIX slot for the complete JSON parse."""
+    concurrency = _trace_parse_concurrency()
+    if concurrency is None:
+        yield
+        return
+    if fcntl is None:
+        raise SimulationTraceError("trace parse slot gate requires POSIX flock")
+
+    slot_dir_raw = os.environ.get(
+        _TRACE_PARSE_SLOT_DIR_ENV, str(_DEFAULT_TRACE_PARSE_SLOT_DIR)
+    )
+    if not slot_dir_raw:
+        raise SimulationTraceError(
+            f"invalid {_TRACE_PARSE_SLOT_DIR_ENV}: must not be empty"
+        )
+    slot_dir = Path(slot_dir_raw)
+    try:
+        slot_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not slot_dir.is_dir():
+            raise OSError(f"not a directory: {slot_dir}")
+    except OSError as exc:
+        raise SimulationTraceError(
+            f"cannot create trace parse slot directory: {slot_dir}"
+        ) from exc
+
+    descriptor: Optional[int] = None
+    try:
+        while descriptor is None:
+            for index in range(concurrency):
+                slot_path = slot_dir / f"slot-{index}.lock"
+                try:
+                    candidate = os.open(
+                        slot_path,
+                        os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0),
+                        0o600,
+                    )
+                except OSError as exc:
+                    raise SimulationTraceError(
+                        f"cannot open trace parse slot: {slot_path}"
+                    ) from exc
+                try:
+                    fcntl.flock(candidate, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError as exc:
+                    os.close(candidate)
+                    if exc.errno in (errno.EACCES, errno.EAGAIN):
+                        continue
+                    raise SimulationTraceError(
+                        f"cannot lock trace parse slot: {slot_path}"
+                    ) from exc
+                descriptor = candidate
+                break
+            if descriptor is None:
+                time.sleep(0.01)
+        yield
+    finally:
+        if descriptor is not None:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                os.close(descriptor)
 
 
 CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6 = (
@@ -127,8 +222,9 @@ def _strict_json(path: Path) -> Mapping[str, Any]:
         return result
 
     try:
-        with path.open("r", encoding="utf-8") as handle:
-            value = json.load(handle, object_pairs_hook=no_duplicates)
+        with _trace_parse_slot():
+            with path.open("r", encoding="utf-8") as handle:
+                value = json.load(handle, object_pairs_hook=no_duplicates)
     except (OSError, json.JSONDecodeError) as exc:
         raise SimulationTraceError(f"cannot read simulation trace: {exc}") from exc
     if not isinstance(value, dict) or not isinstance(value.get("events"), list):

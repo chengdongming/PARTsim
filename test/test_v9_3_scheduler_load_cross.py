@@ -23,7 +23,9 @@ from experiments.v9_3.simulation_engine import (
     _render_taskset_yaml, derive_fixed_priority_ranks,
     normalize_scheduler_priority_policy, SimulationConfigurationError,
 )
-from experiments.v9_3.simulation_result import SimulationStatus
+from experiments.v9_3.simulation_result import (
+    SimulationStatus, SimulationTraceError, _strict_json, _trace_parse_slot,
+)
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
@@ -43,6 +45,28 @@ def _available_outcome(adjudicable_jobs=1, deadline_miss_jobs=0, wholepass=True)
         "wholepass": wholepass,
         "taskset_pass": wholepass,
     }
+
+
+def _trace_parse_gate_worker(
+    slot_dir, concurrency, active, maximum, counter_lock, fail_inside,
+):
+    os.environ["PARTSIM_TRACE_PARSE_CONCURRENCY"] = str(concurrency)
+    os.environ["PARTSIM_TRACE_PARSE_SLOT_DIR"] = str(slot_dir)
+    try:
+        with _trace_parse_slot():
+            with counter_lock:
+                active.value += 1
+                maximum.value = max(maximum.value, active.value)
+            try:
+                if fail_inside:
+                    raise RuntimeError("intentional parse failure")
+                time.sleep(0.08)
+            finally:
+                with counter_lock:
+                    active.value -= 1
+    except RuntimeError as exc:
+        if str(exc) != "intentional parse failure":
+            raise
 
 
 def _real_process_group_worker(
@@ -1925,6 +1949,60 @@ def test_runner_uses_v6_runtime_ue_report_name(tmp_path, monkeypatch):
 def test_effective_parser_concurrency_keeps_worker_pool_independent():
     assert scheduler_runner.effective_concurrent_parsers(30, 8) == 8
     assert scheduler_runner.effective_concurrent_parsers(8, 30) == 8
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX flock gate")
+def test_shared_trace_parse_gate_bounds_real_processes_and_releases_on_error(
+    tmp_path,
+):
+    context = multiprocessing.get_context("fork")
+    active = context.Value("i", 0, lock=False)
+    maximum = context.Value("i", 0, lock=False)
+    counter_lock = context.Lock()
+    processes = [
+        context.Process(
+            target=_trace_parse_gate_worker,
+            args=(tmp_path / "slots", 2, active, maximum, counter_lock, index == 0),
+        )
+        for index in range(6)
+    ]
+    try:
+        for process in processes:
+            process.start()
+        deadline = time.monotonic() + 5.0
+        for process in processes:
+            process.join(max(0.0, deadline - time.monotonic()))
+        assert all(not process.is_alive() for process in processes)
+        assert all(process.exitcode == 0 for process in processes)
+        assert maximum.value <= 2
+        assert active.value == 0
+    finally:
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+            process.join(1.0)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX flock gate")
+def test_trace_parse_gate_preserves_strict_json_value_across_runtime_limits(
+    tmp_path, monkeypatch,
+):
+    path = tmp_path / "trace.json"
+    path.write_text('{"events": [], "value": [1, 2, 3]}', encoding="utf-8")
+    observed = []
+    for concurrency in (1, 2, 4):
+        monkeypatch.setenv("PARTSIM_TRACE_PARSE_CONCURRENCY", str(concurrency))
+        monkeypatch.setenv("PARTSIM_TRACE_PARSE_SLOT_DIR", str(tmp_path / "slots"))
+        observed.append(_strict_json(path))
+    assert observed[0] == observed[1] == observed[2]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX flock gate")
+def test_trace_parse_gate_rejects_invalid_runtime_limit(monkeypatch):
+    monkeypatch.setenv("PARTSIM_TRACE_PARSE_CONCURRENCY", "not-an-integer")
+    with pytest.raises(SimulationTraceError, match="invalid PARTSIM_TRACE_PARSE_CONCURRENCY"):
+        with _trace_parse_slot():
+            pass
 
 
 def test_parse_concurrency_can_change_on_v6_resume_and_history_is_append_only(

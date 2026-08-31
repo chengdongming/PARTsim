@@ -1437,6 +1437,19 @@ def run_paired_simulation(
     environment = os.environ.copy()
     library = simulator.parent.parent / "librtsim"
     environment["LD_LIBRARY_PATH"] = str(library) + ":" + environment.get("LD_LIBRARY_PATH", "")
+    trace_parse_concurrency = simulation_config.get("trace_parse_concurrency")
+    trace_parse_environment_keys = (
+        "PARTSIM_TRACE_PARSE_CONCURRENCY", "PARTSIM_TRACE_PARSE_SLOT_DIR",
+    )
+    if trace_parse_concurrency is not None:
+        environment["PARTSIM_TRACE_PARSE_CONCURRENCY"] = str(
+            trace_parse_concurrency
+        )
+        environment["PARTSIM_TRACE_PARSE_SLOT_DIR"] = str(
+            simulation_config.get(
+                "trace_parse_slot_dir", "/tmp/partsim_trace_parse_slots"
+            )
+        )
 
     horizon = int(simulation_config["horizon"])
     maximum = int(simulation_config["maximum_horizon"])
@@ -1495,6 +1508,19 @@ def run_paired_simulation(
                     parse_semaphore = _TRACE_PARSE_SEMAPHORE
                     if parse_semaphore is not None:
                         parse_semaphore.acquire()
+                    previous_trace_parse_environment = {
+                        key: os.environ.get(key)
+                        for key in trace_parse_environment_keys
+                    }
+                    if trace_parse_concurrency is not None:
+                        os.environ.update({
+                            "PARTSIM_TRACE_PARSE_CONCURRENCY": environment[
+                                "PARTSIM_TRACE_PARSE_CONCURRENCY"
+                            ],
+                            "PARTSIM_TRACE_PARSE_SLOT_DIR": environment[
+                                "PARTSIM_TRACE_PARSE_SLOT_DIR"
+                            ],
+                        })
                     try:
                         result = parse_simulation_trace(
                             trace_path, task_payload,
@@ -1534,6 +1560,11 @@ def run_paired_simulation(
                                     f"task {task_id} RTA/simulation power mismatch"
                                 )
                     finally:
+                        for key, value in previous_trace_parse_environment.items():
+                            if value is None:
+                                os.environ.pop(key, None)
+                            else:
+                                os.environ[key] = value
                         if parse_semaphore is not None:
                             parse_semaphore.release()
                 except SimulationTraceError as exc:

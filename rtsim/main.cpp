@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cerrno>
 #include <cctype>
 #include <cstdio>
@@ -38,6 +39,7 @@
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
+#include <sys/file.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -557,6 +559,85 @@ static void fsyncFile(const std::filesystem::path &path) {
         throw std::runtime_error("cannot fsync trace: " + path.string());
 }
 
+class TraceParseSlot {
+public:
+    TraceParseSlot() {
+        const char *raw_concurrency =
+            std::getenv("PARTSIM_TRACE_PARSE_CONCURRENCY");
+        if (raw_concurrency == nullptr)
+            return;
+        if (*raw_concurrency == '\0')
+            throw std::runtime_error(
+                "invalid PARTSIM_TRACE_PARSE_CONCURRENCY: empty");
+
+        char *end = nullptr;
+        errno = 0;
+        const unsigned long parsed = std::strtoul(
+            raw_concurrency, &end, 10);
+        if (errno != 0 || end == raw_concurrency || *end != '\0' ||
+            parsed == 0 || parsed > static_cast<unsigned long>(INT_MAX)) {
+            throw std::runtime_error(
+                "invalid PARTSIM_TRACE_PARSE_CONCURRENCY: must be positive");
+        }
+        const int concurrency = static_cast<int>(parsed);
+
+        const char *raw_directory =
+            std::getenv("PARTSIM_TRACE_PARSE_SLOT_DIR");
+        if (raw_directory != nullptr && *raw_directory == '\0')
+            throw std::runtime_error(
+                "invalid PARTSIM_TRACE_PARSE_SLOT_DIR: empty");
+        const std::filesystem::path directory =
+            (raw_directory == nullptr)
+                ? std::filesystem::path("/tmp/partsim_trace_parse_slots")
+                : std::filesystem::path(raw_directory);
+        std::error_code error;
+        std::filesystem::create_directories(directory, error);
+        if (error || !std::filesystem::is_directory(directory, error) || error)
+            throw std::runtime_error(
+                "cannot create trace parse slot directory: " +
+                directory.string());
+
+        for (;;) {
+            for (int index = 0; index < concurrency; ++index) {
+                const std::filesystem::path slot =
+                    directory / ("slot-" + std::to_string(index) + ".lock");
+                const int descriptor = ::open(
+                    slot.c_str(), O_CREAT | O_RDWR | O_CLOEXEC, 0600);
+                if (descriptor < 0)
+                    throw std::runtime_error(
+                        "cannot open trace parse slot: " + slot.string());
+                int result = -1;
+                do {
+                    result = ::flock(descriptor, LOCK_EX | LOCK_NB);
+                } while (result != 0 && errno == EINTR);
+                if (result == 0) {
+                    descriptor_ = descriptor;
+                    return;
+                }
+                const int lock_error = errno;
+                ::close(descriptor);
+                if (lock_error != EACCES && lock_error != EAGAIN)
+                    throw std::runtime_error(
+                        "cannot lock trace parse slot: " + slot.string());
+            }
+            ::usleep(10000);
+        }
+    }
+
+    TraceParseSlot(const TraceParseSlot &) = delete;
+    TraceParseSlot &operator=(const TraceParseSlot &) = delete;
+
+    ~TraceParseSlot() {
+        if (descriptor_ >= 0) {
+            ::flock(descriptor_, LOCK_UN);
+            ::close(descriptor_);
+        }
+    }
+
+private:
+    int descriptor_ = -1;
+};
+
 static void validateTraceForPublication(const TraceTarget &target,
                                         const std::string &run_id,
                                         const std::string &scheduler,
@@ -856,6 +937,10 @@ if int(sys.argv[3]) == 3:
         fail('total executed core ticks exceed processor capacity')
 )PY";
 
+    // Hold the shared slot in the parent for the lifetime of the validator.
+    // O_CLOEXEC prevents the validator child from retaining the lock after
+    // exec, while the RAII destructor releases it on every parent path.
+    TraceParseSlot parse_slot;
     const pid_t child = ::fork();
     if (child < 0)
         throw std::runtime_error("cannot start strict trace validator");
