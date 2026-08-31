@@ -131,6 +131,15 @@ def _broken_pool_probe(state_path):
             executor.submit(_broken_pool_probe_queued_worker, b"x" * 1_000_000)
             for _ in range(64)
         )
+        release_path.write_text("release", encoding="utf-8")
+        try:
+            crash_future.result(timeout=3.0)
+        except BrokenProcessPool:
+            pass
+        else:
+            raise AssertionError("crashing worker did not raise BrokenProcessPool")
+        assert _wait_for_test_exitcode(worker_processes, 17)
+        worker_diagnostics = scheduler_runner._worker_diagnostics(executor)
         lock_thread = threading.Thread(
             target=_broken_pool_probe_hold_shutdown_lock,
             args=(executor._shutdown_lock, str(shutdown_lock_ready_path)),
@@ -141,16 +150,15 @@ def _broken_pool_probe(state_path):
         while not shutdown_lock_ready_path.is_file() and time.monotonic() < deadline:
             time.sleep(0.01)
         assert shutdown_lock_ready_path.is_file()
-        release_path.write_text("release", encoding="utf-8")
-        try:
-            crash_future.result(timeout=3.0)
-        except BrokenProcessPool:
-            pass
-        worker_diagnostics = scheduler_runner._worker_diagnostics(executor)
-        scheduler_runner._abort_executor(
+        cleanup_started = time.monotonic()
+        cleanup_complete = scheduler_runner._abort_executor(
             executor, futures, worker_process_groups,
         )
+        cleanup_elapsed = time.monotonic() - cleanup_started
         Path(state_path).write_text(json.dumps({
+            "stage": "abort_completed",
+            "cleanup_elapsed": cleanup_elapsed,
+            "cleanup_complete": cleanup_complete,
             "child_pid": child_pid,
             "worker_pids": [process.pid for process in worker_processes],
             "worker_process_groups": sorted(worker_process_groups),
@@ -240,6 +248,15 @@ def _wait_for_test_process_exit(process, timeout=2.0):
     while process.is_alive() and time.monotonic() < deadline:
         time.sleep(0.01)
     return not process.is_alive()
+
+
+def _wait_for_test_exitcode(processes, expected_exitcode, timeout=2.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if any(process.exitcode == expected_exitcode for process in processes):
+            return True
+        time.sleep(0.01)
+    return any(process.exitcode == expected_exitcode for process in processes)
 
 
 def _harvest_model_fields():
@@ -2157,7 +2174,7 @@ def test_real_broken_pool_with_queued_work_exits_within_hard_deadline(tmp_path):
     probe = multiprocessing.Process(target=_broken_pool_probe, args=(str(state_path),))
     probe.start()
     try:
-        probe.join(5.0)
+        probe.join(10.0)
         if probe.is_alive():
             _cleanup_broken_pool_probe(state_path)
             probe.terminate()
@@ -2165,6 +2182,8 @@ def test_real_broken_pool_with_queued_work_exits_within_hard_deadline(tmp_path):
         assert not probe.is_alive(), "broken pool probe exceeded hard timeout"
         assert probe.exitcode == 2
         state = json.loads(state_path.read_text(encoding="utf-8"))
+        assert state["stage"] == "abort_completed"
+        assert state["cleanup_elapsed"] <= 2.5
         assert any(
             diagnostic["exitcode"] == 17
             for diagnostic in state["worker_diagnostics"]
