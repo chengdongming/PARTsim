@@ -2227,6 +2227,65 @@ def test_normal_completion_waits_for_all_futures(tmp_path, monkeypatch):
     assert shutdown_calls == [{"wait": True}]
 
 
+def test_runner_bounds_in_flight_simulation_futures(tmp_path, monkeypatch):
+    def run_simulation(**kwargs):
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    base_request_rows = scheduler_runner.experiment.request_rows
+
+    def bounded_request_rows(*args, **kwargs):
+        row = base_request_rows(*args, **kwargs)[0]
+        return [
+            dict(
+                row, request_id=f"bounded-request-{index}",
+                generation_index=index,
+            )
+            for index in range(137)
+        ]
+
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "request_rows", bounded_request_rows,
+    )
+    submitted_request_ids = []
+    observed_in_flight_sizes = []
+
+    class _TrackedExecutor:
+        def __init__(self, *args, **kwargs):
+            self._processes = {}
+
+        def submit(self, function, job):
+            submitted_request_ids.append(job["request_id"])
+            future = Future()
+            future.set_result(function(job))
+            return future
+
+        def shutdown(self, **kwargs):
+            pass
+
+    def observe_as_completed(futures):
+        futures = tuple(futures)
+        observed_in_flight_sizes.append(len(futures))
+        return iter(futures)
+
+    monkeypatch.setattr(scheduler_runner, "ProcessPoolExecutor", _TrackedExecutor)
+    monkeypatch.setattr(scheduler_runner, "as_completed", observe_as_completed)
+    output = tmp_path / "bounded-in-flight"
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, samples_per_cell=137, workers=30,
+    )) == 0
+    assert len(submitted_request_ids) == 137
+    assert max(observed_in_flight_sizes) == 60
+    assert all(size <= 60 for size in observed_in_flight_sizes)
+    assert scheduler_runner.simulation_in_flight_limit(30) == 60
+
+
 def test_runner_persists_explicit_figure_slices_and_infers_unique_defaults(tmp_path, monkeypatch):
     def run_simulation(**kwargs):
         return SimpleNamespace(

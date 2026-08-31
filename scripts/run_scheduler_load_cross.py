@@ -81,6 +81,13 @@ def effective_concurrent_parsers(workers: int, parse_concurrency: int) -> int:
     return min(workers, parse_concurrency)
 
 
+def simulation_in_flight_limit(workers: int) -> int:
+    """Bound queued simulations while keeping every worker supplied."""
+    if workers < 1:
+        raise ValueError("workers must be positive")
+    return 2 * workers
+
+
 def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
     """Run one independent simulation in a worker process."""
 
@@ -880,17 +887,28 @@ def main(argv: list[str] | None = None) -> int:
     current_submitting_job: dict[str, Any] | None = None
     executor_failed = False
     try:
-        for job in pending_jobs:
-            current_submitting_job = job
-            future = executor.submit(_run_simulation_job, job)
-            future_to_job[future] = job
-            current_submitting_job = None
-            worker_process_groups.update(_capture_worker_process_groups(executor))
         progress_started = time.perf_counter()
         completed_at_start = len(existing)
         completed_count = completed_at_start
         progress_interval = max(1, min(50, len(pending_jobs) // 20 or 1))
-        for future in as_completed(future_to_job):
+        pending_iterator = iter(pending_jobs)
+        pending_exhausted = False
+        in_flight_limit = simulation_in_flight_limit(args.workers)
+        while future_to_job or not pending_exhausted:
+            while not pending_exhausted and len(future_to_job) < in_flight_limit:
+                try:
+                    job = next(pending_iterator)
+                except StopIteration:
+                    pending_exhausted = True
+                    break
+                current_submitting_job = job
+                future = executor.submit(_run_simulation_job, job)
+                future_to_job[future] = job
+                current_submitting_job = None
+                worker_process_groups.update(_capture_worker_process_groups(executor))
+            if not future_to_job:
+                break
+            future = next(iter(as_completed(future_to_job)))
             job = future_to_job.pop(future)
             request = job["request"]
             request_id = str(job["request_id"])
@@ -979,9 +997,8 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 _print_progress(
                     completed=completed_count, total=len(requests),
-                    outstanding_requests=sum(
-                        not item.done() for item in future_to_job
-                    ), started=progress_started,
+                    outstanding_requests=len(requests) - completed_count,
+                    started=progress_started,
                     completed_at_start=completed_at_start,
                     parse_concurrency=args.parse_concurrency,
                 )
