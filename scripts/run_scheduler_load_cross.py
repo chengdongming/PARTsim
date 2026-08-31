@@ -17,6 +17,7 @@ import re
 import signal
 import shutil
 import sys
+import threading
 import time
 from typing import Any
 
@@ -388,6 +389,60 @@ def _wait_for_worker_process_groups(
         time.sleep(min(0.01, remaining))
 
 
+def _worker_diagnostics(executor: Any) -> list[dict[str, Any]]:
+    """Capture worker PID/exit diagnostics without guessing unavailable data."""
+    process_map = getattr(executor, "_processes", None)
+    processes = tuple(process_map.values()) if process_map else ()
+    if not processes:
+        return [{"pid": "unknown", "exitcode": "unknown", "signal_name": "unknown"}]
+    diagnostics = []
+    for process in processes:
+        pid = getattr(process, "pid", "unknown")
+        try:
+            exitcode = process.exitcode
+        except (AttributeError, OSError):
+            exitcode = None
+        signal_name = None
+        if exitcode is None:
+            exitcode = "unknown"
+            signal_name = "unknown"
+        elif isinstance(exitcode, int) and exitcode < 0:
+            try:
+                signal_name = signal.Signals(-exitcode).name
+            except ValueError:
+                signal_name = "unknown"
+        diagnostics.append({
+            "pid": pid, "exitcode": exitcode, "signal_name": signal_name,
+        })
+    return diagnostics
+
+
+def _start_executor_shutdown(executor: Any) -> tuple[threading.Thread, dict[str, Any]]:
+    """Run failure shutdown away from the runner thread."""
+    shutdown = getattr(executor, "shutdown", None)
+    outcome: dict[str, Any] = {"error": None}
+
+    def shutdown_executor() -> None:
+        try:
+            if shutdown is None:
+                executor.__exit__(None, None, None)
+                return
+            try:
+                shutdown(wait=False, cancel_futures=True)
+            except TypeError:
+                shutdown(wait=False)
+        except BaseException as exc:  # pragma: no cover - defensive boundary
+            outcome["error"] = exc
+
+    thread = threading.Thread(
+        target=shutdown_executor,
+        name="scheduler-load-cross-failure-shutdown",
+        daemon=True,
+    )
+    thread.start()
+    return thread, outcome
+
+
 def _abort_executor(
     executor: Any, futures: Any,
     worker_process_groups: set[int] | None = None,
@@ -399,8 +454,8 @@ def _abort_executor(
     cleanup_started = time.monotonic()
     deadline = cleanup_started + _FAILURE_CLEANUP_TIMEOUT_SECONDS
 
-    # ProcessPoolExecutor.shutdown(wait=False) is the public first step.  Keep
-    # a snapshot because shutdown may clear the executor's private process map.
+    # Keep a snapshot because asynchronous shutdown may clear the executor's
+    # private process map before the bounded process-group cleanup completes.
     process_map = getattr(executor, "_processes", {}) or {}
     processes = tuple(process_map.values())
     cleanup_complete = True
@@ -412,18 +467,7 @@ def _abort_executor(
             cleanup_complete = False
     if not _validate_worker_process_groups(worker_process_groups):
         cleanup_complete = False
-    shutdown = getattr(executor, "shutdown", None)
-    if shutdown is None:
-        # Compatibility with the existing inline test executor.  Production
-        # ProcessPoolExecutor always exposes shutdown and takes the bounded
-        # path below.
-        executor.__exit__(None, None, None)
-        return cleanup_complete
-    try:
-        shutdown(wait=False, cancel_futures=True)
-    except TypeError:
-        # Compatibility with small test doubles and older Python runtimes.
-        shutdown(wait=False)
+    shutdown_thread, shutdown_outcome = _start_executor_shutdown(executor)
 
     if cleanup_complete:
         # The group IDs were verified before signaling.  A missing group means
@@ -479,6 +523,9 @@ def _abort_executor(
                 cleanup_complete = False
         except (AttributeError, OSError):
             cleanup_complete = False
+    shutdown_thread.join(max(0.0, deadline - time.monotonic()))
+    if shutdown_thread.is_alive() or shutdown_outcome["error"] is not None:
+        cleanup_complete = False
     return cleanup_complete
 
 
@@ -885,6 +932,7 @@ def main(argv: list[str] | None = None) -> int:
     worker_process_groups: set[int] = set()
     recorded_attempt_ids: set[str] = set()
     current_submitting_job: dict[str, Any] | None = None
+    failure_worker_diagnostics: list[dict[str, Any]] = []
     executor_failed = False
     try:
         progress_started = time.perf_counter()
@@ -918,9 +966,11 @@ def main(argv: list[str] | None = None) -> int:
             except BrokenProcessPool as exc:
                 execution = None
                 technical = f"worker failure: BrokenProcessPool: {exc}"
+                failure_worker_diagnostics = _worker_diagnostics(executor)
             except Exception as exc:
                 execution = None
                 technical = f"worker failure: {type(exc).__name__}: {exc}"
+                failure_worker_diagnostics = _worker_diagnostics(executor)
             if execution is None:
                 outcome = evaluate_outcome(
                     [], [str(row["task_id"]) for row in task_payload],
@@ -985,6 +1035,7 @@ def main(argv: list[str] | None = None) -> int:
                 "stderr_tail": stderr_tail,
                 "retained_trace_path": retained_trace_path,
                 "simulation_reason": reason,
+                "worker_diagnostics": failure_worker_diagnostics,
             }
             _append_jsonl(attempts_path, attempt_row)
             attempts.append(attempt_row)
@@ -1018,6 +1069,7 @@ def main(argv: list[str] | None = None) -> int:
         technical = f"worker failure: {type(exc).__name__}: {exc}"
         if isinstance(exc, BrokenProcessPool):
             technical = f"worker failure: BrokenProcessPool: {exc}"
+        failure_worker_diagnostics = _worker_diagnostics(executor)
         if current_submitting_job is None:
             print(
                 f"scheduler-load-cross runner-level technical failure: {technical}",
@@ -1049,6 +1101,7 @@ def main(argv: list[str] | None = None) -> int:
                 "stderr_tail": "",
                 "retained_trace_path": None,
                 "simulation_reason": technical,
+                "worker_diagnostics": failure_worker_diagnostics,
             }
             _append_jsonl(attempts_path, attempt_row)
     finally:
@@ -1109,4 +1162,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    exit_code = main()
+    if exit_code:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(exit_code)
+    raise SystemExit(0)
