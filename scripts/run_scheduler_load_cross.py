@@ -871,6 +871,10 @@ def main(argv: list[str] | None = None) -> int:
             "retain_trace": args.keep_traces,
             "timeout_seconds": args.timeout_seconds,
             "cleanup_transient_artifacts": True,
+            # Runtime-only controls: these are deliberately kept out of the
+            # persisted scientific configuration and its run identity.
+            "trace_parse_concurrency": parser_limit,
+            "trace_parse_slot_dir": "/tmp/partsim_trace_parse_slots",
         }
         pending_jobs.append({
             "request": request,
