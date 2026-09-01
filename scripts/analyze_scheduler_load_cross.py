@@ -1062,6 +1062,139 @@ def _v6_validate_energy(row: dict[str, Any]) -> None:
         raise SystemExit("v6 actual U_E relative error exceeds 1e-12")
 
 
+def _v7_validate_config(
+    root: Path,
+) -> tuple[dict[str, Any], tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any], str]:
+    try:
+        config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError) as exc:
+        raise SystemExit(f"v7 run_config cannot be read: {root}") from exc
+    if config.get("experiment") != experiment.V7_EXPERIMENT:
+        raise SystemExit("v7 run_config experiment mismatch")
+    if config.get("domain") != experiment.V7_DOMAIN:
+        raise SystemExit("v7 run_config domain mismatch")
+    campaign = config.get("campaign")
+    try:
+        spec = experiment.v7_campaign_spec(campaign)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"v7 campaign is invalid: {exc}") from exc
+    if config.get("campaign_contract") != spec["campaign_contract"]:
+        raise SystemExit("v7 campaign contract mismatch")
+    if config.get("energy_control") != spec["energy_control"]:
+        raise SystemExit("v7 energy control does not match campaign")
+    if config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY":
+        expected_levels = {
+            level: {
+                "reference_ue": str(experiment.V7_REFERENCE_UES[level]),
+                "fixed_supply_mean_j_per_tick": str(experiment.V7_FIXED_SUPPLIES[level]),
+            }
+            for level in ("low", "medium", "high")
+        }
+        if config.get("fixed_supply_levels") != expected_levels:
+            raise SystemExit("v7 fixed supply level map is not exact")
+    if config.get("deadline_modes") != ["constrained"]:
+        raise SystemExit("v7 campaigns require constrained deadline mode only")
+    try:
+        priority_policy = experiment.normalize_scheduler_priority_policy(
+            config.get("priority_policy")
+        )
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
+    cells = _configured_cells(config)
+    if tuple(cells) != tuple(spec["cells"]):
+        raise SystemExit("v7 cells do not match the frozen campaign grid")
+    if config.get("scan_contract") != spec["scan_contract"]:
+        raise SystemExit("v7 scan_contract is not canonical")
+    if config.get("figure_slices") != spec["figure_slices"]:
+        raise SystemExit("v7 figure_slices are not canonical")
+    schedulers = list(config.get("schedulers", ()))
+    try:
+        if tuple(experiment.parse_schedulers(",".join(schedulers))) != tuple(schedulers):
+            raise SystemExit("v7 schedulers are not canonical and unique")
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if tuple(schedulers) != tuple(experiment.ALL_SCHEDULERS):
+        raise SystemExit("v7 campaign requires all nine canonical schedulers")
+    samples = int(config.get("samples_per_cell", 0))
+    expected_requests = len(cells) * samples * len(schedulers)
+    expected_tasksets = len({uc for uc, _ue in cells}) * samples
+    if config.get("expected_request_count") != expected_requests:
+        raise SystemExit("v7 expected_request_count is inconsistent")
+    if config.get("expected_taskset_count") != expected_tasksets:
+        raise SystemExit("v7 expected_taskset_count is inconsistent")
+    if config.get("run_identity") != experiment.run_identity(config):
+        raise SystemExit("v7 run_identity is invalid")
+    return config, cells, spec["scan_contract"], spec["figure_slices"], priority_policy
+
+
+def _v7_validate_energy(
+    row: dict[str, Any], config: dict[str, Any], taskset: dict[str, Any],
+) -> None:
+    energy = row.get("energy")
+    if not isinstance(energy, dict):
+        raise SystemExit("v7 result energy material is missing")
+    _validate_harvest_model(
+        {key: energy.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+        "v7 energy harvest model",
+    )
+    try:
+        reference_ue = Fraction(row["target_ue"])
+        demand = Fraction(energy["P_dem_j_per_tick"])
+        supply = Fraction(energy["target_supply_mean_j_per_tick"])
+        raw = Fraction(energy["raw_reference_mean_j_per_tick"])
+        runtime_supply = Fraction(energy["runtime_configured_average_supply_j_per_tick"])
+        actual_ue = Fraction(energy["actual_ue"])
+        abs_error = Fraction(energy["actual_ue_abs_error"])
+        rel_error = Fraction(energy["actual_ue_rel_error"])
+        minus_error = Fraction(energy["actual_ue_minus_target_ue"])
+        if energy.get("energy_control") != config["energy_control"]:
+            raise SystemExit("v7 result energy control does not match run_config")
+        if Fraction(energy["target_ue"]) != reference_ue:
+            raise SystemExit("v7 energy target U_E does not match request reference")
+        if config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY":
+            level = str(energy["energy_level"])
+            expected = experiment.V7_FIXED_SUPPLIES[level]
+            if Fraction(energy["fixed_supply_mean_j_per_tick"]) != expected:
+                raise SystemExit("v7 fixed supply does not match energy level")
+            if Fraction(energy["reference_ue"]) != reference_ue:
+                raise SystemExit("v7 fixed-supply reference U_E is invalid")
+            if experiment.V7_REFERENCE_UES[level] != reference_ue:
+                raise SystemExit("v7 fixed-supply level does not match reference U_E")
+            if actual_ue != demand / supply or runtime_supply != supply:
+                raise SystemExit("v7 fixed-supply actual U_E mismatch")
+        else:
+            if Fraction(energy["eta"]) != experiment.eta_for_ue(reference_ue):
+                raise SystemExit("v7 eta != 1/U_E")
+            if demand / supply != reference_ue:
+                raise SystemExit("v7 service-only supply identity mismatch")
+            if actual_ue != reference_ue or runtime_supply != supply:
+                raise SystemExit("v7 service-only actual U_E mismatch")
+        if Fraction(energy["solar_scale"]) * raw != supply:
+            raise SystemExit("v7 harvest identity mismatch")
+        payload = json.loads(taskset["task_input_json"])
+        powers = sorted((Fraction(item["P"]) for item in payload), reverse=True)
+        burst = sum(
+            powers[: min(int(config["processors"]), len(payload))], Fraction(0),
+        )
+        if Fraction(energy["E_burst_j"]) != burst:
+            raise SystemExit("v7 burst energy changed")
+        kappa = Fraction(config["kappa"])
+        if (
+            Fraction(energy["battery_capacity_j"]) != kappa * burst
+            or Fraction(energy["initial_energy_j"]) != kappa * burst / 2
+        ):
+            raise SystemExit("v7 battery or initial energy rule changed")
+        if runtime_supply <= 0 or actual_ue <= 0:
+            raise SystemExit("v7 runtime average supply and actual U_E must be positive")
+        calculated_abs = abs(actual_ue - reference_ue)
+        if abs_error != calculated_abs or rel_error != calculated_abs / reference_ue:
+            raise SystemExit("v7 actual U_E error fields are invalid")
+        if minus_error != actual_ue - reference_ue:
+            raise SystemExit("v7 actual U_E delta field is invalid")
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as exc:
+        raise SystemExit("v7 energy material is invalid") from exc
+
+
 def _v6_load_dataset(
     root: Path, *, expected_policy: str | None = None,
 ) -> dict[str, Any]:
@@ -1448,11 +1581,13 @@ def analyze(
             experiment.V3_EXPERIMENT,
             experiment.V4_EXPERIMENT,
             experiment.V5_EXPERIMENT,
+            experiment.V7_EXPERIMENT,
         }
         or initial_config.get("domain") in {
             experiment.V3_DOMAIN,
             experiment.V4_DOMAIN,
             experiment.V5_DOMAIN,
+            experiment.V7_DOMAIN,
         }
     ):
         raise SystemExit(
@@ -1474,6 +1609,9 @@ def analyze(
     analysis_started = time.perf_counter()
     validation_started = analysis_started
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    is_v7 = config.get("experiment") == experiment.V7_EXPERIMENT
+    if is_v7:
+        config, cells, scan_contract, figure_slices, priority_policy = _v7_validate_config(root)
     _validate_harvest_model(
         {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
         "run_config harvest model",
@@ -1484,22 +1622,23 @@ def analyze(
     is_v4 = config.get("experiment") == experiment.V4_EXPERIMENT
     if is_v5 and config.get("deadline_modes") != list(experiment.DEADLINE_MODES):
         raise SystemExit("v5 run_config must bind constrained and implicit deadline modes")
-    scan_contract = None
-    try:
-        priority_policy = experiment.normalize_scheduler_priority_policy(
-            config.get("priority_policy", "RM")
-        )
-    except RuntimeError as exc:
-        raise SystemExit(str(exc)) from exc
-    cells = _configured_cells(config)
-    if is_v5 or is_v4:
-        scan_contract, figure_slices = _v4_contract(config)
-        cells = tuple(
-            (Fraction(uc), Fraction(ue))
-            for uc, ue in scan_contract["ordered_cells"]
-        )
-    else:
-        figure_slices = _figure_slices(config, cells)
+    if not is_v7:
+        scan_contract = None
+        try:
+            priority_policy = experiment.normalize_scheduler_priority_policy(
+                config.get("priority_policy", "RM")
+            )
+        except RuntimeError as exc:
+            raise SystemExit(str(exc)) from exc
+        cells = _configured_cells(config)
+        if is_v5 or is_v4:
+            scan_contract, figure_slices = _v4_contract(config)
+            cells = tuple(
+                (Fraction(uc), Fraction(ue))
+                for uc, ue in scan_contract["ordered_cells"]
+            )
+        else:
+            figure_slices = _figure_slices(config, cells)
     schedulers = list(config.get("schedulers", ()))
     try:
         parsed_schedulers = experiment.parse_schedulers(",".join(schedulers))
@@ -1507,7 +1646,7 @@ def analyze(
         raise SystemExit(str(exc)) from exc
     if tuple(parsed_schedulers) != tuple(schedulers):
         raise SystemExit("run_config schedulers are not canonical and unique")
-    if (is_v5 or is_v4) and set(schedulers) != set(experiment.ALL_SCHEDULERS):
+    if (is_v5 or is_v4 or is_v7) and set(schedulers) != set(experiment.ALL_SCHEDULERS):
         raise SystemExit("v4/v5 campaign requires all nine canonical schedulers")
     if tuple(cells) == tuple(experiment.FORMAL_CELLS) and priority_policy == "RM":
         try:
@@ -1520,18 +1659,19 @@ def analyze(
     tasksets = read_jsonl(root / "tasksets.jsonl")
     requests = read_jsonl(root / "requests.jsonl")
     results = read_jsonl(root / "results.jsonl")
-    if is_v5:
+    if is_v5 or is_v7:
         for collection_name, collection in (
             ("tasksets", tasksets), ("requests", requests), ("results", results),
         ):
             observed_modes = {row.get("deadline_mode") for row in collection}
             if any(mode not in experiment.DEADLINE_MODES for mode in observed_modes):
                 raise SystemExit(f"{collection_name} contains an invalid deadline_mode")
-            if observed_modes != set(experiment.DEADLINE_MODES):
+            expected_modes = {"constrained"} if is_v7 else set(experiment.DEADLINE_MODES)
+            if observed_modes != expected_modes:
                 raise SystemExit(
-                    f"v5 {collection_name} must contain both deadline modes"
+                    f"{'v7' if is_v7 else 'v5'} {collection_name} has an invalid deadline-mode contract"
                 )
-    if not is_v5 and not is_v4 and any(
+    if not is_v5 and not is_v4 and not is_v7 and any(
         row.get("experiment") in {experiment.V4_EXPERIMENT, experiment.V5_EXPERIMENT}
         for row in (*requests, *results)
     ):
@@ -1564,13 +1704,32 @@ def analyze(
         ):
             if row.get(key) != request.get(key):
                 raise SystemExit(f"result/request identity mismatch for {key}")
-        if is_v5 or is_v4:
+        if is_v5 or is_v4 or is_v7:
             expected_experiment = experiment.V5_EXPERIMENT if is_v5 else experiment.V4_EXPERIMENT
+            if is_v7:
+                expected_experiment = experiment.V7_EXPERIMENT
             for key, expected_value in (("experiment", expected_experiment),):
                 if request.get(key) != expected_value or row.get(key) != expected_value:
                     raise SystemExit(f"{expected_experiment} result/request identity mismatch for {key}")
-        if is_v5 and row.get("deadline_mode") != request.get("deadline_mode"):
-            raise SystemExit("v5 result/request deadline_mode mismatch")
+        if is_v7:
+            for key in ("domain", "campaign", "energy_control", "deadline_mode"):
+                if request.get(key) != config.get(key) and key != "deadline_mode":
+                    raise SystemExit(f"v7 request {key} does not match run_config")
+                if key == "domain" and request.get(key) != experiment.V7_DOMAIN:
+                    raise SystemExit("v7 request domain mismatch")
+                if key == "deadline_mode" and request.get(key) != "constrained":
+                    raise SystemExit("v7 request deadline mode mismatch")
+            if row.get("campaign") != config.get("campaign") or row.get("energy_control") != config.get("energy_control"):
+                raise SystemExit("v7 result energy-control identity mismatch")
+            if config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY":
+                if (
+                    request.get("reference_ue") != request.get("target_ue")
+                    or request.get("target_ue_role") != "calibration_reference"
+                    or request.get("energy_level") != experiment.v7_energy_level(Fraction(request["target_ue"]))
+                ):
+                    raise SystemExit("v7 fixed-supply request reference identity is invalid")
+        if (is_v5 or is_v7) and row.get("deadline_mode") != request.get("deadline_mode"):
+            raise SystemExit("deadline-mode result/request mismatch")
         _validate_harvest_model(
             {key: request.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
             "request harvest model",
@@ -1583,31 +1742,31 @@ def analyze(
     taskset_by_id = {str(row["taskset_id"]): row for row in tasksets}
     if len(taskset_by_id) != expected_tasksets:
         raise SystemExit("taskset identity count mismatch")
-    if is_v5:
+    if is_v5 or is_v7:
         for request in requests:
             taskset = taskset_by_id.get(str(request["taskset_id"]))
             if taskset is None or request.get("deadline_mode") != taskset.get("deadline_mode"):
-                raise SystemExit("v5 request/taskset deadline_mode mismatch")
+                raise SystemExit("request/taskset deadline_mode mismatch")
     if any(row.get("canonical_task_power") is not True for row in tasksets):
         raise SystemExit("non-canonical task power in taskset store")
-    if is_v5:
+    if is_v5 or is_v7:
         for taskset in tasksets:
             mode = experiment.normalize_deadline_mode(taskset["deadline_mode"])
             try:
                 payload = json.loads(taskset["task_input_json"])
             except (KeyError, TypeError, ValueError) as exc:
-                raise SystemExit("v5 taskset task payload is missing or invalid") from exc
+                raise SystemExit("taskset task payload is missing or invalid") from exc
             if not isinstance(payload, list):
-                raise SystemExit("v5 taskset task payload is invalid")
+                raise SystemExit("taskset task payload is invalid")
             for item in payload:
                 try:
                     c, d, t = int(item["C"]), int(item["D"]), int(item["T"])
                 except (KeyError, TypeError, ValueError) as exc:
-                    raise SystemExit("v5 taskset task deadline fields are invalid") from exc
+                    raise SystemExit("taskset task deadline fields are invalid") from exc
                 if not (0 < c <= d <= t):
-                    raise SystemExit("v5 taskset violates C <= D <= T")
+                    raise SystemExit("taskset violates C <= D <= T")
                 if mode == "implicit" and d != t:
-                    raise SystemExit("v5 implicit taskset violates D == T")
+                    raise SystemExit("implicit taskset violates D == T")
     uc_tolerance = Fraction(str(config["util_tolerance_total"])) / Fraction(str(config["processors"]))
     if any(
         abs(Fraction(row["actual_uc"]) - Fraction(row["target_uc"])) > uc_tolerance
@@ -1635,9 +1794,12 @@ def analyze(
         taskset = taskset_by_id[str(row["taskset_id"])]
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("scheduler changed taskset identity")
-        if is_v5 and row.get("deadline_mode") != taskset.get("deadline_mode"):
-            raise SystemExit("v5 result/taskset deadline_mode mismatch")
+        if (is_v5 or is_v7) and row.get("deadline_mode") != taskset.get("deadline_mode"):
+            raise SystemExit("result/taskset deadline_mode mismatch")
         energy = row["energy"]
+        if is_v7:
+            _v7_validate_energy(row, config, taskset)
+            continue
         _validate_harvest_model(
             {key: energy.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
             "energy harvest model",
@@ -1687,12 +1849,12 @@ def analyze(
             )
     if technical_rows:
         raise SystemExit(f"technical failures are not scientific WholePass rows: {len(technical_rows)}")
-    if is_v5:
+    if is_v5 or is_v7:
         trace_ids = {
             str(row["energy"].get("harvest_trace_id")) for row in results
         }
         if len(trace_ids) != 1:
-            raise SystemExit("v5 deadline modes do not share one harvest trace identity")
+            raise SystemExit("campaign results do not share one harvest trace identity")
 
     # Requests are the authority for the pairing grid.  Every cell/taskset
     # must have exactly one result for every requested scheduler.
@@ -1741,7 +1903,7 @@ def analyze(
             raise SystemExit(f"battery/E0/task demand/trace invariant changed across U_E: {taskset_id}")
     paired_tasksets: dict[tuple[str, ...], set[str]] = {}
     for request in requests:
-        mode_key = (str(request["deadline_mode"]),) if is_v5 else ()
+        mode_key = (str(request["deadline_mode"]),) if (is_v5 or is_v7) else ()
         paired_tasksets.setdefault(
             mode_key + (str(request["target_uc"]), str(request["generation_index"])),
             set(),
@@ -1750,7 +1912,7 @@ def analyze(
         raise SystemExit("paired CPU taskset identity changed across U_E")
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     for row in results:
-        mode_key = (str(row["deadline_mode"]),) if is_v5 else ()
+        mode_key = (str(row["deadline_mode"]),) if (is_v5 or is_v7) else ()
         groups.setdefault(
             mode_key + (str(row["target_uc"]), str(row["target_ue"])), []
         ).append(row)
@@ -1759,14 +1921,14 @@ def analyze(
     campaign_seed = int(config.get("seed", 0))
     def group_sort(item: tuple[tuple[str, ...], list[dict[str, Any]]]) -> tuple[Any, ...]:
         key = item[0]
-        if is_v5:
+        if is_v5 or is_v7:
             mode, uc, ue = key
             return (experiment.DEADLINE_MODES.index(mode), Fraction(uc), Fraction(ue))
         uc, ue = key
         return (Fraction(uc), Fraction(ue))
 
     for group_key, group in sorted(groups.items(), key=group_sort):
-        if is_v5:
+        if is_v5 or is_v7:
             deadline_mode, uc, ue = group_key
         else:
             deadline_mode = None
@@ -1962,6 +2124,44 @@ def analyze(
              "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus U_E",
              **axis},
         ]
+    elif is_v7:
+        axis = _axis_plot_values(scan_contract)
+        scan_key = "uc_scans" if config["campaign"] == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN else "ue_scans"
+        x_key = "target_uc" if scan_key == "uc_scans" else "target_ue"
+        xlabel = "U_C" if scan_key == "uc_scans" else "U_E"
+        slice_rows = []
+        dmr_slice_rows = []
+        for index, slice_config in enumerate(figure_slices[scan_key]):
+            values = select_scan_rows(
+                summaries, slice_config["fixed_key"], slice_config["fixed_value"],
+            )
+            dmr_values = select_scan_rows(
+                dmr_summaries, slice_config["fixed_key"], slice_config["fixed_value"],
+            )
+            _validate_v4_slice(values, slice_config, schedulers, f"{xlabel}[{index}]")
+            _validate_v4_slice(dmr_values, slice_config, schedulers, f"{xlabel} DMR[{index}]")
+            _validate_dmr_ci_lower_bounds(dmr_values, uc_dmr_ymin if scan_key == "uc_scans" else ue_dmr_ymin, f"{xlabel}[{index}]")
+            slice_rows.append((slice_config, values))
+            dmr_slice_rows.append((slice_config, dmr_values))
+        write_csv(root / f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices.csv", [
+            row for slice_config, values in slice_rows
+            for row in _slice_csv_rows(slice_config, values)
+        ])
+        write_csv(root / f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices_dmr.csv", [
+            row for slice_config, values in dmr_slice_rows
+            for row in _dmr_slice_csv_rows(slice_config, values)
+        ])
+        plot_jobs = [
+            {"composite": True, "slice_rows": slice_rows, "output": str(root),
+             "filename": f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices.png",
+             "xkey": x_key, "schedulers": schedulers, "xlabel": xlabel,
+             "title": f"{priority_policy} — Whole-taskset pass ratio versus {xlabel}", **axis},
+            {"composite": True, "slice_rows": dmr_slice_rows, "output": str(root),
+             "filename": f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices_dmr.png",
+             "xkey": x_key, "schedulers": schedulers, "xlabel": xlabel, "metric": "dmr",
+             "ymin": uc_dmr_ymin if scan_key == "uc_scans" else ue_dmr_ymin,
+             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus {xlabel}", **axis},
+        ]
     else:
         uc_slice = figure_slices["uc_scan"]
         ue_slice = figure_slices["ue_scan"]
@@ -2000,7 +2200,7 @@ def analyze(
         for row in results
     ]
     report = {"complete": True, "experiment": config.get("experiment"),
-              "deadline_modes": list(experiment.DEADLINE_MODES) if is_v5 else None,
+              "deadline_modes": list(config.get("deadline_modes", ())) if (is_v5 or is_v7) else None,
               "tasksets": len(tasksets), "requests": len(requests),
               "results": len(results), "duplicate_request_ids": duplicate,
               "missing_request_ids": missing, "unexpected_request_ids": unexpected,
@@ -2010,7 +2210,10 @@ def analyze(
               "missing": missing, "duplicate": duplicate,
               "unexpected": unexpected, "technical": len(technical_rows),
               "harvest_model": experiment.HARVEST_MODEL,
-              "actual_ue_validated": bool(ue_errors) and max(ue_errors) <= ACTUAL_UE_RELATIVE_TOLERANCE,
+              "actual_ue_validated": (
+                  bool(ue_errors) if is_v7 and config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
+                  else bool(ue_errors) and max(ue_errors) <= ACTUAL_UE_RELATIVE_TOLERANCE
+              ),
               "actual_ue_max_relative_error": str(max(ue_errors, default=Fraction(0))),
               "telemetry": {
                   "validation_summary_seconds": validation_summary_seconds,

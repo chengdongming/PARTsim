@@ -3317,3 +3317,162 @@ def test_v4_runner_grid_resolution_binds_scan_configuration(tmp_path):
     assert len(cells) == contract["unique_cell_count"] == 16
     assert contract["ordered_cells"] == [[str(uc), str(ue)] for uc, ue in cells]
     assert len(slices["uc_scans"]) == 2
+
+
+def test_v7_campaign_grids_are_exact_and_constrained_only():
+    fixed = experiment.v7_campaign_spec(experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN)
+    service = experiment.v7_campaign_spec(experiment.V7_UE_SERVICE_SCALING_CAMPAIGN)
+    assert len(fixed["cells"]) == 24
+    assert len(set(fixed["cells"])) == 24
+    assert len(service["cells"]) == 30
+    assert len(set(service["cells"])) == 30
+    assert experiment.v7_deadline_modes_for_priority_policy("RM") == ("constrained",)
+    assert experiment.v7_deadline_modes_for_priority_policy("DM") == ("constrained",)
+    assert fixed["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
+    assert service["energy_control"] == "SERVICE_ONLY_SCALING"
+
+
+def test_v7_fixed_supply_is_exact_and_independent_of_demand():
+    class Taskset:
+        processors = 4
+        task_count = 2
+
+        def __init__(self, power):
+            self.task_payload = (
+                {"C": 1, "T": 10, "P": str(power)},
+                {"C": 1, "T": 10, "P": "4"},
+            )
+
+    raw = (Fraction(1),) * 10
+    supply = experiment.V7_FIXED_SUPPLIES["low"]
+    first = experiment.fixed_supply_energy_material(
+        Taskset(2), supply, raw, kappa=Fraction(10),
+        reference_ue=Fraction(9, 10), energy_level="low", normalization_horizon=10,
+    )
+    second = experiment.fixed_supply_energy_material(
+        Taskset(8), supply, raw, kappa=Fraction(10),
+        reference_ue=Fraction(9, 10), energy_level="low", normalization_horizon=10,
+    )
+    assert first["target_supply_mean_j_per_tick"] == second["target_supply_mean_j_per_tick"] == str(supply)
+    assert Fraction(first["solar_scale"]) * Fraction(first["raw_reference_mean_j_per_tick"]) == supply
+    assert Fraction(second["solar_scale"]) * Fraction(second["raw_reference_mean_j_per_tick"]) == supply
+    assert first["actual_ue"] != second["actual_ue"]
+    assert first["battery_capacity_j"] == "60"
+    assert first["initial_energy_j"] == "30"
+    assert first["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
+    assert first["target_ue_is_reference"] == "true"
+    with pytest.raises(ValueError, match="does not match"):
+        experiment.fixed_supply_energy_material(
+            Taskset(2), supply + Fraction(1), raw, kappa=Fraction(10),
+            reference_ue=Fraction(9, 10), energy_level="low", normalization_horizon=10,
+        )
+
+
+def test_v7_supply_levels_and_identity_isolation():
+    assert experiment.V7_FIXED_SUPPLIES["low"] < experiment.V7_FIXED_SUPPLIES["medium"] < experiment.V7_FIXED_SUPPLIES["high"]
+    assert {
+        experiment.v7_energy_level(value): value
+        for value in experiment.V7_REFERENCE_UES.values()
+    } == experiment.V7_REFERENCE_UES
+    base = {
+        "experiment": experiment.V6_EXPERIMENT, "domain": experiment.V6_DOMAIN,
+        "seed": 1, "cells": [["1/10", "1/5"]],
+    }
+    v7 = {**base, "experiment": experiment.V7_EXPERIMENT, "domain": experiment.V7_DOMAIN,
+          "campaign": experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+          "energy_control": "FIXED_ABSOLUTE_SUPPLY"}
+    service = {**v7, "campaign": experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+               "energy_control": "SERVICE_ONLY_SCALING"}
+    assert experiment.run_identity(base) != experiment.run_identity(v7)
+    assert experiment.run_identity(v7) != experiment.run_identity(service)
+
+
+def test_v7_cli_uses_only_the_frozen_grid(tmp_path):
+    for campaign, expected_count in (
+        (experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN, 24),
+        (experiment.V7_UE_SERVICE_SCALING_CAMPAIGN, 30),
+    ):
+        args = scheduler_runner.make_parser().parse_args([
+            "--output", str(tmp_path), "--seed", "1", "--campaign", campaign,
+        ])
+        cells, _slices, contract, structured = scheduler_runner._resolve_grid(args)
+        assert len(cells) == expected_count
+        assert contract["unique_cell_count"] == expected_count
+        assert structured is False
+
+
+def test_v7_request_identity_contains_campaign_and_control():
+    class Taskset:
+        processors = 4
+        actual_utilization = Fraction(1)
+        taskset_index = 0
+        seed = 1
+        deadline_mode = "constrained"
+
+        def __init__(self, uc):
+            self.target_utilization = uc * self.processors
+            self.taskset_id = f"taskset-{uc}"
+            self.semantic_hash = f"hash-{uc}"
+
+    for campaign in (
+        experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+        experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+    ):
+        spec = experiment.v7_campaign_spec(campaign)
+        tasksets = [Taskset(uc) for uc in sorted({uc for uc, _ue in spec["cells"]})]
+        rows = experiment.request_rows(
+            tasksets, spec["cells"], experiment.ALL_SCHEDULERS, 60000,
+            experiment_name=experiment.V7_EXPERIMENT, deadline_mode="constrained",
+            campaign=campaign, energy_control=spec["energy_control"],
+        )
+        assert len(rows) == len(spec["cells"]) * len(experiment.ALL_SCHEDULERS)
+        assert len({row["request_id"] for row in rows}) == len(rows)
+        assert {row["deadline_mode"] for row in rows} == {"constrained"}
+        assert {row["campaign"] for row in rows} == {campaign}
+        assert {row["energy_control"] for row in rows} == {spec["energy_control"]}
+
+
+def test_v7_resume_rejects_v6_output(tmp_path):
+    output = tmp_path / "v7-resume"
+    output.mkdir()
+    (output / "run_config.json").write_text(
+        json.dumps(_v6_fixture_config("RM")), encoding="utf-8",
+    )
+    with pytest.raises(SystemExit, match="different campaign version"):
+        scheduler_runner.main([
+            "--output", str(output), "--seed", "1", "--campaign",
+            experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN, "--resume",
+        ])
+
+
+def test_v7_freezes_task_generation_parameters_and_v6_remains_compatible():
+    frozen = {
+        "period_min": perf_g.PERIOD_MIN_MS,
+        "period_max": perf_g.PERIOD_MAX_MS,
+        "min_task_util": perf_g.MIN_TASK_UTILIZATION,
+        "max_task_util": perf_g.MAX_TASK_UTILIZATION,
+        "util_tolerance_total": perf_g.UTILIZATION_TOLERANCE,
+    }
+    for campaign in (
+        experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+        experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+    ):
+        scheduler_runner._validate_v7_generation_parameters(campaign, **frozen)
+        with pytest.raises(SystemExit, match="freeze PERF-G task generation parameters"):
+            scheduler_runner._validate_v7_generation_parameters(
+                campaign, **{**frozen, "period_min": frozen["period_min"] + 1},
+            )
+        with pytest.raises(SystemExit, match="freeze PERF-G task generation parameters"):
+            scheduler_runner._validate_v7_generation_parameters(
+                campaign, **{
+                    **frozen,
+                    "min_task_util": frozen["min_task_util"] + Fraction(1, 100),
+                },
+            )
+    scheduler_runner._validate_v7_generation_parameters(
+        "v6", **{
+            **frozen,
+            "period_min": frozen["period_min"] + 1,
+            "min_task_util": frozen["min_task_util"] + Fraction(1, 100),
+        },
+    )
