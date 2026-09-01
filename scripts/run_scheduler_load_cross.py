@@ -665,6 +665,26 @@ def _resolve_grid(args: argparse.Namespace) -> tuple[
     return cells, figure_slices, contract, True
 
 
+def _validate_v7_generation_parameters(
+    campaign: str, *, period_min: int, period_max: int,
+    min_task_util: Fraction, max_task_util: Fraction,
+    util_tolerance_total: Fraction,
+) -> None:
+    """Reject task-generation overrides for formal v7 campaigns."""
+    if campaign == "v6":
+        return
+    if (
+        period_min != perf_g.PERIOD_MIN_MS
+        or period_max != perf_g.PERIOD_MAX_MS
+        or min_task_util != perf_g.MIN_TASK_UTILIZATION
+        or max_task_util != perf_g.MAX_TASK_UTILIZATION
+        or util_tolerance_total != perf_g.UTILIZATION_TOLERANCE
+    ):
+        raise SystemExit(
+            "v7 formal campaigns freeze PERF-G task generation parameters"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     campaign = args.campaign
@@ -709,6 +729,14 @@ def main(argv: list[str] | None = None) -> int:
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
     max_util = experiment.parse_fraction(args.max_task_util, "max-task-util")
     tolerance = experiment.parse_fraction(args.util_tolerance_total, "util-tolerance-total")
+    _validate_v7_generation_parameters(
+        campaign,
+        period_min=args.period_min,
+        period_max=args.period_max,
+        min_task_util=min_util,
+        max_task_util=max_util,
+        util_tolerance_total=tolerance,
+    )
     kappa = experiment.parse_fraction(args.kappa, "kappa")
     if kappa != experiment.DEFAULT_KAPPA:
         raise SystemExit("scheduler LOAD-CROSS freezes kappa=10")

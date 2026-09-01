@@ -3361,6 +3361,11 @@ def test_v7_fixed_supply_is_exact_and_independent_of_demand():
     assert first["initial_energy_j"] == "30"
     assert first["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
     assert first["target_ue_is_reference"] == "true"
+    with pytest.raises(ValueError, match="does not match"):
+        experiment.fixed_supply_energy_material(
+            Taskset(2), supply + Fraction(1), raw, kappa=Fraction(10),
+            reference_ue=Fraction(9, 10), energy_level="low", normalization_horizon=10,
+        )
 
 
 def test_v7_supply_levels_and_identity_isolation():
@@ -3438,3 +3443,36 @@ def test_v7_resume_rejects_v6_output(tmp_path):
             "--output", str(output), "--seed", "1", "--campaign",
             experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN, "--resume",
         ])
+
+
+def test_v7_freezes_task_generation_parameters_and_v6_remains_compatible():
+    frozen = {
+        "period_min": perf_g.PERIOD_MIN_MS,
+        "period_max": perf_g.PERIOD_MAX_MS,
+        "min_task_util": perf_g.MIN_TASK_UTILIZATION,
+        "max_task_util": perf_g.MAX_TASK_UTILIZATION,
+        "util_tolerance_total": perf_g.UTILIZATION_TOLERANCE,
+    }
+    for campaign in (
+        experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+        experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+    ):
+        scheduler_runner._validate_v7_generation_parameters(campaign, **frozen)
+        with pytest.raises(SystemExit, match="freeze PERF-G task generation parameters"):
+            scheduler_runner._validate_v7_generation_parameters(
+                campaign, **{**frozen, "period_min": frozen["period_min"] + 1},
+            )
+        with pytest.raises(SystemExit, match="freeze PERF-G task generation parameters"):
+            scheduler_runner._validate_v7_generation_parameters(
+                campaign, **{
+                    **frozen,
+                    "min_task_util": frozen["min_task_util"] + Fraction(1, 100),
+                },
+            )
+    scheduler_runner._validate_v7_generation_parameters(
+        "v6", **{
+            **frozen,
+            "period_min": frozen["period_min"] + 1,
+            "min_task_util": frozen["min_task_util"] + Fraction(1, 100),
+        },
+    )

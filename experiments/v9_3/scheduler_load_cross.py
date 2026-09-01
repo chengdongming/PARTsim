@@ -934,6 +934,8 @@ def fixed_supply_energy_material(
         raise ValueError("fixed supply must be positive")
     if energy_level not in V7_FIXED_SUPPLIES or V7_REFERENCE_UES[energy_level] != reference:
         raise ValueError("fixed supply energy level does not match reference U_E")
+    if supply != V7_FIXED_SUPPLIES[energy_level]:
+        raise ValueError("fixed supply does not match energy level")
     payload = taskset.task_payload
     demand = sum(
         Fraction(row["C"], row["T"]) * Fraction(row["P"]) for row in payload
