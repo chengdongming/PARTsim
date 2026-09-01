@@ -25,16 +25,48 @@ V3_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v3"
 V4_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v4"
 V5_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v5"
 V6_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v6"
+V7_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v7"
 DOMAIN = V6_DOMAIN
 V4_EXPERIMENT = "scheduler-load-cross-v4"
 V3_EXPERIMENT = "scheduler-load-cross-v3"
 V5_EXPERIMENT = "scheduler-load-cross-v5"
 V6_EXPERIMENT = "scheduler-load-cross-v6"
+V7_EXPERIMENT = "scheduler-load-cross-v7"
 DEADLINE_MODES = ("constrained", "implicit")
 V6_CAMPAIGN_CONTRACT = (
     "ordinary-general-random-nine-scheduler-shared-implicit-deadline-panels-v1"
 )
 V6_MODE_PLAN = {"RM": ("constrained", "implicit"), "DM": ("constrained",)}
+V7_MODE_PLAN = {"RM": ("constrained",), "DM": ("constrained",)}
+V7_UC_FIXED_SUPPLY_CAMPAIGN = "uc-fixed-supply"
+V7_UE_SERVICE_SCALING_CAMPAIGN = "ue-service-scaling"
+V7_UC_FIXED_SUPPLY_CONTRACT = "constrained-only-uc-fixed-absolute-supply-v1"
+V7_UE_SERVICE_SCALING_CONTRACT = "constrained-only-ue-service-only-scaling-v1"
+V7_FIXED_SUPPLIES = {
+    "low": Fraction(
+        747629181917565545971345561061873455108915,
+        582155370876222526540745732927085220869439488,
+    ),
+    "medium": Fraction(
+        149525836383513109194269112212374691021783,
+        97025895146037087756790955487847536811573248,
+    ),
+    "high": Fraction(
+        747629181917565545971345561061873455108915,
+        388103580584148351027163821951390147246292992,
+    ),
+}
+V7_REFERENCE_UES = {
+    "low": Fraction(9, 10),
+    "medium": Fraction(3, 4),
+    "high": Fraction(3, 5),
+}
+V7_UC_SCAN = tuple(Fraction(value) for value in (
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
+))
+V7_UE_SCAN = tuple(Fraction(value) for value in (
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",
+))
 V6_IMPLICIT_PRIORITY_EQUIVALENCE = "RM_equals_DM_when_D_equals_T"
 V6_IMPLICIT_CANONICAL_PRIORITY_POLICY = "RM"
 V6_IMPLICIT_REUSE_POLICY = "shared_across_rm_and_dm_figures"
@@ -299,6 +331,98 @@ def build_scan_cells(
     return tuple(cells)
 
 
+def v7_campaign_spec(campaign: str) -> dict[str, Any]:
+    """Return the frozen grid and figure contract for one v7 campaign."""
+    if campaign == V7_UC_FIXED_SUPPLY_CAMPAIGN:
+        cells = tuple(
+            (uc, V7_REFERENCE_UES[level])
+            for level in ("low", "medium", "high")
+            for uc in V7_UC_SCAN
+        )
+        figure_slices = {
+            "uc_scans": [
+                {
+                    "x_key": "target_uc", "fixed_key": "target_ue",
+                    "fixed_value": fraction_text(V7_REFERENCE_UES[level]),
+                    "label": level,
+                    "x_values": [fraction_text(value) for value in V7_UC_SCAN],
+                }
+                for level in ("low", "medium", "high")
+            ],
+            "ue_scans": [],
+        }
+        contract_name = V7_UC_FIXED_SUPPLY_CONTRACT
+        energy_control = "FIXED_ABSOLUTE_SUPPLY"
+        scan_values = V7_UC_SCAN
+        fixed_values = tuple(V7_REFERENCE_UES[level] for level in ("low", "medium", "high"))
+    elif campaign == V7_UE_SERVICE_SCALING_CAMPAIGN:
+        cells = tuple(
+            (uc, ue)
+            for uc in (Fraction(3, 10), Fraction(1, 2), Fraction(7, 10))
+            for ue in V7_UE_SCAN
+        )
+        figure_slices = {
+            "uc_scans": [],
+            "ue_scans": [
+                {
+                    "x_key": "target_ue", "fixed_key": "target_uc",
+                    "fixed_value": fraction_text(uc),
+                    "label": level,
+                    "x_values": [fraction_text(value) for value in V7_UE_SCAN],
+                }
+                for uc, level in zip(
+                    (Fraction(3, 10), Fraction(1, 2), Fraction(7, 10)),
+                    ("low", "medium", "high"),
+                )
+            ],
+        }
+        contract_name = V7_UE_SERVICE_SCALING_CONTRACT
+        energy_control = "SERVICE_ONLY_SCALING"
+        scan_values = V7_UE_SCAN
+        fixed_values = (Fraction(3, 10), Fraction(1, 2), Fraction(7, 10))
+    else:
+        raise ValueError(f"unknown v7 campaign: {campaign}")
+    scan_contract = {
+        "campaign": campaign,
+        "energy_control": energy_control,
+        "uc_scan_values": [fraction_text(value) for value in (
+            V7_UC_SCAN if campaign == V7_UC_FIXED_SUPPLY_CAMPAIGN else fixed_values
+        )],
+        "ue_scan_values": [fraction_text(value) for value in (
+            fixed_values if campaign == V7_UC_FIXED_SUPPLY_CAMPAIGN else V7_UE_SCAN
+        )],
+        "ordered_cells": [[fraction_text(uc), fraction_text(ue)] for uc, ue in cells],
+        "unique_cell_count": len(cells),
+        "axis_display_min": "0", "axis_display_max": "1", "axis_tick_step": "1/10",
+        "axis_ticks": [fraction_text(value) for value in axis_ticks(
+            Fraction(0), Fraction(1), Fraction(1, 10),
+        )],
+        "zero_point_policy": "display_tick_only_outside_experiment_domain",
+        "scan_values": [fraction_text(value) for value in scan_values],
+    }
+    return {
+        "campaign": campaign, "energy_control": energy_control,
+        "campaign_contract": contract_name, "cells": cells,
+        "scan_contract": scan_contract, "figure_slices": figure_slices,
+    }
+
+
+def v7_deadline_modes_for_priority_policy(priority_policy: str) -> tuple[str, ...]:
+    try:
+        policy = normalize_scheduler_priority_policy(priority_policy)
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return V7_MODE_PLAN[policy]
+
+
+def v7_energy_level(reference_ue: Fraction) -> str:
+    reference = parse_fraction(reference_ue, "reference U_E")
+    for level, value in V7_REFERENCE_UES.items():
+        if value == reference:
+            return level
+    raise ValueError("v7 fixed-supply cell has an unknown reference U_E")
+
+
 def build_scan_contract(profile: Mapping[str, Any]) -> dict[str, Any]:
     normalized = normalize_scan_profile(**{
         key: profile[key] for key in (
@@ -468,6 +592,10 @@ def run_identity(config: Mapping[str, Any]) -> str:
         key: value for key, value in config.items()
         if key not in {"run_identity", "status", "telemetry", "execution"}
     }
+    if config.get("experiment") == V7_EXPERIMENT or config.get("domain") == V7_DOMAIN:
+        return "scheduler-load-cross-v7-" + _hash(
+            comparable, domain=V7_DOMAIN,
+        )[:32]
     return "scheduler-load-cross-v6-" + _hash(
         comparable, domain=V6_DOMAIN,
     )[:32]
@@ -637,7 +765,8 @@ def taskset_row(taskset: Any, processors: int) -> dict[str, Any]:
 def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fraction]],
                  schedulers: Sequence[str], horizon: int,
                  priority_policy: str = "RM", *, experiment_name: str = V3_EXPERIMENT,
-                 deadline_mode: str | None = None,
+                 deadline_mode: str | None = None, campaign: str | None = None,
+                 energy_control: str | None = None,
                  ) -> list[dict[str, Any]]:
     try:
         policy = normalize_scheduler_priority_policy(priority_policy)
@@ -660,6 +789,11 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
         raise ValueError("request deadline mode does not match tasksets")
     is_v5 = experiment_name == V5_EXPERIMENT
     is_v6 = experiment_name == V6_EXPERIMENT
+    is_v7 = experiment_name == V7_EXPERIMENT
+    if is_v7 and (campaign not in {
+        V7_UC_FIXED_SUPPLY_CAMPAIGN, V7_UE_SERVICE_SCALING_CAMPAIGN,
+    } or energy_control not in {"FIXED_ABSOLUTE_SUPPLY", "SERVICE_ONLY_SCALING"}):
+        raise ValueError("v7 request rows require a recognized campaign and energy control")
     rows = []
     for uc, ue in cells:
         eta = eta_for_ue(ue)
@@ -673,6 +807,13 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                 }
                 if is_v5 or is_v6:
                     identity["deadline_mode"] = deadline_mode
+                if is_v7:
+                    identity.update({
+                        "campaign": campaign, "energy_control": energy_control,
+                        "deadline_mode": deadline_mode,
+                    })
+                    if energy_control == "FIXED_ABSOLUTE_SUPPLY":
+                        identity["energy_level"] = v7_energy_level(ue)
                 if policy == "DM":
                     identity["priority_policy"] = policy
                 row = {
@@ -695,6 +836,18 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                 if is_v5 or is_v6:
                     row["deadline_mode"] = deadline_mode
                     request_domain = V6_DOMAIN if is_v6 else V5_DOMAIN
+                elif is_v7:
+                    row.update({
+                        "domain": V7_DOMAIN, "deadline_mode": deadline_mode,
+                        "campaign": campaign, "energy_control": energy_control,
+                    })
+                    if energy_control == "FIXED_ABSOLUTE_SUPPLY":
+                        row.update({
+                            "energy_level": v7_energy_level(ue),
+                            "reference_ue": fraction_text(ue),
+                            "target_ue_role": "calibration_reference",
+                        })
+                    request_domain = V7_DOMAIN
                 elif experiment_name == V4_EXPERIMENT:
                     request_domain = V4_DOMAIN
                 else:
@@ -766,6 +919,62 @@ def energy_material(taskset: Any, target_ue: Fraction, raw_trace: Sequence[Fract
     }
 
 
+def fixed_supply_energy_material(
+    taskset: Any, fixed_supply: Fraction, raw_trace: Sequence[Fraction], *,
+    kappa: Fraction, reference_ue: Fraction, energy_level: str,
+    normalization_horizon: int = FORMAL_NORMALIZATION_HORIZON,
+    raw_trace_id: str | None = None,
+) -> dict[str, str]:
+    """Build exact energy material for a fixed absolute supply campaign."""
+    if len(raw_trace) != normalization_horizon:
+        raise ValueError("raw trace must cover the normalization horizon")
+    supply = parse_fraction(fixed_supply, "fixed supply")
+    reference = parse_fraction(reference_ue, "reference U_E")
+    if supply <= 0:
+        raise ValueError("fixed supply must be positive")
+    if energy_level not in V7_FIXED_SUPPLIES or V7_REFERENCE_UES[energy_level] != reference:
+        raise ValueError("fixed supply energy level does not match reference U_E")
+    payload = taskset.task_payload
+    demand = sum(
+        Fraction(row["C"], row["T"]) * Fraction(row["P"]) for row in payload
+    )
+    powers = sorted((Fraction(row["P"]) for row in payload), reverse=True)
+    burst = sum(powers[: min(taskset.processors, taskset.task_count)], Fraction(0))
+    raw_mean = sum(raw_trace, Fraction(0)) / normalization_horizon
+    if raw_mean <= 0:
+        raise ValueError("raw trace mean must be positive")
+    solar_scale = supply / raw_mean
+    actual_ue = demand / supply
+    eta = eta_for_ue(reference)
+    if solar_scale * raw_mean != supply:
+        raise ValueError("fixed-supply harvest identity failed")
+    return {
+        "kappa": fraction_text(kappa), "eta": fraction_text(eta),
+        "target_ue": fraction_text(reference),
+        "reference_ue": fraction_text(reference),
+        "target_ue_is_reference": "true",
+        "energy_level": energy_level,
+        "fixed_supply_mean_j_per_tick": fraction_text(supply),
+        "P_dem_j_per_tick": fraction_text(demand),
+        "E_burst_j": fraction_text(burst),
+        "battery_capacity_j": fraction_text(kappa * burst),
+        "initial_energy_j": fraction_text(kappa * burst / 2),
+        "raw_reference_mean_j_per_tick": fraction_text(raw_mean),
+        "solar_scale": fraction_text(solar_scale),
+        "target_supply_mean_j_per_tick": fraction_text(supply),
+        "runtime_configured_average_supply_j_per_tick": fraction_text(supply),
+        "runtime_average_supply_j_per_tick": fraction_text(supply),
+        "actual_ue": fraction_text(actual_ue),
+        "actual_ue_abs_error": fraction_text(abs(actual_ue - reference)),
+        "actual_ue_minus_target_ue": fraction_text(actual_ue - reference),
+        "actual_ue_rel_error": fraction_text(abs(actual_ue - reference) / reference),
+        "normalization_horizon_ms": str(normalization_horizon),
+        "energy_control": "FIXED_ABSOLUTE_SUPPLY",
+        **HARVEST_MODEL_IDENTITY,
+        "harvest_trace_id": raw_trace_id or harvest_trace_identity(raw_trace),
+    }
+
+
 def prepare_energy_material(job: Mapping[str, Any]) -> dict[str, Any]:
     """Compute one immutable energy material for one (taskset, U_E) pair."""
     class _TasksetView:
@@ -776,7 +985,15 @@ def prepare_energy_material(job: Mapping[str, Any]) -> dict[str, Any]:
     raw_trace = _PREPARE_RAW_TRACE
     if raw_trace is None:
         raw_trace = tuple(job["raw_trace"])
-    if job.get("raw_trace_id") is None:
+    if job.get("energy_control") == "FIXED_ABSOLUTE_SUPPLY":
+        material = fixed_supply_energy_material(
+            _TasksetView(), Fraction(job["fixed_supply"]), raw_trace,
+            kappa=Fraction(job["kappa"]),
+            reference_ue=Fraction(job["reference_ue"]),
+            energy_level=str(job["energy_level"]),
+            raw_trace_id=job.get("raw_trace_id"),
+        )
+    elif job.get("raw_trace_id") is None:
         material = energy_material(
             _TasksetView(), Fraction(job["target_ue"]), raw_trace,
             kappa=Fraction(job["kappa"]),

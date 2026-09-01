@@ -550,6 +550,18 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
+    parser.add_argument(
+        "--campaign", choices=(
+            "v6", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+            experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+        ), default="v6",
+        help="v6 for the historical contract, or one explicit constrained-only v7 campaign",
+    )
+    parser.add_argument(
+        "--energy-control", choices=("FIXED_ABSOLUTE_SUPPLY", "SERVICE_ONLY_SCALING"),
+        default=None,
+        help="optional v7 control assertion; the campaign selects the control by default",
+    )
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument(
         "--prepare-workers", type=int, default=None,
@@ -607,6 +619,16 @@ _V4_GRID_ARGS = (
 def _resolve_grid(args: argparse.Namespace) -> tuple[
     tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any] | None, bool,
 ]:
+    if args.campaign != "v6":
+        if args.cells is not None or any(
+            getattr(args, name) is not None for name in _V4_GRID_ARGS
+        ):
+            raise SystemExit("v7 campaigns use their frozen grid and do not accept grid overrides")
+        try:
+            spec = experiment.v7_campaign_spec(args.campaign)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        return spec["cells"], spec["figure_slices"], spec["scan_contract"], False
     structured = any(getattr(args, name) is not None for name in _V4_GRID_ARGS)
     if args.cells is not None:
         raise SystemExit(
@@ -645,6 +667,19 @@ def _resolve_grid(args: argparse.Namespace) -> tuple[
 
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
+    campaign = args.campaign
+    if campaign == "v6":
+        if args.energy_control is not None and args.energy_control != "SERVICE_ONLY_SCALING":
+            raise SystemExit("v6 uses SERVICE_ONLY_SCALING and cannot select another energy control")
+        selected_energy_control = "SERVICE_ONLY_SCALING"
+    else:
+        selected_energy_control = (
+            "FIXED_ABSOLUTE_SUPPLY"
+            if campaign == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
+            else "SERVICE_ONLY_SCALING"
+        )
+        if args.energy_control is not None and args.energy_control != selected_energy_control:
+            raise SystemExit("energy-control does not match the selected v7 campaign")
     prepare_workers = args.workers if args.prepare_workers is None else args.prepare_workers
     try:
         validate_workers(prepare_workers, "prepare-workers")
@@ -668,6 +703,8 @@ def main(argv: list[str] | None = None) -> int:
         else ",".join(perf_g.FORMAL_SCHEDULERS)
     )
     priority_policy = args.priority_policy
+    if campaign != "v6" and tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
+        raise SystemExit("v7 formal campaigns require all nine canonical schedulers")
     is_frozen_main_figure = tuple(cells) == tuple(experiment.FORMAL_CELLS)
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
     max_util = experiment.parse_fraction(args.max_task_util, "max-task-util")
@@ -675,6 +712,12 @@ def main(argv: list[str] | None = None) -> int:
     kappa = experiment.parse_fraction(args.kappa, "kappa")
     if kappa != experiment.DEFAULT_KAPPA:
         raise SystemExit("scheduler LOAD-CROSS freezes kappa=10")
+    if campaign != "v6" and (
+        args.processors != perf_g.PROCESSORS
+        or args.tasks != perf_g.TASK_COUNT
+        or args.simulation_horizon != perf_g.FORMAL_HORIZON_MS
+    ):
+        raise SystemExit("v7 formal campaigns freeze processors=4, tasks=10, and simulation horizon=60000 ms")
     if is_frozen_main_figure:
         try:
             experiment.validate_v6_main_figure(
@@ -688,13 +731,21 @@ def main(argv: list[str] | None = None) -> int:
     rho = experiment.parse_fraction(args.rho, "rho")
     latency = experiment.parse_fraction(args.latency, "latency")
     root = args.output
-    experiment_name = experiment.V6_EXPERIMENT
-    deadline_modes = experiment.deadline_modes_for_priority_policy(priority_policy)
+    is_v7 = campaign != "v6"
+    experiment_name = experiment.V7_EXPERIMENT if is_v7 else experiment.V6_EXPERIMENT
+    deadline_modes = (
+        experiment.v7_deadline_modes_for_priority_policy(priority_policy)
+        if is_v7 else experiment.deadline_modes_for_priority_policy(priority_policy)
+    )
     expected_request_count = len(cells) * args.samples_per_cell * len(schedulers) * len(deadline_modes)
     expected_taskset_count = len(set(uc for uc, _ue in cells)) * args.samples_per_cell * len(deadline_modes)
     config = {
-        "experiment": experiment_name, "domain": experiment.V6_DOMAIN,
-        "campaign_contract": experiment.V6_CAMPAIGN_CONTRACT,
+        "experiment": experiment_name,
+        "domain": experiment.V7_DOMAIN if is_v7 else experiment.V6_DOMAIN,
+        "campaign_contract": (
+            experiment.v7_campaign_spec(campaign)["campaign_contract"]
+            if is_v7 else experiment.V6_CAMPAIGN_CONTRACT
+        ),
         "seed": args.seed, "workers": args.workers,
         "deadline_modes": list(deadline_modes),
         "priority_policy": priority_policy,
@@ -715,7 +766,7 @@ def main(argv: list[str] | None = None) -> int:
         "use_real_solar_data": False,
         **experiment.HARVEST_MODEL_IDENTITY,
         "release_semantics": "synchronous arrival_offset=0",
-        "energy_control": "SERVICE_ONLY_SCALING", "energy_unit": "J/tick exact canonical P",
+        "energy_control": selected_energy_control, "energy_unit": "J/tick exact canonical P",
         "simulator": str(args.simulator), "canonical_taskset_source": "PERF-G TasksetStore",
         "keep_traces": args.keep_traces,
         "parse_concurrency": args.parse_concurrency,
@@ -727,16 +778,37 @@ def main(argv: list[str] | None = None) -> int:
             "keep_traces": bool(args.keep_traces),
         },
     }
+    if is_v7:
+        for key in (
+            "implicit_priority_equivalence", "implicit_canonical_priority_policy",
+            "implicit_reuse_policy", "shared_implicit_contract_version",
+        ):
+            config.pop(key)
+        config["campaign"] = campaign
+        if selected_energy_control == "FIXED_ABSOLUTE_SUPPLY":
+            config["fixed_supply_levels"] = {
+                level: {
+                    "reference_ue": str(experiment.V7_REFERENCE_UES[level]),
+                    "fixed_supply_mean_j_per_tick": str(experiment.V7_FIXED_SUPPLIES[level]),
+                }
+                for level in ("low", "medium", "high")
+            }
     if scan_contract is not None:
         config["scan_contract"] = scan_contract
     config["run_identity"] = experiment.run_identity(config)
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
-        if (stored_config or {}).get("experiment") != experiment.V6_EXPERIMENT:
-            raise SystemExit("resume experiment mismatch: v6 cannot resume non-v6 results")
-        if (stored_config or {}).get("domain") != experiment.V6_DOMAIN:
-            raise SystemExit("resume domain mismatch: v6 cannot resume another domain")
+        expected_experiment = experiment.V7_EXPERIMENT if is_v7 else experiment.V6_EXPERIMENT
+        expected_domain = experiment.V7_DOMAIN if is_v7 else experiment.V6_DOMAIN
+        if (stored_config or {}).get("experiment") != expected_experiment:
+            if not is_v7:
+                raise SystemExit("resume experiment mismatch: v6 cannot resume non-v6 results")
+            raise SystemExit(
+                "resume experiment mismatch: cannot resume a different campaign version"
+            )
+        if (stored_config or {}).get("domain") != expected_domain:
+            raise SystemExit("resume domain mismatch: cannot resume another campaign domain")
         if not isinstance((stored_config or {}).get("run_identity"), str):
             raise SystemExit("resume configuration mismatch")
         if experiment.run_identity(stored_config) != stored_config["run_identity"]:
@@ -783,11 +855,13 @@ def main(argv: list[str] | None = None) -> int:
             tasksets_by_mode[deadline_mode], cells, schedulers,
             args.simulation_horizon, priority_policy=priority_policy,
             experiment_name=experiment_name, deadline_mode=deadline_mode,
+            campaign=campaign if is_v7 else None,
+            energy_control=selected_energy_control if is_v7 else None,
         )
     ]
     if len(requests) != expected_request_count:
         raise SystemExit(
-            "generated request count does not match v6 contract: "
+            f"generated request count does not match {'campaign' if is_v7 else 'v6'} contract: "
             f"expected {expected_request_count}, observed {len(requests)}"
         )
     write_jsonl(root / "requests.jsonl", requests)
@@ -853,7 +927,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"scheduler-load-cross resume blocked: {exc}", file=sys.stderr)
             return 2
         energy_key = (taskset.taskset_id, str(request["target_ue"]))
-        energy_jobs.setdefault(energy_key, {
+        energy_job = {
             "taskset_id": taskset.taskset_id,
             "target_ue": request["target_ue"],
             "task_payload": tuple(taskset.task_payload),
@@ -861,7 +935,17 @@ def main(argv: list[str] | None = None) -> int:
             "task_count": taskset.task_count,
             "kappa": kappa,
             "raw_trace_id": raw_trace_id,
-        })
+        }
+        if is_v7:
+            energy_job["energy_control"] = selected_energy_control
+            if selected_energy_control == "FIXED_ABSOLUTE_SUPPLY":
+                level = str(request["energy_level"])
+                energy_job.update({
+                    "energy_level": level,
+                    "reference_ue": request["target_ue"],
+                    "fixed_supply": experiment.V7_FIXED_SUPPLIES[level],
+                })
+        energy_jobs.setdefault(energy_key, energy_job)
         simulation = {
             "simulator_bin": str(args.simulator), "horizon": args.simulation_horizon,
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
@@ -1135,12 +1219,15 @@ def main(argv: list[str] | None = None) -> int:
         "duplicate": len(observed_ids) - len(set(observed_ids)),
         "unexpected": len(set(observed_ids) - expected_ids),
         "technical": 0,
-        "runtime_config_ue_exact": all(
-            Fraction(row["energy"]["actual_ue"]) ==
-            Fraction(row["energy"]["target_ue"])
-            for row in results_by_id.values()
+        "runtime_config_ue_exact": (
+            all(
+                Fraction(row["energy"]["actual_ue"]) ==
+                Fraction(row["energy"]["target_ue"])
+                for row in results_by_id.values()
+            ) if selected_energy_control == "SERVICE_ONLY_SCALING" else False
         ),
-        "experiment": experiment_name, "domain": experiment.V6_DOMAIN,
+        "experiment": experiment_name,
+        "domain": experiment.V7_DOMAIN if is_v7 else experiment.V6_DOMAIN,
         "priority_policy": priority_policy,
         "deadline_modes": list(deadline_modes),
         "expected_request_count": expected_request_count,
