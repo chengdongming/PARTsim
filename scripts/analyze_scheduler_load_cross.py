@@ -597,6 +597,7 @@ def _plot_composite_scan_job(job: dict[str, Any]) -> None:
         job["xkey"], job["schedulers"], job["xlabel"], job["title"],
         axis_min=job["axis_min"], axis_max=job["axis_max"],
         axis_ticks=job["axis_ticks"],
+        slice_display_labels=job.get("slice_display_labels"),
     )
 
 
@@ -606,6 +607,7 @@ def _plot_composite_dmr_job(job: dict[str, Any]) -> None:
         job["xkey"], job["schedulers"], job["xlabel"], job["title"],
         job["ymin"], axis_min=job["axis_min"], axis_max=job["axis_max"],
         axis_ticks=job["axis_ticks"],
+        slice_display_labels=job.get("slice_display_labels"),
     )
 
 
@@ -618,10 +620,29 @@ def _axis_values(contract: dict[str, Any]) -> tuple[float, float, list[float], l
     )
 
 
+def _v7_publication_slice_labels(
+    campaign: str, slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]],
+) -> list[str]:
+    if campaign == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN:
+        return [
+            f"{slice_config['label']}: fixed supply = "
+            f"{float(experiment.V7_FIXED_SUPPLIES[slice_config['label']] * 1000):.3f} mJ/tick"
+            for slice_config, _rows in slice_rows
+        ]
+    if campaign == experiment.V7_UE_SERVICE_SCALING_CAMPAIGN:
+        return [
+            f"{slice_config['label']}: U_C="
+            f"{experiment.decimal_text(slice_config['fixed_value'])}"
+            for slice_config, _rows in slice_rows
+        ]
+    raise ValueError(f"unsupported v7 publication campaign: {campaign}")
+
+
 def _draw_composite_axes(
     figure: Any, axes: Any, slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]],
     *, xkey: str, schedulers: list[str], xlabel: str, metric: str,
     axis_min: str, axis_max: str, axis_ticks: list[str], ymin: float = 0.0,
+    slice_display_labels: list[str] | None = None,
 ) -> None:
     low, high, ticks, ticklabels = _axis_values({
         "axis_display_min": axis_min, "axis_display_max": axis_max,
@@ -629,79 +650,83 @@ def _draw_composite_axes(
     })
     handles: dict[str, Any] = {}
     for row_index, (slice_config, rows) in enumerate(slice_rows):
-        for column_index, (panel, panel_schedulers) in enumerate(experiment.PANEL_GROUPS.items()):
-            axis = axes[row_index][column_index]
-            for scheduler in panel_schedulers:
-                if scheduler not in schedulers:
-                    continue
-                values = [
-                    row for row in rows if row["scheduler"] == scheduler
-                    and row[metric] is not None
+        axis = axes[row_index][0]
+        for scheduler in schedulers:
+            values = [
+                row for row in rows if row["scheduler"] == scheduler
+                and row[metric] is not None
+            ]
+            values.sort(key=lambda row: Fraction(row[xkey]))
+            if not values:
+                continue
+            style = _v5_plot_style(scheduler)
+            if metric == "wholepass_ratio":
+                lower = [row[metric] - row["ci95_low"] for row in values]
+                upper = [row["ci95_high"] - row[metric] for row in values]
+            else:
+                lower = [
+                    row[metric] - row["dmr_ci95_low"]
+                    if row["dmr_ci95_low"] is not None else 0.0 for row in values
                 ]
-                values.sort(key=lambda row: Fraction(row[xkey]))
-                if not values:
-                    continue
-                prefix = scheduler.split("-", 1)[0]
-                style = _plot_style(prefix)
-                if metric == "wholepass_ratio":
-                    lower = [row[metric] - row["ci95_low"] for row in values]
-                    upper = [row["ci95_high"] - row[metric] for row in values]
-                else:
-                    lower = [
-                        row[metric] - row["dmr_ci95_low"]
-                        if row["dmr_ci95_low"] is not None else 0.0 for row in values
-                    ]
-                    upper = [
-                        row["dmr_ci95_high"] - row[metric]
-                        if row["dmr_ci95_high"] is not None else 0.0 for row in values
-                    ]
-                container = axis.errorbar(
-                    [float(Fraction(row[xkey])) for row in values],
-                    [row[metric] for row in values], yerr=[lower, upper],
-                    marker=style["marker"], linestyle=style["linestyle"],
-                    color=style["color"], linewidth=style["linewidth"],
-                    markersize=style["markersize"], zorder=style["zorder"],
-                    capsize=2, label=prefix,
-                )
-                line = container.lines[0]
-                handles.setdefault(prefix, line)
-            axis.set_title(panel if row_index == 0 else "")
-            axis.set_xlabel(xlabel)
-            axis.set_xlim(low, high)
-            axis.set_xticks(ticks)
-            axis.set_xticklabels(ticklabels)
-            axis.set_ylim(ymin, 1.0)
-            axis.grid(alpha=0.25)
-            if column_index == 0:
-                fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
-                axis.set_ylabel(
-                    f"{slice_config['label']}: {fixed_name}="
-                    f"{experiment.decimal_text(slice_config['fixed_value'])}\n"
-                    f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
-                )
+                upper = [
+                    row["dmr_ci95_high"] - row[metric]
+                    if row["dmr_ci95_high"] is not None else 0.0 for row in values
+                ]
+            container = axis.errorbar(
+                [float(Fraction(row[xkey])) for row in values],
+                [row[metric] for row in values], yerr=[lower, upper],
+                marker=style["marker"], linestyle=style["linestyle"],
+                color=style["color"], linewidth=style["linewidth"],
+                markersize=style["markersize"], zorder=style["zorder"],
+                capsize=2, label=scheduler,
+            )
+            line = container.lines[0]
+            handles.setdefault(scheduler, line)
+        fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
+        display_label = (
+            slice_display_labels[row_index]
+            if slice_display_labels is not None else slice_config["label"]
+        )
+        axis.set_title(display_label)
+        axis.set_xlabel(xlabel)
+        axis.set_xlim(low, high)
+        axis.set_xticks(ticks)
+        axis.set_xticklabels(ticklabels)
+        axis.set_ylim(ymin, 1.0)
+        axis.grid(alpha=0.25)
+        if slice_display_labels is None:
+            axis.set_ylabel(
+                f"{fixed_name}={experiment.decimal_text(slice_config['fixed_value'])}\n"
+                f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
+            )
+        else:
+            axis.set_ylabel(
+                "Whole-taskset pass ratio" if metric == "wholepass_ratio" else "DMR"
+            )
     figure.legend(
-        [handles[name] for name in ("ASAP", "ALAP", "ST") if name in handles],
-        [name for name in ("ASAP", "ALAP", "ST") if name in handles],
+        [handles[name] for name in experiment.ALL_SCHEDULERS if name in handles],
+        [name for name in experiment.ALL_SCHEDULERS if name in handles],
         loc="lower center", ncol=3,
     )
-    figure.subplots_adjust(bottom=0.16, hspace=0.35, wspace=0.25)
+    figure.subplots_adjust(bottom=0.20, hspace=0.35)
 
 
 def plot_composite_scan(
     slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]], output: Path,
     filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
     *, axis_min: str, axis_max: str, axis_ticks: list[str],
+    slice_display_labels: list[str] | None = None,
 ) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     figure, axes = plt.subplots(
-        len(slice_rows), 3, squeeze=False, figsize=(15, 4 * len(slice_rows)), sharey=True,
+        len(slice_rows), 1, squeeze=False, figsize=(10, 4 * len(slice_rows)), sharey=True,
     )
     _draw_composite_axes(
         figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
         metric="wholepass_ratio", axis_min=axis_min, axis_max=axis_max,
-        axis_ticks=axis_ticks,
+        axis_ticks=axis_ticks, slice_display_labels=slice_display_labels,
     )
     figure.suptitle(title)
     figure.savefig(output / filename)
@@ -712,18 +737,19 @@ def plot_composite_dmr(
     slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]], output: Path,
     filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
     ymin: float, *, axis_min: str, axis_max: str, axis_ticks: list[str],
+    slice_display_labels: list[str] | None = None,
 ) -> None:
     ymin = _validate_dmr_ymin(ymin)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     figure, axes = plt.subplots(
-        len(slice_rows), 3, squeeze=False, figsize=(15, 4 * len(slice_rows)), sharey=True,
+        len(slice_rows), 1, squeeze=False, figsize=(10, 4 * len(slice_rows)), sharey=True,
     )
     _draw_composite_axes(
         figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
         metric="dmr", axis_min=axis_min, axis_max=axis_max, axis_ticks=axis_ticks,
-        ymin=ymin,
+        ymin=ymin, slice_display_labels=slice_display_labels,
     )
     figure.suptitle(title)
     figure.savefig(output / filename)
@@ -2155,12 +2181,16 @@ def analyze(
             {"composite": True, "slice_rows": slice_rows, "output": str(root),
              "filename": f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices.png",
              "xkey": x_key, "schedulers": schedulers, "xlabel": xlabel,
-             "title": f"{priority_policy} — Whole-taskset pass ratio versus {xlabel}", **axis},
+             "title": f"{priority_policy} — Whole-taskset pass ratio versus {xlabel}",
+             "slice_display_labels": _v7_publication_slice_labels(config["campaign"], slice_rows),
+             **axis},
             {"composite": True, "slice_rows": dmr_slice_rows, "output": str(root),
              "filename": f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices_dmr.png",
              "xkey": x_key, "schedulers": schedulers, "xlabel": xlabel, "metric": "dmr",
              "ymin": uc_dmr_ymin if scan_key == "uc_scans" else ue_dmr_ymin,
-             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus {xlabel}", **axis},
+             "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus {xlabel}",
+             "slice_display_labels": _v7_publication_slice_labels(config["campaign"], dmr_slice_rows),
+             **axis},
         ]
     else:
         uc_slice = figure_slices["uc_scan"]
