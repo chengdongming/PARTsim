@@ -629,62 +629,56 @@ def _draw_composite_axes(
     })
     handles: dict[str, Any] = {}
     for row_index, (slice_config, rows) in enumerate(slice_rows):
-        for column_index, (panel, panel_schedulers) in enumerate(experiment.PANEL_GROUPS.items()):
-            axis = axes[row_index][column_index]
-            for scheduler in panel_schedulers:
-                if scheduler not in schedulers:
-                    continue
-                values = [
-                    row for row in rows if row["scheduler"] == scheduler
-                    and row[metric] is not None
+        axis = axes[row_index][0]
+        for scheduler in schedulers:
+            values = [
+                row for row in rows if row["scheduler"] == scheduler
+                and row[metric] is not None
+            ]
+            values.sort(key=lambda row: Fraction(row[xkey]))
+            if not values:
+                continue
+            style = _v5_plot_style(scheduler)
+            if metric == "wholepass_ratio":
+                lower = [row[metric] - row["ci95_low"] for row in values]
+                upper = [row["ci95_high"] - row[metric] for row in values]
+            else:
+                lower = [
+                    row[metric] - row["dmr_ci95_low"]
+                    if row["dmr_ci95_low"] is not None else 0.0 for row in values
                 ]
-                values.sort(key=lambda row: Fraction(row[xkey]))
-                if not values:
-                    continue
-                prefix = scheduler.split("-", 1)[0]
-                style = _plot_style(prefix)
-                if metric == "wholepass_ratio":
-                    lower = [row[metric] - row["ci95_low"] for row in values]
-                    upper = [row["ci95_high"] - row[metric] for row in values]
-                else:
-                    lower = [
-                        row[metric] - row["dmr_ci95_low"]
-                        if row["dmr_ci95_low"] is not None else 0.0 for row in values
-                    ]
-                    upper = [
-                        row["dmr_ci95_high"] - row[metric]
-                        if row["dmr_ci95_high"] is not None else 0.0 for row in values
-                    ]
-                container = axis.errorbar(
-                    [float(Fraction(row[xkey])) for row in values],
-                    [row[metric] for row in values], yerr=[lower, upper],
-                    marker=style["marker"], linestyle=style["linestyle"],
-                    color=style["color"], linewidth=style["linewidth"],
-                    markersize=style["markersize"], zorder=style["zorder"],
-                    capsize=2, label=prefix,
-                )
-                line = container.lines[0]
-                handles.setdefault(prefix, line)
-            axis.set_title(panel if row_index == 0 else "")
-            axis.set_xlabel(xlabel)
-            axis.set_xlim(low, high)
-            axis.set_xticks(ticks)
-            axis.set_xticklabels(ticklabels)
-            axis.set_ylim(ymin, 1.0)
-            axis.grid(alpha=0.25)
-            if column_index == 0:
-                fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
-                axis.set_ylabel(
-                    f"{slice_config['label']}: {fixed_name}="
-                    f"{experiment.decimal_text(slice_config['fixed_value'])}\n"
-                    f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
-                )
+                upper = [
+                    row["dmr_ci95_high"] - row[metric]
+                    if row["dmr_ci95_high"] is not None else 0.0 for row in values
+                ]
+            container = axis.errorbar(
+                [float(Fraction(row[xkey])) for row in values],
+                [row[metric] for row in values], yerr=[lower, upper],
+                marker=style["marker"], linestyle=style["linestyle"],
+                color=style["color"], linewidth=style["linewidth"],
+                markersize=style["markersize"], zorder=style["zorder"],
+                capsize=2, label=scheduler,
+            )
+            line = container.lines[0]
+            handles.setdefault(scheduler, line)
+        fixed_name = "U_E" if slice_config["fixed_key"] == "target_ue" else "U_C"
+        axis.set_title(slice_config["label"])
+        axis.set_xlabel(xlabel)
+        axis.set_xlim(low, high)
+        axis.set_xticks(ticks)
+        axis.set_xticklabels(ticklabels)
+        axis.set_ylim(ymin, 1.0)
+        axis.grid(alpha=0.25)
+        axis.set_ylabel(
+            f"{fixed_name}={experiment.decimal_text(slice_config['fixed_value'])}\n"
+            f"{('Whole-taskset pass ratio' if metric == 'wholepass_ratio' else 'DMR')}"
+        )
     figure.legend(
-        [handles[name] for name in ("ASAP", "ALAP", "ST") if name in handles],
-        [name for name in ("ASAP", "ALAP", "ST") if name in handles],
+        [handles[name] for name in experiment.ALL_SCHEDULERS if name in handles],
+        [name for name in experiment.ALL_SCHEDULERS if name in handles],
         loc="lower center", ncol=3,
     )
-    figure.subplots_adjust(bottom=0.16, hspace=0.35, wspace=0.25)
+    figure.subplots_adjust(bottom=0.20, hspace=0.35)
 
 
 def plot_composite_scan(
@@ -696,7 +690,7 @@ def plot_composite_scan(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     figure, axes = plt.subplots(
-        len(slice_rows), 3, squeeze=False, figsize=(15, 4 * len(slice_rows)), sharey=True,
+        len(slice_rows), 1, squeeze=False, figsize=(10, 4 * len(slice_rows)), sharey=True,
     )
     _draw_composite_axes(
         figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,
@@ -718,7 +712,7 @@ def plot_composite_dmr(
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     figure, axes = plt.subplots(
-        len(slice_rows), 3, squeeze=False, figsize=(15, 4 * len(slice_rows)), sharey=True,
+        len(slice_rows), 1, squeeze=False, figsize=(10, 4 * len(slice_rows)), sharey=True,
     )
     _draw_composite_axes(
         figure, axes, slice_rows, xkey=xkey, schedulers=schedulers, xlabel=xlabel,

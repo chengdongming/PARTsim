@@ -813,26 +813,116 @@ def test_all_scan_plot_paths_use_decimal_axis_labels(tmp_path, monkeypatch):
     assert [axis.xticks for axis in axes] == [expected_ticks] * 3
     assert all(0 not in axis.errorbar_x for axis in axes)
 
-    axes = [[CaptureAxis() for _ in range(3)]]
+    axes = [[CaptureAxis()]]
     monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
     plot_composite_scan(
         [(slice_config, composite_rows)], tmp_path, "composite.png", "target_uc",
         ["ASAP-BLOCK"], "U_C", "composite", axis_min="0", axis_max="1", axis_ticks=ticks,
     )
-    assert [axis.xticklabels for axis in axes[0]] == [expected_labels] * 3
-    assert [axis.xticks for axis in axes[0]] == [expected_ticks] * 3
+    assert [axis.xticklabels for axis in axes[0]] == [expected_labels]
+    assert [axis.xticks for axis in axes[0]] == [expected_ticks]
     assert all(0 not in axis.errorbar_x for axis in axes[0])
 
-    axes = [[CaptureAxis() for _ in range(3)]]
+    axes = [[CaptureAxis()]]
     monkeypatch.setattr(plt, "subplots", lambda *args, **kwargs: (CaptureFigure(), axes))
     plot_composite_dmr(
         [(slice_config, composite_rows)], tmp_path, "composite-dmr.png", "target_uc",
         ["ASAP-BLOCK"], "U_C", "composite dmr", 0.0,
         axis_min="0", axis_max="1", axis_ticks=ticks,
     )
-    assert [axis.xticklabels for axis in axes[0]] == [expected_labels] * 3
-    assert [axis.xticks for axis in axes[0]] == [expected_ticks] * 3
+    assert [axis.xticklabels for axis in axes[0]] == [expected_labels]
+    assert [axis.xticks for axis in axes[0]] == [expected_ticks]
     assert all(0 not in axis.errorbar_x for axis in axes[0])
+
+
+@pytest.mark.parametrize("xkey, fixed_key", [("target_uc", "target_ue"), ("target_ue", "target_uc")])
+def test_composite_main_plot_has_three_vertical_nine_scheduler_panels(
+    tmp_path, monkeypatch, xkey, fixed_key,
+):
+    import matplotlib.pyplot as plt
+
+    class CaptureAxis:
+        def __init__(self):
+            self.scheduler_labels = []
+            self.title = None
+
+        def errorbar(self, *_args, **kwargs):
+            self.scheduler_labels.append(kwargs["label"])
+            return SimpleNamespace(lines=[SimpleNamespace()])
+
+        def set_xlabel(self, _label):
+            pass
+
+        def set_ylabel(self, _label):
+            pass
+
+        def set_title(self, title):
+            self.title = title
+
+        def set_xlim(self, *_args):
+            pass
+
+        def set_xticks(self, *_args):
+            pass
+
+        def set_xticklabels(self, *_args):
+            pass
+
+        def set_ylim(self, *_args):
+            pass
+
+        def grid(self, **_kwargs):
+            pass
+
+    class CaptureFigure:
+        def savefig(self, _path):
+            pass
+
+        def suptitle(self, _title):
+            pass
+
+        def legend(self, handles, labels, **_kwargs):
+            self.legend_labels = labels
+
+        def subplots_adjust(self, **_kwargs):
+            pass
+
+    captured = {}
+
+    def capture_subplots(nrows, ncols, **_kwargs):
+        captured["shape"] = (nrows, ncols)
+        axes = [[CaptureAxis()] for _ in range(nrows)]
+        captured["axes"] = axes
+        return CaptureFigure(), axes
+
+    monkeypatch.setattr(plt, "subplots", capture_subplots)
+    monkeypatch.setattr(plt, "close", lambda _figure: None)
+    ticks = experiment.normalize_scan_profile()["axis_ticks"]
+    slice_rows = []
+    for label, fixed_value in zip(("low", "medium", "high"), ("1/10", "1/2", "9/10")):
+        rows = [
+            {
+                "scheduler": scheduler, xkey: "1/10", "wholepass_ratio": 0.5,
+                "ci95_low": 0.4, "ci95_high": 0.6,
+            }
+            for scheduler in experiment.ALL_SCHEDULERS
+        ]
+        slice_rows.append((
+            {"x_key": xkey, "fixed_key": fixed_key, "fixed_value": fixed_value, "label": label},
+            rows,
+        ))
+
+    plot_composite_scan(
+        slice_rows, tmp_path, "main.png", xkey, list(experiment.ALL_SCHEDULERS),
+        "U_C" if xkey == "target_uc" else "U_E", "main",
+        axis_min="0", axis_max="1", axis_ticks=ticks,
+    )
+
+    assert captured["shape"] == (3, 1)
+    assert [axis[0].scheduler_labels for axis in captured["axes"]] == [
+        list(experiment.ALL_SCHEDULERS),
+    ] * 3
+    assert [axis[0].title for axis in captured["axes"]] == ["low", "medium", "high"]
 
 
 def test_frozen_main_figure_has_exactly_51_cells_and_three_slices():
