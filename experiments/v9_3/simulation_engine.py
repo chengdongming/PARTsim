@@ -1388,10 +1388,18 @@ def run_paired_simulation(
     scheduler_id: str = "gpfp_asap_block",
     task_energy_factors: Optional[Mapping[str, str]] = None,
     expected_task_power_j_per_tick: Optional[Mapping[str, float]] = None,
+    implicit_streaming_parse: bool = False,
 ) -> SimulationExecution:
     priority_policy = normalize_scheduler_priority_policy(
         simulation_config.get("priority_policy", "RM")
     )
+    if implicit_streaming_parse and (
+        priority_policy != "RM"
+        or simulation_config.get("deadline_mode") != "implicit"
+    ):
+        raise SimulationConfigurationError(
+            "implicit streaming parse requires RM implicit simulation"
+        )
     try:
         initial = exact_energy.exact_e0_lower_bound(
             energy_config["simulation_initial_battery"],
@@ -1441,6 +1449,9 @@ def run_paired_simulation(
     trace_parse_environment_keys = (
         "PARTSIM_TRACE_PARSE_CONCURRENCY", "PARTSIM_TRACE_PARSE_SLOT_DIR",
     )
+    environment.pop("PARTSIM_V6_IMPLICIT_STREAMING_TRACE", None)
+    if implicit_streaming_parse:
+        environment["PARTSIM_V6_IMPLICIT_STREAMING_TRACE"] = "1"
     if trace_parse_concurrency is not None:
         environment["PARTSIM_TRACE_PARSE_CONCURRENCY"] = str(
             trace_parse_concurrency
@@ -1530,6 +1541,7 @@ def run_paired_simulation(
                             release_e0=exact_e0,
                             expected_scheduler=scheduler_id,
                             expected_processors=processors,
+                            stream_events=implicit_streaming_parse,
                         )
                         for task_id, observed in result.observed_task_power_j_per_tick.items():
                             task_row = _task_payload_for_trace_id(

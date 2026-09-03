@@ -937,6 +937,32 @@ if int(sys.argv[3]) == 3:
         fail('total executed core ticks exceed processor capacity')
 )PY";
 
+    static const char streaming_validator[] = R"PY(
+import sys
+from pathlib import Path
+from experiments.v9_3.implicit_trace_stream import validate_publication_trace
+
+validate_publication_trace(
+    Path(sys.argv[1]),
+    run_id=sys.argv[2],
+    expected_scheduler=sys.argv[4],
+    expected_display_name=sys.argv[5],
+    expected_implementation=sys.argv[6],
+    expected_horizon=sys.argv[7],
+    taskset_hash=sys.argv[8],
+    initial_energy=sys.argv[9],
+    capacity=sys.argv[10],
+    processors=sys.argv[11],
+    expected_schema=sys.argv[3],
+    observability_contract_version=sys.argv[12],
+)
+)PY";
+    const char *selected_validator = validator;
+    const char *streaming_flag =
+        std::getenv("PARTSIM_V6_IMPLICIT_STREAMING_TRACE");
+    if (streaming_flag != nullptr && std::strcmp(streaming_flag, "1") == 0)
+        selected_validator = streaming_validator;
+
     // Hold the shared slot in the parent for the lifetime of the validator.
     // O_CLOEXEC prevents the validator child from retaining the lock after
     // exec, while the RAII destructor releases it on every parent path.
@@ -962,7 +988,7 @@ if int(sys.argv[3]) == 3:
                 contract.expected_observability_contract_version);
         // Prefer the inherited PATH for virtualenv/Conda Python; retain fixed
         // system paths as controlled fallbacks.
-        ::execlp("python3", "python3", "-c", validator,
+        ::execlp("python3", "python3", "-c", selected_validator,
                  target.partial_path.c_str(), run_id.c_str(),
                  expected_schema.c_str(),
                  scheduler.c_str(), display_name.c_str(), implementation.c_str(),
@@ -970,7 +996,7 @@ if int(sys.argv[3]) == 3:
                  initial_energy.str().c_str(), capacity.str().c_str(),
                  processors.c_str(), observability_contract_version.c_str(),
                  static_cast<char *>(nullptr));
-        ::execl("/usr/bin/python3", "python3", "-c", validator,
+        ::execl("/usr/bin/python3", "python3", "-c", selected_validator,
                 target.partial_path.c_str(), run_id.c_str(),
                 expected_schema.c_str(),
                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
@@ -978,7 +1004,7 @@ if int(sys.argv[3]) == 3:
                 initial_energy.str().c_str(), capacity.str().c_str(),
                 processors.c_str(), observability_contract_version.c_str(),
                 static_cast<char *>(nullptr));
-        ::execl("/usr/local/bin/python3", "python3", "-c", validator,
+        ::execl("/usr/local/bin/python3", "python3", "-c", selected_validator,
                 target.partial_path.c_str(), run_id.c_str(),
                 expected_schema.c_str(),
                 scheduler.c_str(), display_name.c_str(), implementation.c_str(),
