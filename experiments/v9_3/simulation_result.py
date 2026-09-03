@@ -30,6 +30,7 @@ from .rta4_core3_contracts_v6 import (
     core3_energy_conservation_close_v1,
     require_normalized_core3_energy_conservation_rule_v1,
 )
+from . import implicit_trace_stream
 
 
 class SimulationStatus(str, Enum):
@@ -396,10 +397,18 @@ def parse_simulation_trace(
     task_energy_factor_provenance: Optional[
         Mapping[str, Mapping[str, Any]]
     ] = None,
+    stream_events: bool = False,
 ) -> SimulationResult:
     """Parse one complete audited scheduler trace into job/task observations."""
 
-    data = _strict_json(trace_path)
+    if stream_events:
+        try:
+            data, events = implicit_trace_stream.open_strict_stream(trace_path)
+        except (OSError, ValueError) as exc:
+            raise SimulationTraceError(str(exc)) from exc
+    else:
+        data = _strict_json(trace_path)
+        events = data["events"]
     trace_schema = data.get("trace_schema_version")
     expected_schema = 3 if require_core3_observability else 2
     if type(trace_schema) is not int or trace_schema != expected_schema:
@@ -558,7 +567,6 @@ def parse_simulation_trace(
         job["executing"].update(range(start, end))
         return start
 
-    events = data["events"]
     for position, event in enumerate(events):
         if not isinstance(event, dict):
             raise SimulationTraceError(f"event {position} is not an object")

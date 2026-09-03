@@ -104,6 +104,7 @@ def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
             energy_config=job["energy_config"],
             simulation_config=job["simulation_config"],
             scheduler_id=str(job["scheduler_id"]),
+            implicit_streaming_parse=bool(job.get("implicit_streaming_parse", False)),
         )
     except Exception as exc:
         return None, f"{type(exc).__name__}: {exc}"
@@ -256,6 +257,7 @@ def _append_resume_history(
     run_config: Path, stored_config: dict[str, Any], *, workers: int,
     prepare_workers: int, parse_concurrency: int, keep_traces: bool,
     completed_result_count: int, remaining_request_count: int,
+    implicit_streaming_parse: bool = False,
 ) -> dict[str, Any]:
     """Append runtime resume metadata without changing the original config."""
     execution = stored_config.get("execution")
@@ -271,6 +273,7 @@ def _append_resume_history(
         "keep_traces": bool(keep_traces),
         "completed_result_count_at_resume_start": completed_result_count,
         "remaining_request_count_at_resume_start": remaining_request_count,
+        "implicit_streaming_parse": bool(implicit_streaming_parse),
         "stored_run_identity": stored_config.get("run_identity"),
         "timestamp_utc": datetime.now(timezone.utc).isoformat().replace(
             "+00:00", "Z"
@@ -606,6 +609,10 @@ def make_parser() -> argparse.ArgumentParser:
         help="retain complete simulator traces for debugging",
     )
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--implicit-streaming-parse", action="store_true",
+        help="opt in to bounded-memory parsing for v6 RM implicit resume only",
+    )
     return parser
 
 
@@ -685,6 +692,26 @@ def _validate_v7_generation_parameters(
         )
 
 
+def _validate_implicit_streaming_scope(
+    *, enabled: bool, campaign: str, priority_policy: str, resume: bool,
+    requests_by_id: dict[str, dict[str, Any]], remaining_ids: set[str],
+) -> None:
+    """Keep the bounded-memory parser strictly scoped to v6 RM implicit work."""
+    if not enabled:
+        return
+    if campaign != "v6" or priority_policy != "RM" or not resume:
+        raise SystemExit(
+            "implicit streaming parse requires v6 RM resume"
+        )
+    if any(
+        requests_by_id[request_id]["deadline_mode"] != "implicit"
+        for request_id in remaining_ids
+    ):
+        raise SystemExit(
+            "implicit streaming parse requires all remaining requests to be implicit"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     campaign = args.campaign
@@ -723,6 +750,11 @@ def main(argv: list[str] | None = None) -> int:
         else ",".join(perf_g.FORMAL_SCHEDULERS)
     )
     priority_policy = args.priority_policy
+    _validate_implicit_streaming_scope(
+        enabled=args.implicit_streaming_parse, campaign=campaign,
+        priority_policy=priority_policy, resume=args.resume,
+        requests_by_id={}, remaining_ids=set(),
+    )
     if campaign != "v6" and tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
         raise SystemExit("v7 formal campaigns require all nine canonical schedulers")
     is_frozen_main_figure = tuple(cells) == tuple(experiment.FORMAL_CELLS)
@@ -917,12 +949,19 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("persisted results do not match the requested experiment")
     existing_ids = [str(row.get("request_id")) for row in existing]
     expected_ids = {str(row["request_id"]) for row in requests}
+    requests_by_id = {str(row["request_id"]): row for row in requests}
     if len(existing_ids) != len(set(existing_ids)) or not set(existing_ids) <= expected_ids:
         raise SystemExit("persisted results contain duplicate or unexpected request IDs")
     if any(_is_technical_result(row) for row in existing):
         raise SystemExit(
             "active results contain a technical row; migration/recovery is required"
         )
+    remaining_ids = expected_ids - set(existing_ids)
+    _validate_implicit_streaming_scope(
+        enabled=args.implicit_streaming_parse, campaign=campaign,
+        priority_policy=priority_policy, resume=args.resume,
+        requests_by_id=requests_by_id, remaining_ids=remaining_ids,
+    )
     attempts = read_jsonl(attempts_path) if args.resume else []
     try:
         attempts_by_request = _index_attempt_history(attempts)
@@ -935,7 +974,8 @@ def main(argv: list[str] | None = None) -> int:
             parse_concurrency=args.parse_concurrency,
             keep_traces=args.keep_traces,
             completed_result_count=len(existing),
-            remaining_request_count=len(expected_ids - set(existing_ids)),
+            remaining_request_count=len(remaining_ids),
+            implicit_streaming_parse=args.implicit_streaming_parse,
         )
     results_by_id = {str(row["request_id"]): row for row in existing}
     completed_ids = set(existing_ids)
@@ -987,6 +1027,8 @@ def main(argv: list[str] | None = None) -> int:
             # persisted scientific configuration and its run identity.
             "trace_parse_concurrency": parser_limit,
             "trace_parse_slot_dir": "/tmp/partsim_trace_parse_slots",
+            "deadline_mode": request["deadline_mode"],
+            "implicit_streaming_parse": bool(args.implicit_streaming_parse),
         }
         pending_jobs.append({
             "request": request,
@@ -1005,6 +1047,7 @@ def main(argv: list[str] | None = None) -> int:
             "energy_config": None,
             "simulation_config": simulation,
             "scheduler_id": request["scheduler_cli"],
+            "implicit_streaming_parse": bool(args.implicit_streaming_parse),
         })
 
     prepare_energy_started = time.perf_counter()

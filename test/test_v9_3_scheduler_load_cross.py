@@ -25,7 +25,10 @@ from experiments.v9_3.simulation_engine import (
 )
 from experiments.v9_3.simulation_result import (
     SimulationStatus, SimulationTraceError, _strict_json, _trace_parse_slot,
+    parse_simulation_trace,
 )
+from experiments.v9_3 import implicit_trace_stream
+from experiments.v9_3.simulation_engine import simulation_result_to_dict
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
     analyze, dmr_cluster_bootstrap_ci, summarize_dmr, wilson_ci,
@@ -285,6 +288,50 @@ def _wait_for_test_exitcode(processes, expected_exitcode, timeout=2.0):
 
 def _harvest_model_fields():
     return dict(experiment.HARVEST_MODEL_IDENTITY)
+
+
+def _write_schema2_stream_trace(path, scheduler="gpfp_asap_block"):
+    document = {
+        "trace_schema_version": 2,
+        "run_id": "stream-test",
+        "run_count": 1,
+        "target_run_generation": 1,
+        "run_generation": 1,
+        "taskset_semantic_hash": "a" * 64,
+        "configured_scheduler": scheduler,
+        "scheduler_display_name": "ASAP-Block",
+        "scheduler_implementation": "ASAPBlockScheduler",
+        "expected_simulation_horizon_ms": 2,
+        "observed_simulation_end_ms": 2,
+        "simulation_completed": True,
+        "simulation_completion_reason": "reached_horizon",
+        "metadata_note": {"events": "not the top-level array"},
+        "events": [
+            {
+                "time": 0, "event_type": "arrival", "task_name": "v93_task_0",
+                "arrival_time": 0, "current_energy_mJ": 1,
+                "note": 'escaped "events" text',
+            },
+            {
+                "time": 0, "event_type": "scheduled", "task_name": "v93_task_0",
+                "arrival_time": 0, "task_unit_energy_mJ": 1,
+            },
+            {
+                "time": 1, "event_type": "end_instance", "task_name": "v93_task_0",
+                "arrival_time": 0,
+            },
+        ],
+    }
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+
+def _parse_schema2_stream_trace(path, scheduler="gpfp_asap_block", stream=False):
+    return parse_simulation_trace(
+        path, [{"task_id": "0", "priority_rank": 0, "C": 1, "D": 5, "T": 5}],
+        expected_taskset_hash="a" * 64, horizon=2, warmup=0,
+        minimum_jobs_per_task=0, release_e0=Fraction(0),
+        expected_scheduler=scheduler, stream_events=stream,
+    )
 
 
 def _v6_fixture_config(priority_policy):
@@ -2138,6 +2185,134 @@ def test_trace_parse_gate_rejects_invalid_runtime_limit(monkeypatch):
     with pytest.raises(SimulationTraceError, match="invalid PARTSIM_TRACE_PARSE_CONCURRENCY"):
         with _trace_parse_slot():
             pass
+
+
+def test_implicit_streaming_opt_in_is_equivalent_for_all_nine_scheduler_ids(tmp_path):
+    for scheduler in perf_g.SCHEDULER_CLI.values():
+        path = tmp_path / f"{scheduler}.json"
+        _write_schema2_stream_trace(path, scheduler)
+        legacy = _parse_schema2_stream_trace(path, scheduler)
+        streamed = _parse_schema2_stream_trace(path, scheduler, stream=True)
+        assert simulation_result_to_dict(legacy) == simulation_result_to_dict(streamed)
+
+
+def test_default_trace_parser_does_not_enter_implicit_streaming(monkeypatch, tmp_path):
+    path = tmp_path / "legacy.json"
+    _write_schema2_stream_trace(path)
+
+    def fail_if_called(_path):
+        raise AssertionError("legacy parsing unexpectedly entered streaming path")
+
+    monkeypatch.setattr(implicit_trace_stream, "open_strict_stream", fail_if_called)
+    _parse_schema2_stream_trace(path)
+
+
+@pytest.mark.parametrize("payload", [
+    '{"events":[{"event_type":"arrival"}',
+    '{"events":[],"events":[]}',
+    '{"events":[{"event_type":"arrival","event_type":"arrival"}]}',
+    '{"events":{}}',
+    '{"events":[{"event_type":}]}',
+    '{"events":[{"event_type":"arrival"} {"event_type":"arrival"}]}',
+    '{"events":[{"event_type":"arrival"}]} trailing',
+    '{"events":[{"note":"unterminated}]}',
+    '{"events":[]}',
+    '{"events":[1]}',
+])
+def test_implicit_stream_reader_rejects_malformed_or_unsafe_json(tmp_path, payload):
+    path = tmp_path / "invalid.json"
+    path.write_text(payload, encoding="utf-8")
+    with pytest.raises(ValueError):
+        implicit_trace_stream.open_strict_stream(path)
+
+
+def test_implicit_stream_reader_handles_nested_and_escaped_events_text(tmp_path):
+    path = tmp_path / "nested.json"
+    path.write_text(
+        '{"note":"escaped \\\"events\\\"",'
+        '"nested":{"events":[1]},'
+        '"events":[{"event_type":"arrival","run_generation":1,"time":0}]}',
+        encoding="utf-8",
+    )
+    metadata, events = implicit_trace_stream.open_strict_stream(path)
+    assert metadata["nested"] == {"events": [1]}
+    assert list(events) == [{"event_type": "arrival", "run_generation": 1, "time": 0}]
+
+
+def test_implicit_streaming_runner_rejects_remaining_constrained_before_executor(
+    tmp_path, monkeypatch,
+):
+    output = tmp_path / "guard"
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: SimpleNamespace(
+        result=SimpleNamespace(
+            status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+            metrics={}, simulation_completed=True,
+        ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+        retained_trace_path=None,
+    ))
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, priority_policy="RM",
+    )) == 0
+    (output / "results.jsonl").unlink()
+    _patch_scheduler_runner(monkeypatch, tmp_path, lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("simulation must not start")
+    ))
+    with pytest.raises(
+        SystemExit,
+        match="all remaining requests to be implicit",
+    ):
+        scheduler_runner.main(_scheduler_runner_args(
+            output, priority_policy="RM", resume=True,
+        ) + ["--implicit-streaming-parse"])
+
+
+def test_implicit_streaming_runner_passes_only_implicit_pending_jobs(
+    tmp_path, monkeypatch,
+):
+    calls = []
+
+    def run_simulation(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed", jobs=(),
+                metrics={}, simulation_completed=True,
+            ), runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    output = tmp_path / "implicit-resume"
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, priority_policy="RM",
+    )) == 0
+    results_path = output / "results.jsonl"
+    results = [json.loads(line) for line in results_path.read_text().splitlines()]
+    results_path.write_text(
+        "".join(json.dumps(row) + "\n" for row in results
+                if row["deadline_mode"] == "constrained"),
+        encoding="utf-8",
+    )
+    calls.clear()
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    assert scheduler_runner.main(_scheduler_runner_args(
+        output, priority_policy="RM", resume=True,
+    ) + ["--implicit-streaming-parse"]) == 0
+    assert calls
+    assert all(call["implicit_streaming_parse"] is True for call in calls)
+
+
+def test_implicit_streaming_runner_rejects_v7_and_dm(tmp_path):
+    with pytest.raises(SystemExit, match="requires v6 RM resume"):
+        scheduler_runner.main([
+            "--output", str(tmp_path / "v7"), "--seed", "1",
+            "--campaign", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+            "--resume", "--implicit-streaming-parse",
+        ])
+    with pytest.raises(SystemExit, match="requires v6 RM resume"):
+        scheduler_runner.main(_scheduler_runner_args(
+            tmp_path / "dm", priority_policy="DM", resume=True,
+        ) + ["--implicit-streaming-parse"])
 
 
 def test_parse_concurrency_can_change_on_v6_resume_and_history_is_append_only(
