@@ -43,6 +43,7 @@ from .simulation_result import (
     TaskObservation,
     parse_simulation_trace,
 )
+from .implicit_wholepass_fast import validate_fast_result
 from .task_identity import runtime_task_name_for_source_id
 
 
@@ -461,6 +462,79 @@ class SimulationExecution:
     retained_trace_path: Optional[Path]
     stdout_tail: str = ""
     stderr_tail: str = ""
+
+
+@dataclass(frozen=True)
+class WholePassFastExecution:
+    result: Mapping[str, Any]
+    runtime_seconds: float
+    output_path: Path
+
+
+def _run_implicit_wholepass_fast(
+    *,
+    simulator: Path,
+    system_path: Path,
+    taskset_path: Path,
+    run_root: Path,
+    simulation_id_value: str,
+    run_id: str,
+    taskset_hash: str,
+    task_payload: Sequence[Mapping[str, Any]],
+    scheduler_id: str,
+    processors: int,
+    horizon: int,
+    timeout_seconds: float,
+    environment: Mapping[str, str],
+) -> WholePassFastExecution:
+    """Run only the opt-in compact observer; never create a semantic trace."""
+
+    output_path = run_root / f"{simulation_id_value}.implicit_wholepass_fast.json"
+    if output_path.exists():
+        raise SimulationConfigurationError(
+            f"fast output already exists: {output_path}"
+        )
+    command = [
+        str(simulator), str(system_path), str(taskset_path), str(horizon),
+        "--run-id", run_id,
+        "--taskset-semantic-hash", taskset_hash,
+        "--wholepass-fast-output", str(output_path),
+        "--wholepass-fast-campaign", "v6",
+        "--wholepass-fast-priority-policy", "RM",
+        "--wholepass-fast-deadline-mode", "implicit",
+        "--wholepass-fast-mode", "hard-rt-wholepass",
+    ]
+    child_environment = dict(environment)
+    child_environment["PARTSIM_QUIET_STDOUT"] = "1"
+    started = time.perf_counter()
+    completed = subprocess.run(
+        command, cwd=str(PROJECT_ROOT), env=child_environment,
+        capture_output=True, text=True, timeout=timeout_seconds, check=False,
+    )
+    runtime = time.perf_counter() - started
+    if completed.returncode:
+        raise SimulationTraceError(
+            "fast simulator failed: "
+            f"returncode={completed.returncode}; "
+            f"stderr={(completed.stderr or '')[-2000:]}"
+        )
+    expected_task_ids = [
+        runtime_task_name_for_source_id(row["task_id"])
+        for row in task_payload
+    ]
+    try:
+        result = validate_fast_result(
+            output_path,
+            expected_run_id=run_id,
+            expected_taskset_hash=taskset_hash,
+            expected_scheduler=scheduler_id,
+            expected_processors=processors,
+            expected_task_ids=expected_task_ids,
+            expected_horizon=horizon,
+        )
+    except Exception as exc:
+        raise SimulationTraceError(f"fast compact result rejected: {exc}") from exc
+    return WholePassFastExecution(result, runtime, output_path)
 
 
 def simulation_identity(
@@ -1389,7 +1463,8 @@ def run_paired_simulation(
     task_energy_factors: Optional[Mapping[str, str]] = None,
     expected_task_power_j_per_tick: Optional[Mapping[str, float]] = None,
     implicit_streaming_parse: bool = False,
-) -> SimulationExecution:
+    implicit_wholepass_fast: bool = False,
+) -> SimulationExecution | WholePassFastExecution:
     priority_policy = normalize_scheduler_priority_policy(
         simulation_config.get("priority_policy", "RM")
     )
@@ -1399,6 +1474,15 @@ def run_paired_simulation(
     ):
         raise SimulationConfigurationError(
             "implicit streaming parse requires RM implicit simulation"
+        )
+    if implicit_wholepass_fast and (
+        priority_policy != "RM"
+        or simulation_config.get("deadline_mode") != "implicit"
+        or simulation_config.get("campaign") not in {None, "v6"}
+        or simulation_config.get("wholepass_mode") != "hard-rt"
+    ):
+        raise SimulationConfigurationError(
+            "implicit WholePass fast path requires v6 RM implicit hard-RT mode"
         )
     try:
         initial = exact_energy.exact_e0_lower_bound(
@@ -1438,13 +1522,31 @@ def run_paired_simulation(
         simulator = PROJECT_ROOT / simulator
     if not simulator.is_file():
         raise SimulationConfigurationError(f"simulator binary not found: {simulator}")
+    environment = os.environ.copy()
+    library = simulator.parent.parent / "librtsim"
+    environment["LD_LIBRARY_PATH"] = str(library) + ":" + environment.get("LD_LIBRARY_PATH", "")
+    if implicit_wholepass_fast:
+        fast_run_id = f"v93-{simulation_id_value[:16]}-h{simulation_config['horizon']}"
+        fast = _run_implicit_wholepass_fast(
+            simulator=simulator,
+            system_path=system_path,
+            taskset_path=taskset_path,
+            run_root=run_root,
+            simulation_id_value=simulation_id_value,
+            run_id=fast_run_id,
+            taskset_hash=taskset_hash,
+            task_payload=task_payload,
+            scheduler_id=scheduler_id,
+            processors=processors,
+            horizon=int(simulation_config["horizon"]),
+            timeout_seconds=float(simulation_config["timeout_seconds"]),
+            environment=environment,
+        )
+        return fast  # type: ignore[return-value]
     trace_work = run_root / "simulation_trace_work"
     trace_work.mkdir(parents=True, exist_ok=True)
     failure_traces = run_root / "failure_traces"
     failure_traces.mkdir(parents=True, exist_ok=True)
-    environment = os.environ.copy()
-    library = simulator.parent.parent / "librtsim"
-    environment["LD_LIBRARY_PATH"] = str(library) + ":" + environment.get("LD_LIBRARY_PATH", "")
     trace_parse_concurrency = simulation_config.get("trace_parse_concurrency")
     trace_parse_environment_keys = (
         "PARTSIM_TRACE_PARSE_CONCURRENCY", "PARTSIM_TRACE_PARSE_SLOT_DIR",

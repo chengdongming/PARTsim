@@ -1,5 +1,6 @@
 import csv
 from concurrent.futures.process import BrokenProcessPool
+import hashlib
 import json
 from concurrent.futures import Future
 from fractions import Fraction
@@ -28,6 +29,9 @@ from experiments.v9_3.simulation_result import (
     parse_simulation_trace,
 )
 from experiments.v9_3 import implicit_trace_stream
+from experiments.v9_3.implicit_wholepass_fast import (
+    FAST_MODE, FAST_SCHEMA, FastWholePassError, validate_fast_document,
+)
 from experiments.v9_3.simulation_engine import simulation_result_to_dict
 from experiments.v9_3.performance_outcome import evaluate_outcome
 from scripts.analyze_scheduler_load_cross import (
@@ -38,6 +42,37 @@ from scripts.analyze_scheduler_load_cross import (
 )
 import scripts.analyze_scheduler_load_cross as analyzer_module
 import scripts.run_scheduler_load_cross as scheduler_runner
+import scripts.run_v6_implicit_wholepass_fast as fast_overlay_runner
+import scripts.run_v6_implicit_wholepass_fast as fast_overlay_runner
+
+
+def _fast_result_fixture(*, passed=True):
+    task_ids = [f"v93_task_{index}" for index in range(10)]
+    return {
+        "schema": FAST_SCHEMA,
+        "fast_mode": FAST_MODE,
+        "run_id": "v93-request123456-h60000",
+        "taskset_semantic_hash": "a" * 64,
+        "configured_scheduler": "gpfp_asap_block",
+        "processors": 4,
+        "task_count": 10,
+        "task_ids": task_ids,
+        "deadline_mode": "implicit",
+        "horizon": 60000,
+        "simulation_generation": 1,
+        "simulation_completed": passed,
+        "completion_reason": "reached_horizon" if passed else "first_hardrt_deadline_miss",
+        "taskset_pass": passed,
+        "released_jobs": 100,
+        "adjudicable_jobs": 90,
+        "completed_adjudicable_jobs": 90 if passed else 50,
+        "first_deadline_miss": None if passed else {
+            "task_id": "v93_task_0", "job_id": "v93_task_0@0",
+            "release": 0, "absolute_deadline": 100,
+            "miss_time": 100,
+            "evidence": "deadline_event_for_active_job",
+        },
+    }
 
 
 def _available_outcome(adjudicable_jobs=1, deadline_miss_jobs=0, wholepass=True):
@@ -3828,3 +3863,289 @@ def test_v7_freezes_task_generation_parameters_and_v6_remains_compatible():
             "min_task_util": frozen["min_task_util"] + Fraction(1, 100),
         },
     )
+
+
+@pytest.mark.parametrize("passed", [True, False])
+def test_v6_implicit_wholepass_fast_result_is_strictly_validated(passed):
+    value = _fast_result_fixture(passed=passed)
+    observed = validate_fast_document(
+        value,
+        expected_run_id=value["run_id"],
+        expected_taskset_hash=value["taskset_semantic_hash"],
+        expected_scheduler=value["configured_scheduler"],
+        expected_processors=4,
+        expected_task_ids=value["task_ids"],
+        expected_horizon=60000,
+    )
+    assert observed == value
+
+
+def test_v6_implicit_wholepass_fast_result_rejects_duplicate_and_bad_pass(tmp_path):
+    value = _fast_result_fixture()
+    path = tmp_path / "duplicate.json"
+    path.write_text(
+        '{"schema":"%s","schema":"%s"}' % (FAST_SCHEMA, FAST_SCHEMA),
+        encoding="utf-8",
+    )
+    from experiments.v9_3.implicit_wholepass_fast import validate_fast_result
+    with pytest.raises(FastWholePassError, match="duplicate JSON key"):
+        validate_fast_result(
+            path,
+            expected_run_id=value["run_id"],
+            expected_taskset_hash=value["taskset_semantic_hash"],
+            expected_scheduler=value["configured_scheduler"],
+            expected_processors=4,
+            expected_task_ids=value["task_ids"],
+            expected_horizon=60000,
+        )
+    value["completion_reason"] = "reached_horizon"
+    value["simulation_completed"] = False
+    with pytest.raises(FastWholePassError, match="horizon pass result is invalid"):
+        validate_fast_document(
+            value,
+            expected_run_id=value["run_id"],
+            expected_taskset_hash=value["taskset_semantic_hash"],
+            expected_scheduler=value["configured_scheduler"],
+            expected_processors=4,
+            expected_task_ids=value["task_ids"],
+            expected_horizon=60000,
+        )
+
+
+def test_v6_implicit_wholepass_fast_rejects_constrained_scope(tmp_path):
+    command = [
+        str(Path("build/rtsim/rtsim")),
+        str(tmp_path / "missing-system.yaml"),
+        str(tmp_path / "missing-taskset.yaml"),
+        "100",
+        "--run-id", "v93-scope-h100",
+        "--taskset-semantic-hash", "a" * 64,
+        "--wholepass-fast-output", str(tmp_path / "fast.json"),
+        "--wholepass-fast-campaign", "v6",
+        "--wholepass-fast-priority-policy", "RM",
+        "--wholepass-fast-deadline-mode", "constrained",
+        "--wholepass-fast-mode", "hard-rt-wholepass",
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True)
+    assert completed.returncode != 0
+    assert "explicit v6/RM/implicit/hard-rt-wholepass" in completed.stderr
+
+
+def test_v6_implicit_wholepass_fast_python_scope_guard():
+    from experiments.v9_3.simulation_engine import run_paired_simulation
+    with pytest.raises(SimulationConfigurationError, match="requires v6 RM implicit"):
+        run_paired_simulation(
+            simulation_id_value="scope-guard",
+            base_system_path=Path("missing-system.yaml"),
+            run_root=Path("/tmp/partsim-scope-guard"),
+            task_payload=(), taskset_hash="a" * 64, processors=4,
+            exact_e0=Fraction(1),
+            energy_config={"simulation_initial_battery": "1", "battery_capacity": "2"},
+            simulation_config={
+                "priority_policy": "RM", "deadline_mode": "constrained",
+                "campaign": "v6", "wholepass_mode": "hard-rt",
+            }, implicit_wholepass_fast=True,
+        )
+
+
+def _overlay_request_fixture(request_id, deadline_mode):
+    return {
+        "request_id": request_id,
+        "experiment": experiment.V6_EXPERIMENT,
+        "domain": experiment.V6_DOMAIN,
+        "taskset_id": "fixture-taskset",
+        "taskset_hash": "a" * 64,
+        "scheduler": "ASAP-BLOCK",
+        "scheduler_cli": "gpfp_asap_block",
+        "target_ue": "1/5",
+        "deadline_mode": deadline_mode,
+        "horizon_ms": 60000,
+    }
+
+
+def _overlay_taskset_fixture():
+    return SimpleNamespace(
+        processors=4,
+        task_payload=tuple({
+            "task_id": str(index), "priority_rank": index, "C": 1,
+            "D": 10, "T": 10, "P": "1", "workload": "fixture",
+            "arrival_offset": 0,
+        } for index in range(10)),
+    )
+
+
+def test_v6_fast_overlay_partitions_mixed_mode_baseline_by_canonical_mode():
+    expected = {
+        "constrained": {"deadline_mode": "constrained"},
+        "implicit-existing": {"deadline_mode": "implicit"},
+        "implicit-pending": {"deadline_mode": "implicit"},
+    }
+    implicit, constrained, baseline_implicit, baseline_constrained = (
+        fast_overlay_runner._partition_baseline_ids(
+            {"constrained", "implicit-existing"}, expected,
+        )
+    )
+    assert implicit == {"implicit-existing", "implicit-pending"}
+    assert constrained == {"constrained"}
+    assert baseline_implicit == {"implicit-existing"}
+    assert baseline_constrained == {"constrained"}
+    assert implicit - baseline_implicit == {"implicit-pending"}
+
+    _, _, only_constrained, constrained_rows = (
+        fast_overlay_runner._partition_baseline_ids({"constrained"}, expected)
+    )
+    assert only_constrained == set()
+    assert constrained_rows == {"constrained"}
+
+
+def test_v6_fast_overlay_accepts_mixed_baseline_and_implicit_overlay(
+    tmp_path, monkeypatch, capsys,
+):
+    formal_root = tmp_path / "formal"
+    overlay_root = tmp_path / "overlay"
+    formal_root.mkdir()
+    overlay_root.mkdir()
+    (formal_root / "run_config.json").write_text(
+        json.dumps({"simulation_horizon_ms": 60000, "kappa": "10"}),
+        encoding="utf-8",
+    )
+    expected = {
+        request["request_id"]: request for request in (
+            _overlay_request_fixture("constrained-fixture", "constrained"),
+            _overlay_request_fixture("implicit-existing", "implicit"),
+            _overlay_request_fixture("implicit-overlay", "implicit"),
+            _overlay_request_fixture("implicit-pending", "implicit"),
+        )
+    }
+    taskset = _overlay_taskset_fixture()
+    service = SimpleNamespace(system_path=tmp_path / "system.yaml")
+    monkeypatch.setattr(
+        fast_overlay_runner, "_prepare_requests",
+        lambda config, root: (list(expected.values()), expected,
+                              {"fixture-taskset": taskset}, service),
+    )
+    monkeypatch.setattr(
+        fast_overlay_runner.experiment, "construct_paired_harvest_trace",
+        lambda *args: [Fraction(1)],
+    )
+    monkeypatch.setattr(
+        fast_overlay_runner.experiment, "harvest_trace_identity",
+        lambda trace: "fixture-raw-trace",
+    )
+    monkeypatch.setattr(
+        fast_overlay_runner.experiment, "set_prepare_raw_trace",
+        lambda trace: None,
+    )
+    monkeypatch.setattr(
+        fast_overlay_runner.experiment, "energy_material",
+        lambda *args, **kwargs: {},
+    )
+    constrained_row = {
+        **expected["constrained-fixture"],
+        "simulation_status": "PASS_OBSERVED",
+        "technical_error": None, "taskset_pass": True,
+    }
+    existing_row = {
+        **expected["implicit-existing"],
+        "simulation_status": "PASS_OBSERVED",
+        "technical_error": None, "taskset_pass": True,
+    }
+    (formal_root / "results.jsonl").write_text(
+        "".join(json.dumps(row) + "\n"
+                for row in (constrained_row, existing_row)), encoding="utf-8",
+    )
+    (formal_root / "attempts.jsonl").write_text("", encoding="utf-8")
+    fast_result = _fast_result_fixture()
+    fast_result.update({
+        "run_id": "v93-implicit-overlay-h60000",
+        "taskset_semantic_hash": "a" * 64,
+        "configured_scheduler": "gpfp_asap_block",
+    })
+    overlay_row = {
+        **expected["implicit-overlay"],
+        "fast_mode": FAST_MODE,
+        "simulation_status": "PASS_OBSERVED",
+        "technical_error": None,
+        "taskset_pass": True,
+        "fast_result": fast_result,
+    }
+    overlay_path = overlay_root / "implicit_wholepass_fast_results.jsonl"
+    overlay_path.write_text(json.dumps(overlay_row) + "\n", encoding="utf-8")
+    pending_result = _fast_result_fixture()
+    pending_result.update({
+        "run_id": "v93-implicit-pending-h60000",
+        "taskset_semantic_hash": "a" * 64,
+        "configured_scheduler": "gpfp_asap_block",
+    })
+
+    def fake_worker(job):
+        return {
+            "request": dict(job["request"]),
+            "fast_result": pending_result,
+            "runtime_seconds": 0.0,
+        }
+
+    class InlinePool:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def submit(self, function, job):
+            future = Future()
+            future.set_result(function(job))
+            return future
+
+    monkeypatch.setattr(fast_overlay_runner, "_fast_worker", fake_worker)
+    monkeypatch.setattr(fast_overlay_runner, "ProcessPoolExecutor", InlinePool)
+    before = {
+        name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for name, path in (
+            ("results", formal_root / "results.jsonl"),
+            ("attempts", formal_root / "attempts.jsonl"),
+        )
+    }
+    simulator = tmp_path / "rtsim"
+    simulator.touch()
+
+    assert fast_overlay_runner.main([
+        "--formal-root", str(formal_root), "--overlay-root", str(overlay_root),
+        "--simulator", str(simulator),
+    ]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["expected_implicit"] == 3
+    assert output["baseline_implicit"] == 1
+    assert output["baseline_constrained"] == 1
+    assert output["fast_overlay"] == 2
+    assert output["union"] == 3
+    assert before == {
+        name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for name, path in (
+            ("results", formal_root / "results.jsonl"),
+            ("attempts", formal_root / "attempts.jsonl"),
+        )
+    }
+
+
+def test_v6_fast_overlay_rejects_cross_mode_and_overlap_ids():
+    expected = {
+        "constrained": {"deadline_mode": "constrained"},
+        "implicit": {"deadline_mode": "implicit"},
+    }
+    with pytest.raises(ValueError, match="unknown deadline-mode"):
+        fast_overlay_runner._partition_baseline_ids({"unknown"}, expected)
+    with pytest.raises(ValueError, match="non-implicit"):
+        fast_overlay_runner._validate_overlay_ids({"constrained"}, {"implicit"})
+    with pytest.raises(ValueError, match="non-implicit"):
+        fast_overlay_runner._validate_overlay_ids({"unknown"}, {"implicit"})
+    with pytest.raises(ValueError, match="overlap"):
+        fast_overlay_runner._validate_overlay_overlap({"implicit"}, {"implicit"})
+    with pytest.raises(ValueError, match="deadline_mode"):
+        fast_overlay_runner._assert_request_match(
+            {"request_id": "implicit", "deadline_mode": "constrained"},
+            {"request_id": "implicit", "deadline_mode": "implicit"},
+        )
