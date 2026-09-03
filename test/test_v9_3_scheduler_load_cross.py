@@ -2218,12 +2218,21 @@ def test_default_trace_parser_does_not_enter_implicit_streaming(monkeypatch, tmp
     '{"events":[{"note":"unterminated}]}',
     '{"events":[]}',
     '{"events":[1]}',
+    '{"events":[{"x":"\\q"}]}',
+    '{"events":[{"x":{"a":1,"a":2}}]}',
+    '{"events":[{"x":01}]}',
+    '{"events":[{"x":truth}]}',
+    '{"events":[{"x":1},]}',
+    '{"events":[{"x":1}',
+    '{"events":[{"x":1]}}',
+    '{}',
 ])
 def test_implicit_stream_reader_rejects_malformed_or_unsafe_json(tmp_path, payload):
     path = tmp_path / "invalid.json"
     path.write_text(payload, encoding="utf-8")
     with pytest.raises(ValueError):
-        implicit_trace_stream.open_strict_stream(path)
+        metadata, events = implicit_trace_stream.open_strict_stream(path)
+        list(events)
 
 
 def test_implicit_stream_reader_handles_nested_and_escaped_events_text(tmp_path):
@@ -2237,6 +2246,39 @@ def test_implicit_stream_reader_handles_nested_and_escaped_events_text(tmp_path)
     metadata, events = implicit_trace_stream.open_strict_stream(path)
     assert metadata["nested"] == {"events": [1]}
     assert list(events) == [{"event_type": "arrival", "run_generation": 1, "time": 0}]
+
+
+def test_implicit_stream_reader_skips_metadata_pass_events_and_decodes_once(
+    monkeypatch, tmp_path,
+):
+    path = tmp_path / "decode-count.json"
+    _write_schema2_stream_trace(path)
+    original = implicit_trace_stream._decode_event
+    calls = []
+
+    def counted(raw):
+        calls.append(raw)
+        return original(raw)
+
+    monkeypatch.setattr(implicit_trace_stream, "_decode_event", counted)
+    metadata, events = implicit_trace_stream.open_strict_stream(path)
+    assert metadata["trace_schema_version"] == 2
+    assert calls == []
+    assert len(list(events)) == 3
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("document", [
+    '{"events":[{"event_type":"arrival"}],"after":1}',
+    '{"before":1,"events":[{"event_type":"arrival"}],"after":1}',
+    '{"before":1,"after":1,"events":[{"event_type":"arrival"}]}',
+])
+def test_implicit_stream_reader_does_not_depend_on_events_key_order(tmp_path, document):
+    path = tmp_path / "events-order.json"
+    path.write_text(document, encoding="utf-8")
+    metadata, events = implicit_trace_stream.open_strict_stream(path)
+    assert (metadata.get("before") == 1) if "before" in metadata else True
+    assert list(events) == [{"event_type": "arrival"}]
 
 
 def test_implicit_streaming_runner_rejects_remaining_constrained_before_executor(
