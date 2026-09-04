@@ -167,6 +167,41 @@ static inline cmdarg::Options parse_arguments(int argc, char *argv[]) {
         .help = "Schema3 observability contract version (1 or 2)",
         .default_value = "",
     });
+    parser.addArgument({
+        .long_opt = "wholepass-fast-output",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Write the opt-in v6 implicit WholePass compact result",
+        .default_value = "",
+    });
+    parser.addArgument({
+        .long_opt = "wholepass-fast-deadline-mode",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Explicit deadline mode for the WholePass fast path",
+        .default_value = "",
+    });
+    parser.addArgument({
+        .long_opt = "wholepass-fast-mode",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Explicit mode for the WholePass fast path",
+        .default_value = "",
+    });
+    parser.addArgument({
+        .long_opt = "wholepass-fast-campaign",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Explicit campaign for the WholePass fast path",
+        .default_value = "",
+    });
+    parser.addArgument({
+        .long_opt = "wholepass-fast-priority-policy",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "Explicit priority policy for the WholePass fast path",
+        .default_value = "",
+    });
 
     return parser.parse(argc, argv);
 }

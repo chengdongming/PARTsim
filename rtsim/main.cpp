@@ -36,6 +36,7 @@
 #include <fstream>
 #include <functional>
 #include <iomanip>
+#include <map>
 #include <set>
 #include <sstream>
 #include <sys/stat.h>
@@ -381,6 +382,254 @@ struct TracePublicationContract {
     double initial_energy_j{0.0};
     double capacity_j{0.0};
     std::size_t processor_count{0};
+};
+
+class WholePassFastObserver {
+public:
+    WholePassFastObserver(
+        std::int64_t horizon,
+        std::string run_id,
+        std::string taskset_hash,
+        std::string scheduler,
+        std::size_t processors,
+        const std::string &output)
+        : horizon_(horizon),
+          run_id_(std::move(run_id)),
+          taskset_hash_(std::move(taskset_hash)),
+          scheduler_(std::move(scheduler)),
+          processors_(processors),
+          output_(output) {}
+
+    void attachToTask(RTSim::AbsRTTask &task) {
+        auto *concrete = dynamic_cast<RTSim::Task *>(&task);
+        if (!concrete)
+            throw std::runtime_error("WholePass fast path requires Task jobs");
+        task_ids_.push_back(concrete->getName());
+        attach_stat(*this, concrete->arrEvt);
+        attach_stat(*this, concrete->endEvt);
+        attach_stat(*this, concrete->deadEvt);
+        attach_stat(*this, concrete->killEvt);
+    }
+
+    void probe(RTSim::ArrEvt &event) {
+        const auto release = tickValue(MetaSim::SIMUL.getTime());
+        if (release >= horizon_) return;
+        auto &task = *event.getTask();
+        const auto deadline = release + tickValue(task.getRelDline());
+        const auto key = jobKey(task.getName(), release);
+        if (!jobs_.emplace(key, Job{release, deadline}).second) {
+            fail("duplicate observed job release");
+            return;
+        }
+        ++released_jobs_;
+        if (deadline < horizon_)
+            ++adjudicable_jobs_;
+    }
+
+    void probe(RTSim::EndEvt &event) {
+        auto &task = *event.getTask();
+        const auto completion = tickValue(MetaSim::SIMUL.getTime());
+        const auto release = tickValue(task.getLastArrival());
+        const auto key = jobKey(task.getName(), release);
+        auto found = jobs_.find(key);
+        if (found == jobs_.end()) {
+            fail("completion observed for an unknown job");
+            return;
+        }
+        if (found->second.deadline < horizon_) {
+            if (completion > found->second.deadline) {
+                recordMiss(task.getName(), found->second, completion,
+                           "completion_after_absolute_deadline");
+                return;
+            }
+            ++completed_adjudicable_jobs_;
+        }
+        jobs_.erase(found);
+    }
+
+    void probe(RTSim::DeadEvt &event) {
+        auto &task = *event.getTask();
+        const auto miss_time = tickValue(MetaSim::SIMUL.getTime());
+        const auto release = tickValue(task.getLastArrival());
+        const auto deadline = release + tickValue(task.getRelDline());
+        if (deadline >= horizon_ || miss_time < deadline) return;
+        const auto key = jobKey(task.getName(), release);
+        auto found = jobs_.find(key);
+        if (found == jobs_.end()) {
+            fail("deadline miss observed for an unknown job");
+            return;
+        }
+        recordMiss(task.getName(), found->second, miss_time,
+                   "deadline_event_for_active_job");
+    }
+
+    void probe(RTSim::KillEvt &event) {
+        auto &task = *event.getTask();
+        const auto kill_time = tickValue(MetaSim::SIMUL.getTime());
+        const auto release = tickValue(task.getLastArrival());
+        const auto deadline = release + tickValue(task.getRelDline());
+        const auto key = jobKey(task.getName(), release);
+        auto found = jobs_.find(key);
+        if (found == jobs_.end()) return;
+        if (deadline < horizon_ && kill_time >= deadline) {
+            recordMiss(task.getName(), found->second, kill_time,
+                       "kill_at_or_after_absolute_deadline");
+        } else if (deadline < horizon_) {
+            fail("eligible job was killed before its deadline");
+        }
+    }
+
+    bool shouldStop() const noexcept { return stop_; }
+
+    void finish(std::int64_t actual_end, bool reached_horizon,
+                std::uint64_t generation) {
+        if (!error_.empty())
+            throw std::runtime_error(error_);
+        if (miss_) {
+            writeResult(false, actual_end, "first_hardrt_deadline_miss",
+                        generation);
+            return;
+        }
+        if (!reached_horizon || actual_end < horizon_)
+            throw std::runtime_error("fast simulation did not reach horizon");
+        for (const auto &entry : jobs_) {
+            if (entry.second.deadline < horizon_)
+                throw std::runtime_error(
+                    "eligible job remained incomplete at the horizon");
+        }
+        if (adjudicable_jobs_ == 0 ||
+            completed_adjudicable_jobs_ != adjudicable_jobs_)
+            throw std::runtime_error("fast WholePass coverage is incomplete");
+        writeResult(true, actual_end, "reached_horizon", generation);
+    }
+
+private:
+    struct Job {
+        std::int64_t release;
+        std::int64_t deadline;
+    };
+
+    static std::int64_t tickValue(MetaSim::Tick value) {
+        return static_cast<std::int64_t>(value);
+    }
+
+    static std::string jobKey(const std::string &task, std::int64_t release) {
+        return task + "@" + std::to_string(release);
+    }
+
+    void fail(const std::string &message) {
+        if (error_.empty()) error_ = message;
+        stop_ = true;
+    }
+
+    void recordMiss(const std::string &task_name, const Job &job,
+                    std::int64_t miss_time, const std::string &evidence) {
+        if (miss_) return;
+        miss_ = true;
+        stop_ = true;
+        first_miss_task_ = task_name;
+        first_miss_job_ = jobKey(task_name, job.release);
+        first_miss_release_ = job.release;
+        first_miss_deadline_ = job.deadline;
+        first_miss_time_ = miss_time;
+        first_miss_evidence_ = evidence;
+    }
+
+    static std::string escapeJson(const std::string &value) {
+        std::string result;
+        for (const unsigned char character : value) {
+            switch (character) {
+            case '"': result += "\\\""; break;
+            case '\\': result += "\\\\"; break;
+            case '\n': result += "\\n"; break;
+            case '\r': result += "\\r"; break;
+            case '\t': result += "\\t"; break;
+            default: result.push_back(static_cast<char>(character)); break;
+            }
+        }
+        return result;
+    }
+
+    void writeResult(bool pass, std::int64_t actual_end,
+                     const std::string &reason, std::uint64_t generation) {
+        const std::filesystem::path target(output_);
+        if (target.empty() || std::filesystem::exists(target))
+            throw std::runtime_error("fast output already exists or is empty");
+        const auto parent = target.parent_path().empty()
+            ? std::filesystem::path(".") : target.parent_path();
+        std::filesystem::create_directories(parent);
+        const auto partial = target.string() + ".partial." +
+            std::to_string(::getpid());
+        std::ofstream file(partial, std::ios::binary | std::ios::trunc);
+        if (!file)
+            throw std::runtime_error("cannot open fast output");
+        file << "{\"schema\":\"PARTSIM_V6_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1\","
+             << "\"fast_mode\":\"v6_rm_implicit_hardrt_wholepass\","
+             << "\"run_id\":\"" << escapeJson(run_id_) << "\","
+             << "\"taskset_semantic_hash\":\"" << escapeJson(taskset_hash_)
+             << "\",\"configured_scheduler\":\""
+             << escapeJson(scheduler_) << "\",\"processors\":"
+             << processors_ << ",\"task_count\":" << task_ids_.size()
+             << ",\"task_ids\":[";
+        for (std::size_t index = 0; index < task_ids_.size(); ++index) {
+            if (index) file << ',';
+            file << "\"" << escapeJson(task_ids_[index]) << "\"";
+        }
+        file << "],\"deadline_mode\":\"implicit\",\"horizon\":"
+             << horizon_ << ",\"simulation_generation\":" << generation
+             << ",\"simulation_completed\":"
+             << (pass ? "true" : "false")
+             << ",\"completion_reason\":\"" << reason
+             << "\",\"taskset_pass\":" << (pass ? "true" : "false")
+             << ",\"released_jobs\":" << released_jobs_
+             << ",\"adjudicable_jobs\":" << adjudicable_jobs_
+             << ",\"completed_adjudicable_jobs\":"
+             << completed_adjudicable_jobs_;
+        if (miss_) {
+            file << ",\"first_deadline_miss\":{\"task_id\":\""
+                 << escapeJson(first_miss_task_) << "\",\"job_id\":\""
+                 << escapeJson(first_miss_job_) << "\",\"release\":"
+                 << first_miss_release_ << ",\"absolute_deadline\":"
+                 << first_miss_deadline_ << ",\"miss_time\":"
+                 << first_miss_time_ << ",\"evidence\":\""
+                 << escapeJson(first_miss_evidence_) << "\"}";
+        } else {
+            file << ",\"first_deadline_miss\":null";
+        }
+        file << "}\n";
+        file.flush();
+        file.close();
+        if (!file)
+            throw std::runtime_error("cannot finalize fast output");
+        std::error_code error;
+        std::filesystem::rename(partial, target, error);
+        if (error) {
+            std::filesystem::remove(partial);
+            throw std::runtime_error("cannot publish fast output: " +
+                                     error.message());
+        }
+    }
+
+    std::int64_t horizon_;
+    std::string run_id_;
+    std::string taskset_hash_;
+    std::string scheduler_;
+    std::size_t processors_;
+    std::string output_;
+    std::vector<std::string> task_ids_;
+    std::map<std::string, Job> jobs_;
+    std::uint64_t released_jobs_{0};
+    std::uint64_t adjudicable_jobs_{0};
+    std::uint64_t completed_adjudicable_jobs_{0};
+    bool miss_{false};
+    bool stop_{false};
+    std::string error_;
+    std::string first_miss_task_;
+    std::string first_miss_job_;
+    std::string first_miss_evidence_;
+    std::int64_t first_miss_release_{0};
+    std::int64_t first_miss_deadline_{0};
+    std::int64_t first_miss_time_{0};
 };
 
 static std::string safePathComponent(const std::string &value) {
@@ -1146,6 +1395,30 @@ int main(int argc, char *argv[]) {
         !opts["b4-summary-horizon"].empty();
     const bool b4_contract_version_supplied =
         !opts["b4-observability-contract-version"].empty();
+    const bool wholepass_fast = !opts["wholepass-fast-output"].empty();
+    if (wholepass_fast) {
+        if (!opts["trace"].empty() || semantic_traces ||
+            b4_observability_summary ||
+            opts["wholepass-fast-campaign"] != "v6" ||
+            opts["wholepass-fast-priority-policy"] != "RM" ||
+            opts["wholepass-fast-deadline-mode"] != "implicit" ||
+            opts["wholepass-fast-mode"] != "hard-rt-wholepass") {
+            std::cerr
+                << "PRE-FLIGHT ERROR: WholePass fast path requires an "
+                   "explicit v6/RM/implicit/hard-rt-wholepass invocation "
+                   "without a legacy trace"
+                << std::endl;
+            return EXIT_FAILURE;
+        }
+        if (!isSha256(opts["taskset-semantic-hash"]) ||
+            opts["run-id"].empty()) {
+            std::cerr
+                << "PRE-FLIGHT ERROR: WholePass fast path requires run-id "
+                   "and taskset-semantic-hash"
+                << std::endl;
+            return EXIT_FAILURE;
+        }
+    }
     std::uint64_t b4_summary_horizon = 0;
     if (b4_observability_summary != b4_horizon_supplied) {
         std::cerr
@@ -1245,7 +1518,7 @@ int main(int argc, char *argv[]) {
     try {
         sys = std::make_unique<RTSim::System>(opts["system"]);
         resmanager = read_resources(opts["taskset"]);
-        for (const auto &[tasksrv, cpu, params] : taskset) {
+        for (auto &[tasksrv, cpu, params] : taskset) {
             (void) tasksrv;
             (void) params;
             if (cpu < 0 || static_cast<std::size_t>(cpu) >= sys->cpus.size())
@@ -1256,6 +1529,89 @@ int main(int argc, char *argv[]) {
     } catch (const std::exception &error) {
         std::cerr << "PRE-FLIGHT ERROR: " << error.what() << std::endl;
         return EXIT_FAILURE;
+    }
+    if (wholepass_fast) {
+        if (taskset.size() != 10 || sys->cpus.size() != 4) {
+            std::cerr
+                << "PRE-FLIGHT ERROR: v6 WholePass fast path requires "
+                   "exactly ten tasks and four processors"
+                << std::endl;
+            return EXIT_FAILURE;
+        }
+        for (auto &[tasksrv, cpu, params] : taskset) {
+            (void)cpu;
+            (void)params;
+            auto *task = dynamic_cast<RTSim::Task *>(&tasksrv.getTask());
+            if (!task || task->getConfiguredRelDline() != task->getPeriod()) {
+                std::cerr
+                    << "PRE-FLIGHT ERROR: WholePass fast path requires "
+                       "implicit D=T task definitions"
+                    << std::endl;
+                return EXIT_FAILURE;
+            }
+        }
+        if (sys->scheduler_identities.empty()) {
+            std::cerr
+                << "PRE-FLIGHT ERROR: fast output missing scheduler identity"
+                << std::endl;
+            return EXIT_FAILURE;
+        }
+        for (auto &[tasksrv, cpu, params] : taskset) {
+            if (tasksrv.getServer()) {
+                sys->cpus[cpu]->getKernel()->addTask(
+                    *tasksrv.getServer(), params);
+            } else {
+                sys->cpus[cpu]->getKernel()->addTask(
+                    tasksrv.getTask(), params);
+            }
+        }
+        const auto &identity = sys->scheduler_identities.front();
+        WholePassFastObserver observer(
+            static_cast<std::int64_t>(duration), opts["run-id"],
+            opts["taskset-semantic-hash"], identity.configured_scheduler,
+            sys->cpus.size(), opts["wholepass-fast-output"]);
+        for (auto &[tasksrv, cpu, params] : taskset) {
+            (void)cpu;
+            (void)params;
+            observer.attachToTask(tasksrv.getTask());
+        }
+        bool initialized = false;
+        try {
+            simulation.initRuns();
+            simulation.initSingleRun();
+            initialized = true;
+            while (!observer.shouldStop() &&
+                   simulation.getTime() < duration) {
+                auto *next_event = MetaSim::Event::getFirst();
+                if (!next_event)
+                    throw std::runtime_error(
+                        "fast simulation event queue exhausted");
+                if (next_event->getTime() > duration) {
+                    simulation.run_to(duration);
+                    break;
+                }
+                simulation.sim_step();
+            }
+            const auto actual_end =
+                static_cast<std::int64_t>(simulation.getTime());
+            const bool reached_horizon = actual_end >=
+                static_cast<std::int64_t>(duration);
+            simulation.endSingleRun(false);
+            initialized = false;
+            observer.finish(
+                actual_end, reached_horizon, simulation.getRunGeneration());
+            return EXIT_SUCCESS;
+        } catch (const std::exception &error) {
+            if (initialized) {
+                try {
+                    simulation.endSingleRun(false);
+                } catch (...) {
+                }
+            }
+            std::cerr << "WHOLEPASS FAST ERROR: " << error.what()
+                      << std::endl;
+            return EXIT_FAILURE;
+        }
     }
     std::vector<RTSim::ObservabilityTaskMetadata>
         b4_observability_metadata;
