@@ -43,7 +43,6 @@ from scripts.analyze_scheduler_load_cross import (
 import scripts.analyze_scheduler_load_cross as analyzer_module
 import scripts.run_scheduler_load_cross as scheduler_runner
 import scripts.run_v6_implicit_wholepass_fast as fast_overlay_runner
-import scripts.run_v6_implicit_wholepass_fast as fast_overlay_runner
 
 
 def _fast_result_fixture(*, passed=True):
@@ -4149,3 +4148,123 @@ def test_v6_fast_overlay_rejects_cross_mode_and_overlap_ids():
             {"request_id": "implicit", "deadline_mode": "constrained"},
             {"request_id": "implicit", "deadline_mode": "implicit"},
         )
+
+
+def test_v6_fast_overlay_bounds_rolling_in_flight_submission(monkeypatch):
+    jobs = [{"request_id": f"fast-{index}"} for index in range(137)]
+    submitted = []
+    observed_sizes = []
+
+    class TrackedPool:
+        def submit(self, function, job):
+            submitted.append(job["request_id"])
+            future = Future()
+            future.set_result(None)
+            return future
+
+    def observe_as_completed(futures):
+        futures = tuple(futures)
+        observed_sizes.append(len(futures))
+        return iter(futures)
+
+    monkeypatch.setattr(fast_overlay_runner, "as_completed", observe_as_completed)
+    completed = [
+        job["request_id"]
+        for future, job in fast_overlay_runner._iter_completed_fast_jobs(
+            TrackedPool(), jobs, 30,
+        )
+        if future.result() is None
+    ]
+    assert fast_overlay_runner.fast_in_flight_limit(30) == 60
+    assert max(observed_sizes) == 60
+    assert all(size <= 60 for size in observed_sizes)
+    assert submitted == completed == [job["request_id"] for job in jobs]
+    assert len(set(submitted)) == len(submitted) == len(jobs)
+
+
+def test_v6_fast_overlay_recovers_orphan_compact_result_without_rerun(tmp_path):
+    request = _overlay_request_fixture("orphan-request", "implicit")
+    taskset = _overlay_taskset_fixture()
+    value = _fast_result_fixture()
+    value.update({
+        "run_id": "v93-orphan-request-h60000",
+        "taskset_semantic_hash": "a" * 64,
+        "configured_scheduler": "gpfp_asap_block",
+    })
+    output_path = (
+        tmp_path / "orphan-request.implicit_wholepass_fast.json"
+    )
+    output_path.write_text(json.dumps(value), encoding="utf-8")
+    before = hashlib.sha256(output_path.read_bytes()).hexdigest()
+    recovered = fast_overlay_runner._recover_orphan_fast_result(
+        output_path, request, taskset, 60000,
+    )
+    assert recovered == value
+    assert hashlib.sha256(output_path.read_bytes()).hexdigest() == before
+
+    invalid = dict(value, configured_scheduler="gpfp_alap_block")
+    output_path.write_text(json.dumps(invalid), encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid orphan compact result"):
+        fast_overlay_runner._recover_orphan_fast_result(
+            output_path, request, taskset, 60000,
+        )
+
+    with pytest.raises(ValueError, match="requires an implicit request"):
+        fast_overlay_runner._recover_orphan_fast_result(
+            output_path,
+            _overlay_request_fixture("orphan-request", "constrained"),
+            taskset,
+            60000,
+        )
+
+
+@pytest.mark.parametrize("campaign, accepted", [("v6", True), (None, False), ("v7", False)])
+def test_v6_fast_python_scope_requires_explicit_v6_campaign(
+    tmp_path, monkeypatch, campaign, accepted,
+):
+    simulator = tmp_path / "rtsim"
+    simulator.touch()
+    simulation_config = {
+        "simulator_bin": str(simulator), "horizon": 10,
+        "maximum_horizon": 10, "timeout_seconds": 1,
+        "priority_policy": "RM", "deadline_mode": "implicit",
+        "campaign": campaign, "wholepass_mode": "hard-rt",
+    }
+    if accepted:
+        sentinel = object()
+        monkeypatch.setattr(
+            fast_overlay_runner.simulation_engine,
+            "materialize_simulation_inputs",
+            lambda *args, **kwargs: (simulator, simulator),
+        )
+        monkeypatch.setattr(
+            fast_overlay_runner.simulation_engine,
+            "_run_implicit_wholepass_fast",
+            lambda **kwargs: sentinel,
+        )
+        observed = fast_overlay_runner.simulation_engine.run_paired_simulation(
+            simulation_id_value="scope-accepted",
+            base_system_path=tmp_path / "system.yaml",
+            run_root=tmp_path / "run",
+            task_payload=(), taskset_hash="a" * 64, processors=4,
+            exact_e0=Fraction(1),
+            energy_config={
+                "simulation_initial_battery": "1",
+                "battery_capacity": "2",
+                "allow_harvest_clipping": True,
+            },
+            simulation_config=simulation_config,
+            implicit_wholepass_fast=True,
+        )
+        assert observed is sentinel
+    else:
+        with pytest.raises(SimulationConfigurationError, match="requires v6 RM implicit"):
+            fast_overlay_runner.simulation_engine.run_paired_simulation(
+                simulation_id_value="scope-rejected",
+                base_system_path=tmp_path / "system.yaml",
+                run_root=tmp_path / "run",
+                task_payload=(), taskset_hash="a" * 64, processors=4,
+                exact_e0=Fraction(1), energy_config={},
+                simulation_config=simulation_config,
+                implicit_wholepass_fast=True,
+            )

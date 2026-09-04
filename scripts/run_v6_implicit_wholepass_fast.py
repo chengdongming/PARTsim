@@ -17,6 +17,7 @@ from experiments.v9_3.implicit_wholepass_fast import (
     FAST_MODE,
     FastWholePassError,
     validate_fast_document,
+    validate_fast_result,
 )
 from experiments.v9_3.task_identity import runtime_task_name_for_source_id
 
@@ -113,6 +114,93 @@ def _validate_overlay_overlap(
 ) -> None:
     if baseline_implicit_ids & overlay_ids:
         raise ValueError("formal baseline and fast overlay overlap")
+
+
+def fast_in_flight_limit(workers: int) -> int:
+    if workers < 1:
+        raise ValueError("workers must be positive")
+    return 2 * workers
+
+
+def _iter_completed_fast_jobs(pool, jobs, workers):
+    """Submit sorted jobs with a bounded rolling future window."""
+    pending = iter(jobs)
+    future_to_job = {}
+    pending_exhausted = False
+    limit = fast_in_flight_limit(workers)
+    while future_to_job or not pending_exhausted:
+        while not pending_exhausted and len(future_to_job) < limit:
+            try:
+                job = next(pending)
+            except StopIteration:
+                pending_exhausted = True
+                break
+            future_to_job[pool.submit(_fast_worker, job)] = job
+        if not future_to_job:
+            break
+        future = next(iter(as_completed(future_to_job)))
+        yield future, future_to_job.pop(future)
+
+
+def _fast_validation_kwargs(
+    request: Mapping[str, Any], taskset: Any, horizon: int,
+) -> dict[str, Any]:
+    return {
+        "expected_run_id": f"v93-{request['request_id'][:16]}-h{horizon}",
+        "expected_taskset_hash": str(request["taskset_hash"]),
+        "expected_scheduler": str(request["scheduler_cli"]),
+        "expected_processors": int(taskset.processors),
+        "expected_task_ids": [
+            runtime_task_name_for_source_id(item["task_id"])
+            for item in taskset.task_payload
+        ],
+        "expected_horizon": horizon,
+    }
+
+
+def _validated_fast_result(
+    value: Path | Mapping[str, Any], request: Mapping[str, Any],
+    taskset: Any, horizon: int, context: str,
+) -> dict[str, Any]:
+    try:
+        kwargs = _fast_validation_kwargs(request, taskset, horizon)
+        if isinstance(value, Path):
+            return validate_fast_result(value, **kwargs)
+        return validate_fast_document(value, **kwargs)
+    except (FastWholePassError, TypeError) as exc:
+        raise ValueError(f"{context}: {exc}") from exc
+
+
+def _make_overlay_row(
+    request: Mapping[str, Any], fast: Mapping[str, Any], runtime_seconds: float,
+) -> dict[str, Any]:
+    return {
+        **request,
+        "fast_mode": FAST_MODE,
+        "simulation_status": (
+            "PASS_OBSERVED" if fast["taskset_pass"] else "DEADLINE_MISS"
+        ),
+        "simulation_reason": fast["completion_reason"],
+        "technical_error": None,
+        "runtime_seconds": runtime_seconds,
+        "schedulable": fast["taskset_pass"],
+        "taskset_pass": fast["taskset_pass"],
+        "wholepass": fast["taskset_pass"],
+        "fast_result": dict(fast),
+    }
+
+
+def _recover_orphan_fast_result(
+    output_path: Path, request: Mapping[str, Any], taskset: Any, horizon: int,
+) -> dict[str, Any] | None:
+    if request.get("deadline_mode") != "implicit":
+        raise ValueError("orphan compact recovery requires an implicit request")
+    if not output_path.exists():
+        return None
+    return _validated_fast_result(
+        output_path, request, taskset, horizon,
+        f"invalid orphan compact result for {request['request_id']}",
+    )
 
 
 def _fast_worker(job: Mapping[str, Any]) -> dict[str, Any]:
@@ -289,26 +377,33 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("overlay row is not a valid fast scientific row")
         taskset = tasksets_by_id[expected_by_id[request_id]["taskset_id"]]
         fast_result = row.get("fast_result")
-        try:
-            validated = validate_fast_document(
-                fast_result,
-                expected_run_id=f"v93-{request_id[:16]}-h{config['simulation_horizon_ms']}",
-                expected_taskset_hash=str(expected_by_id[request_id]["taskset_hash"]),
-                expected_scheduler=str(expected_by_id[request_id]["scheduler_cli"]),
-                expected_processors=int(taskset.processors),
-                expected_task_ids=[
-                    runtime_task_name_for_source_id(item["task_id"])
-                    for item in taskset.task_payload
-                ],
-                expected_horizon=int(config["simulation_horizon_ms"]),
-            )
-        except (FastWholePassError, TypeError) as exc:
-            raise ValueError(f"invalid overlay compact result: {exc}") from exc
+        validated = _validated_fast_result(
+            fast_result, expected_by_id[request_id], taskset,
+            int(config["simulation_horizon_ms"]), "invalid overlay compact result",
+        )
         if row.get("taskset_pass") != validated["taskset_pass"]:
             raise ValueError("overlay WholePass does not match compact result")
         overlay[request_id] = row
     overlay_ids = set(overlay)
     _validate_overlay_ids(overlay_ids, implicit_ids)
+    _validate_overlay_overlap(baseline_implicit_ids, overlay_ids)
+    missing = implicit_ids - baseline_implicit_ids - overlay_ids
+    for request_id in sorted(missing):
+        request = expected_by_id[request_id]
+        taskset = tasksets_by_id[request["taskset_id"]]
+        output_path = (
+            overlay_root / "simulations" / request_id
+            / f"{request_id}.implicit_wholepass_fast.json"
+        )
+        fast = _recover_orphan_fast_result(
+            output_path, request, taskset, int(config["simulation_horizon_ms"]),
+        )
+        if fast is None:
+            continue
+        row = _make_overlay_row(request, fast, 0.0)
+        _append_jsonl(overlay_path, row)
+        overlay[request_id] = row
+    overlay_ids = set(overlay)
     _validate_overlay_overlap(baseline_implicit_ids, overlay_ids)
     missing = implicit_ids - baseline_implicit_ids - overlay_ids
     simulator = args.simulator.resolve()
@@ -339,38 +434,18 @@ def main(argv: list[str] | None = None) -> int:
     overlay_root.mkdir(parents=True, exist_ok=True)
     context = multiprocessing.get_context("fork")
     with ProcessPoolExecutor(max_workers=args.workers, mp_context=context) as pool:
-        futures = {pool.submit(_fast_worker, job): job for job in jobs}
-        for future in as_completed(futures):
+        for future, job in _iter_completed_fast_jobs(pool, jobs, args.workers):
             result = future.result()
             request = result["request"]
             fast = result["fast_result"]
             taskset = tasksets_by_id[request["taskset_id"]]
-            validate_fast_document(
-                fast,
-                expected_run_id=f"v93-{request['request_id'][:16]}-h{config['simulation_horizon_ms']}",
-                expected_taskset_hash=str(request["taskset_hash"]),
-                expected_scheduler=str(request["scheduler_cli"]),
-                expected_processors=int(taskset.processors),
-                expected_task_ids=[
-                    runtime_task_name_for_source_id(item["task_id"])
-                    for item in taskset.task_payload
-                ],
-                expected_horizon=int(config["simulation_horizon_ms"]),
+            _validated_fast_result(
+                fast, request, taskset, int(config["simulation_horizon_ms"]),
+                "fast compact result rejected",
             )
-            row = {
-                **request,
-                "fast_mode": FAST_MODE,
-                "simulation_status": (
-                    "PASS_OBSERVED" if fast["taskset_pass"] else "DEADLINE_MISS"
-                ),
-                "simulation_reason": fast["completion_reason"],
-                "technical_error": None,
-                "runtime_seconds": result["runtime_seconds"],
-                "schedulable": fast["taskset_pass"],
-                "taskset_pass": fast["taskset_pass"],
-                "wholepass": fast["taskset_pass"],
-                "fast_result": fast,
-            }
+            row = _make_overlay_row(
+                request, fast, result["runtime_seconds"],
+            )
             _append_jsonl(overlay_path, row)
             overlay[request["request_id"]] = row
     overlay_ids = set(overlay)

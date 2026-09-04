@@ -1478,7 +1478,7 @@ def run_paired_simulation(
     if implicit_wholepass_fast and (
         priority_policy != "RM"
         or simulation_config.get("deadline_mode") != "implicit"
-        or simulation_config.get("campaign") not in {None, "v6"}
+        or simulation_config.get("campaign") != "v6"
         or simulation_config.get("wholepass_mode") != "hard-rt"
     ):
         raise SimulationConfigurationError(
