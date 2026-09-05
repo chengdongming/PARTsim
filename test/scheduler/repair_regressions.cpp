@@ -226,6 +226,43 @@ TEST(B3TimingTrace, AlapTimingDeferredJobDoesNotConsumeCpuSlot) {
               std::string::npos);
 }
 
+TEST(B3TimingTrace, AlapBlockTimingDeferredJobDoesNotConsumeCpuSlot) {
+    const std::string path = "/tmp/partsim_b3_alap_block_cpu_availability.json";
+    const SchedulerTraceJob high{
+        "block-timing-closed-high", 0.0, 1.0, 0, 1000.0, 1.0, 20.0};
+    const SchedulerTraceJob low{
+        "block-timing-open-low", 0.0, 2.0, 1, 7000.0, 1.0, 20.0};
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ALAPDecision(
+            "ALAP-Block",
+            "BLOCK",
+            5000.0,
+            1,
+            {high, low},
+            {low},
+            {},
+            {},
+            "ALAP_BLOCK_NATIVE_GATE");
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    const std::string observation = readB3TaskObservation(
+        contents, "block-timing-open-low");
+    EXPECT_NE(observation.find("\"cpu_available\": true"),
+              std::string::npos);
+    EXPECT_NE(observation.find(
+                  "\"blocking_policy_reason\": \"BLOCK_HEAD_OF_LINE\""),
+              std::string::npos);
+}
+
 TEST(B3TimingTrace, AsapEnergySkippedJobDoesNotConsumeCpuSlot) {
     const std::string path = "/tmp/partsim_b3_asap_cpu_availability.json";
     const SchedulerTraceJob first{

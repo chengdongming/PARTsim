@@ -393,7 +393,9 @@ TEST(STSyncScheduler, UrgentNewTopMExecutesSameTickWhenChargingSlackExpires) {
         STSyncSchedulerTestPeer::tick(scheduler);
     });
     urgent_arrival.post(Tick(2));
+    testing::internal::CaptureStdout();
     simulation.run_to(Tick(2));
+    const std::string tick_output = testing::internal::GetCapturedStdout();
 
     EXPECT_EQ(scheduler.getCurrentBatchTasks().size(), 2u);
     EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &h));
@@ -408,6 +410,7 @@ TEST(STSyncScheduler, UrgentNewTopMExecutesSameTickWhenChargingSlackExpires) {
     EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 3.0);
     EXPECT_LE(STSyncSchedulerTestPeer::slack(scheduler, &h), Tick(0));
     EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+    EXPECT_EQ(tick_output.find("实际同步组原子验资失败"), std::string::npos);
 
     simulation.endSingleRun();
 }
