@@ -83,6 +83,186 @@ static std::string readJsonScalar(const std::string &contents,
     return contents.substr(value_start, value_end - value_start);
 }
 
+static std::string readB3TaskObservation(const std::string &contents,
+                                         const std::string &task_name) {
+    const std::string marker = "\"task_name\": \"" + task_name + "\"";
+    const std::size_t start = contents.find(marker);
+    EXPECT_NE(start, std::string::npos) << task_name;
+    if (start == std::string::npos) return "";
+    const std::size_t end = contents.find('}', start);
+    EXPECT_NE(end, std::string::npos) << task_name;
+    if (end == std::string::npos) return "";
+    return contents.substr(start, end - start + 1);
+}
+
+static std::vector<SchedulerTraceJob> makeResidualBudgetJobs() {
+    return {
+        {"residual-job-1", 0.0, 1.0, 0, 6000.0, 1.0, 20.0},
+        {"residual-job-2", 0.0, 2.0, 1, 4000.0, 1.0, 20.0},
+        {"residual-job-3", 0.0, 3.0, 2, 2000.0, 1.0, 20.0},
+    };
+}
+
+static std::string writeASAPResidualBudgetTrace() {
+    const std::string path = "/tmp/partsim_b3_asap_residual_budget.json";
+    const auto jobs = makeResidualBudgetJobs();
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ASAPDecision(
+            "ASAP-NonBlock",
+            "NONBLOCK",
+            8000.0,
+            3,
+            jobs,
+            {jobs[0], jobs[2]},
+            {},
+            "lower_priority_bypass_due_to_energy");
+        MetaSim::SIMUL.endSingleRun();
+    }
+    std::ifstream input(path);
+    EXPECT_TRUE(input.good());
+    return std::string((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+}
+
+static std::string writeALAPResidualBudgetTrace() {
+    const std::string path = "/tmp/partsim_b3_alap_residual_budget.json";
+    const auto jobs = makeResidualBudgetJobs();
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ALAPDecision(
+            "ALAP-NonBlock",
+            "NONBLOCK",
+            8000.0,
+            3,
+            jobs,
+            jobs,
+            {jobs[0], jobs[2]},
+            {},
+            "ALAP_NONBLOCK_NATIVE_GATE");
+        MetaSim::SIMUL.endSingleRun();
+    }
+    std::ifstream input(path);
+    EXPECT_TRUE(input.good());
+    return std::string((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+}
+
+TEST(B3TimingTrace, NonBlockResidualBudgetIsRecordedForASAP) {
+    const std::string contents = writeASAPResidualBudgetTrace();
+    const std::string blocked = readB3TaskObservation(
+        contents, "residual-job-2");
+    const std::string bypassed = readB3TaskObservation(
+        contents, "residual-job-3");
+
+    EXPECT_NE(blocked.find("\"selected\": false"), std::string::npos);
+    EXPECT_NE(blocked.find("\"job_energy_affordable\": true"),
+              std::string::npos);
+    EXPECT_NE(blocked.find("\"decision_energy_affordable\": false"),
+              std::string::npos);
+    EXPECT_NE(blocked.find("\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+    EXPECT_NE(bypassed.find("\"selected\": true"), std::string::npos);
+    EXPECT_NE(bypassed.find("\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, NonBlockResidualBudgetIsRecordedForALAP) {
+    const std::string contents = writeALAPResidualBudgetTrace();
+    const std::string blocked = readB3TaskObservation(
+        contents, "residual-job-2");
+    const std::string bypassed = readB3TaskObservation(
+        contents, "residual-job-3");
+
+    EXPECT_NE(blocked.find("\"selected\": false"), std::string::npos);
+    EXPECT_NE(blocked.find("\"job_energy_affordable\": true"),
+              std::string::npos);
+    EXPECT_NE(blocked.find("\"decision_energy_affordable\": false"),
+              std::string::npos);
+    EXPECT_NE(blocked.find("\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+    EXPECT_NE(bypassed.find("\"selected\": true"), std::string::npos);
+    EXPECT_NE(bypassed.find("\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, AlapTimingDeferredJobDoesNotConsumeCpuSlot) {
+    const std::string path = "/tmp/partsim_b3_alap_cpu_availability.json";
+    const SchedulerTraceJob high{
+        "timing-closed-high", 0.0, 1.0, 0, 1000.0, 1.0, 20.0};
+    const SchedulerTraceJob low{
+        "timing-open-low", 0.0, 2.0, 1, 7000.0, 1.0, 20.0};
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ALAPDecision(
+            "ALAP-NonBlock",
+            "NONBLOCK",
+            5000.0,
+            1,
+            {high, low},
+            {low},
+            {},
+            {},
+            "ALAP_NONBLOCK_NATIVE_GATE");
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    const std::string observation = readB3TaskObservation(
+        contents, "timing-open-low");
+    EXPECT_NE(observation.find("\"cpu_available\": true"),
+              std::string::npos);
+    EXPECT_NE(observation.find("\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, AsapEnergySkippedJobDoesNotConsumeCpuSlot) {
+    const std::string path = "/tmp/partsim_b3_asap_cpu_availability.json";
+    const SchedulerTraceJob first{
+        "asap-energy-job-1", 0.0, 1.0, 0, 8000.0, 1.0, 20.0};
+    const SchedulerTraceJob second{
+        "asap-energy-job-2", 0.0, 2.0, 1, 7000.0, 1.0, 20.0};
+    const SchedulerTraceJob third{
+        "asap-energy-job-3", 0.0, 3.0, 2, 2000.0, 1.0, 20.0};
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ASAPDecision(
+            "ASAP-NonBlock",
+            "NONBLOCK",
+            5000.0,
+            1,
+            {first, second, third},
+            {third},
+            {},
+            "lower_priority_bypass_due_to_energy");
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    const std::string observation = readB3TaskObservation(
+        contents, "asap-energy-job-2");
+    EXPECT_NE(observation.find("\"cpu_available\": true"),
+              std::string::npos);
+    EXPECT_NE(observation.find("\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+}
+
 static B3BoundaryTraceEvidence writeB3BoundaryTrace(
     bool affordable,
     const std::string &suffix) {

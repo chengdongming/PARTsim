@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <fstream>
 #include <memory>
 #include <set>
 #include <string>
@@ -214,17 +215,36 @@ public:
 class ScopedSTBlockBaseHarvestRate {
 public:
     explicit ScopedSTBlockBaseHarvestRate(double rate)
-        : _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        : _original_source(ConfigManager::getInstance().getHarvestSourceConfig()),
+          _original(ConfigManager::getInstance().getBaseHarvestRate()) {
         ConfigManager::getInstance().setBaseHarvestRate(rate);
+        LegacySolarConfig zero_harvest;
+        zero_harvest.base_harvesting_power_w = 0.0;
+        ConfigManager::getInstance()._harvest_source_config = zero_harvest;
     }
 
     ~ScopedSTBlockBaseHarvestRate() {
+        ConfigManager::getInstance()._harvest_source_config = _original_source;
         ConfigManager::getInstance().setBaseHarvestRate(_original);
     }
 
 private:
+    HarvestSourceConfig _original_source;
     double _original;
 };
+
+static std::string readSTBlockB3TaskObservation(
+    const std::string &contents,
+    const std::string &task_name) {
+    const std::string marker = "\"task_name\": \"" + task_name + "\"";
+    const std::size_t start = contents.find(marker);
+    EXPECT_NE(start, std::string::npos) << task_name;
+    if (start == std::string::npos) return "";
+    const std::size_t end = contents.find('}', start);
+    EXPECT_NE(end, std::string::npos) << task_name;
+    if (end == std::string::npos) return "";
+    return contents.substr(start, end - start + 1);
+}
 
 static ScaledPiecewiseConfig STBlockDelayedSurgeConfig() {
     ScaledPiecewiseConfig config;
@@ -420,9 +440,66 @@ TEST(STBlockScheduler, CumulativePrefixEnergyReservation) {
     simulation.endSingleRun();
 }
 
+TEST(STBlockScheduler, B3UsesDecisionStartEnergyAfterPrefixReservation) {
+    const std::string path =
+        "/tmp/partsim_st_block_b3_decision_start_energy.json";
+    std::string high_observation;
+    {
+        auto &simulation = MetaSim::Simulation::getInstance();
+        TestSTBlockScheduler scheduler;
+        CPU cpu0("st-block-b3-decision-energy-cpu0", nullptr);
+        CPU cpu1("st-block-b3-decision-energy-cpu1", nullptr);
+        TestSTBlockMRTKernel kernel(
+            &scheduler, std::set<CPU *>{&cpu0, &cpu1});
+        FakeSTBlockTask high(1, 5, 10, 1.0);
+        FakeSTBlockTask blocked(2, 10, 20, 1.0);
+        JSONTrace trace(path, Tick(1));
+
+        STBlockSchedulerTestPeer::addTaskModel(
+            scheduler, &high, 5, 1, 3.0);
+        STBlockSchedulerTestPeer::addTaskModel(
+            scheduler, &blocked, 10, 1, 2.0);
+        trace.setSemanticTraceEnabled(true);
+        scheduler.setTraceLogger(&trace);
+        scheduler.setSemanticTraceEnabled(true);
+
+        simulation.initSingleRun();
+        STBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+        STBlockSchedulerTestPeer::setEnergy(scheduler, 4.0);
+        high.releaseAt(Tick(0));
+        blocked.releaseAt(Tick(0));
+        STBlockSchedulerTestPeer::enqueue(scheduler, &high);
+        STBlockSchedulerTestPeer::enqueue(scheduler, &blocked);
+
+        STBlockSchedulerTestPeer::tick(scheduler);
+        simulation.run_to(Tick(0));
+
+        EXPECT_EQ(high.getScheduleCount(), 1);
+        EXPECT_EQ(blocked.getScheduleCount(), 0);
+        EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+        EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 3.0);
+        simulation.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    high_observation = readSTBlockB3TaskObservation(
+        contents, "FakeSTBlockTask1");
+    EXPECT_NE(high_observation.find("\"selected\": true"),
+              std::string::npos);
+    EXPECT_NE(high_observation.find("\"job_energy_affordable\": true"),
+              std::string::npos);
+    EXPECT_NE(high_observation.find("\"decision_energy_affordable\": true"),
+              std::string::npos);
+}
+
 TEST(STBlockScheduler,
      ChargingHoldPreservesAffordablePrefixAndChargesItNormally) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTBlockBaseHarvestRate zero_harvest(0.0);
     TestSTBlockScheduler scheduler;
     CPU cpu0("st-block-charging-prefix-cpu0", nullptr);
     CPU cpu1("st-block-charging-prefix-cpu1", nullptr);
@@ -468,6 +545,7 @@ TEST(STBlockScheduler,
 TEST(STBlockScheduler,
      ReportingCountsOnlyCurrentlyUnaffordableHeadDuringChargeHold) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTBlockBaseHarvestRate zero_harvest(0.0);
     TestSTBlockScheduler scheduler;
     CPU cpu("st-block-reporting-head-cpu", nullptr);
     TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
@@ -517,6 +595,7 @@ TEST(STBlockScheduler,
 
 TEST(STBlockScheduler, HigherPriorityAffordableArrivalDuringChargeHold) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTBlockBaseHarvestRate zero_harvest(0.0);
     TestSTBlockScheduler scheduler;
     CPU cpu("st-block-higher-arrival-affordable-cpu", nullptr);
     TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
@@ -565,6 +644,7 @@ TEST(STBlockScheduler, HigherPriorityAffordableArrivalDuringChargeHold) {
 
 TEST(STBlockScheduler, HigherPriorityUnaffordableArrivalReplacesChargeHead) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTBlockBaseHarvestRate zero_harvest(0.0);
     TestSTBlockScheduler scheduler;
     CPU cpu("st-block-higher-arrival-unaffordable-cpu", nullptr);
     TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
@@ -1123,6 +1203,7 @@ TEST(STBlockScheduler,
 
 TEST(STBlockScheduler, ChargingSleepReleasesWhenSlackExhausted) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTBlockBaseHarvestRate zero_harvest(0.0);
     TestSTBlockScheduler scheduler;
     CPU cpu("st-block-slack-release-cpu", nullptr);
     TestSTBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});

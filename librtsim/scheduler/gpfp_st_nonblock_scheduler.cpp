@@ -595,6 +595,7 @@ namespace RTSim {
         const double epsilon = 1e-9;
         const size_t processor_count = running_tasks_map.size();
         AbsRTTask *waiting_task = nullptr;
+        std::set<AbsRTTask *> energy_suspended_tasks;
         std::vector<AbsRTTask *> timing_wait_tasks;
         std::set<AbsRTTask *> direct_energy_shortage_tasks;
         AbsRTTask *decision_head = active_tasks.empty()
@@ -643,6 +644,7 @@ namespace RTSim {
                 }
             }
             if (isSkippedTaskHeld(task)) {
+                energy_suspended_tasks.insert(task);
                 if (task == decision_head) {
                     head_st_wait = true;
                 }
@@ -667,6 +669,7 @@ namespace RTSim {
             }
 
             _stats.total_skipped_energy++;
+            energy_suspended_tasks.insert(task);
             Tick slack = calculateSlackForTask(task);
             if (slack > 0) {
                 waiting_task = task;
@@ -802,7 +805,10 @@ namespace RTSim {
             if (selected_set.find(task) != selected_set.end()) {
                 continue;
             }
-            setSuspendReason(task, waiting_task ? "insufficient_energy" : "preemption");
+            setSuspendReason(task,
+                             energy_suspended_tasks.count(task) > 0
+                                 ? "insufficient_energy"
+                                 : "preemption");
             _kernel->suspend(task);
         }
 

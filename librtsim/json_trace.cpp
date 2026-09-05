@@ -1987,13 +1987,17 @@ namespace RTSim {
         }
 
         bool nonblock_block_seen = false;
+        double nonblock_remaining_energy_mJ = available_energy_mJ;
+        std::size_t nonblock_selected_seen = 0;
         for (std::size_t i = 0; i < ready_jobs.size(); ++i) {
             const SchedulerTraceJob &job = ready_jobs[i];
             const std::string key = identity(job);
             const bool is_selected = selected.count(key) > 0;
             const bool is_continuing = continuing.count(key) > 0;
-            const bool cpu_available =
-                is_selected || is_continuing || i < processor_count;
+            const bool cpu_available = blocking_policy == "NONBLOCK"
+                ? (is_selected || is_continuing ||
+                   nonblock_selected_seen < processor_count)
+                : (is_selected || is_continuing || i < processor_count);
 
             double decision_required_mJ = job.task_unit_energy_mJ;
             if (blocking_policy == "BLOCK") {
@@ -2009,8 +2013,10 @@ namespace RTSim {
 
             const bool job_affordable = available_energy_mJ + epsilon_mJ >=
                 job.task_unit_energy_mJ;
-            const bool decision_affordable =
-                available_energy_mJ + epsilon_mJ >= decision_required_mJ;
+            const double decision_available_mJ = blocking_policy == "NONBLOCK"
+                ? nonblock_remaining_energy_mJ : available_energy_mJ;
+            const bool decision_affordable = decision_available_mJ +
+                epsilon_mJ >= decision_required_mJ;
 
             std::string policy_reason = "NONE";
             if (!cpu_available) {
@@ -2034,6 +2040,11 @@ namespace RTSim {
             } else if (!is_selected) {
                 policy_reason = decision_affordable
                     ? "HIGHER_PRIORITY" : "ENERGY_INSUFFICIENT";
+            }
+
+            if (blocking_policy == "NONBLOCK" && is_selected) {
+                nonblock_remaining_energy_mJ -= job.task_unit_energy_mJ;
+                ++nonblock_selected_seen;
             }
 
             const double rounded_remaining =
@@ -2105,14 +2116,18 @@ namespace RTSim {
         }
         double urgent_prefix_mJ = 0.0;
         bool nonblock_block_seen = false;
+        double nonblock_remaining_energy_mJ = available_energy_mJ;
+        std::size_t nonblock_selected_seen = 0;
         for (std::size_t i = 0; i < ready_jobs.size(); ++i) {
             const SchedulerTraceJob &job = ready_jobs[i];
             const std::string key = identity(job);
             const bool timing_gate_open = urgent.count(key) > 0;
             const bool is_selected = selected.count(key) > 0;
             const bool is_continuing = continuing.count(key) > 0;
-            const bool cpu_available =
-                is_selected || is_continuing || i < processor_count;
+            const bool cpu_available = blocking_policy == "NONBLOCK"
+                ? (is_selected || is_continuing ||
+                   nonblock_selected_seen < processor_count)
+                : (is_selected || is_continuing || i < processor_count);
 
             double decision_required_mJ = job.task_unit_energy_mJ;
             if (timing_gate_open && blocking_policy == "BLOCK") {
@@ -2123,8 +2138,10 @@ namespace RTSim {
             }
             const bool job_affordable = available_energy_mJ + epsilon_mJ >=
                 job.task_unit_energy_mJ;
-            const bool decision_affordable =
-                available_energy_mJ + epsilon_mJ >= decision_required_mJ;
+            const double decision_available_mJ = blocking_policy == "NONBLOCK"
+                ? nonblock_remaining_energy_mJ : available_energy_mJ;
+            const bool decision_affordable = decision_available_mJ +
+                epsilon_mJ >= decision_required_mJ;
 
             std::string policy_reason = "NONE";
             if (!cpu_available) {
@@ -2159,6 +2176,11 @@ namespace RTSim {
                                  : "DISPATCH_SELECTED")
                 : (!timing_gate_open && policy_reason == "NONE"
                     ? "TIMING_DEFERRED" : "BLOCKED");
+            if (blocking_policy == "NONBLOCK" && timing_gate_open &&
+                is_selected) {
+                nonblock_remaining_energy_mJ -= job.task_unit_energy_mJ;
+                ++nonblock_selected_seen;
+            }
             B3TimingObservation observation{
                 scheduler,
                 "ALAP",

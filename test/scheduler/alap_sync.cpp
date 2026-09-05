@@ -171,6 +171,27 @@ public:
     }
 };
 
+class ScopedALAPSyncBaseHarvestRate {
+public:
+    explicit ScopedALAPSyncBaseHarvestRate(double rate)
+        : _original_source(ConfigManager::getInstance().getHarvestSourceConfig()),
+          _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        ConfigManager::getInstance().setBaseHarvestRate(rate);
+        LegacySolarConfig zero_harvest;
+        zero_harvest.base_harvesting_power_w = 0.0;
+        ConfigManager::getInstance()._harvest_source_config = zero_harvest;
+    }
+
+    ~ScopedALAPSyncBaseHarvestRate() {
+        ConfigManager::getInstance()._harvest_source_config = _original_source;
+        ConfigManager::getInstance().setBaseHarvestRate(_original);
+    }
+
+private:
+    HarvestSourceConfig _original_source;
+    double _original;
+};
+
 TEST(ALAPSyncScheduler, ActiveHigherPriorityReserveGate) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestALAPSyncScheduler scheduler;
@@ -629,6 +650,7 @@ TEST(ALAPSyncScheduler, StableRmTieBreakForEqualPeriod) {
 
 TEST(ALAPSyncScheduler, RealStaleEndDispatchIgnored) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedALAPSyncBaseHarvestRate zero_harvest(0.0);
     TestALAPSyncScheduler scheduler;
     CPU cpu("alap-sync-real-stale-dispatch-cpu", nullptr);
     TestMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});

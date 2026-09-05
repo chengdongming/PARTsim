@@ -712,11 +712,30 @@ namespace RTSim {
                 } else {
                     // Slack has expired, so no old charging window may keep jobs
                     // hidden from the next tick's normal eligibility pass.
+                    const bool released_charging_wait = charging_wait_active;
                     promoteWaitingTasksToReadyQueue("blocked group slack exhausted");
                     _st_group_required_energy = 0.0;
                     _st_group_slack_at_begin = 0;
                     if (_group_wake_event) {
                         _group_wake_event->invalidate();
+                    }
+                    if (released_charging_wait) {
+                        // The current top-M was provisionally blocked only by
+                        // the old charging hold.  Re-admit that same atomic
+                        // group in this tick when its complete energy cost is
+                        // now affordable.
+                        charging_wait_active = false;
+                        desired_contains_waiting = false;
+                        _deep_charging = false;
+                        _is_charging_sleep = false;
+                        _energy_depleted = false;
+                        if (continuation_affordable &&
+                            _current_energy + epsilon >=
+                                continuation_energy + idle_core_batch_energy) {
+                            selected_tasks = desired_tasks;
+                            required_batch_energy =
+                                continuation_energy + idle_core_batch_energy;
+                        }
                     }
                 }
 
