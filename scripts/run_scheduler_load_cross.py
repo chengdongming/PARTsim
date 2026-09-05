@@ -940,7 +940,10 @@ def main(argv: list[str] | None = None) -> int:
         any(row.get(key) != value for key, value in experiment.HARVEST_MODEL_IDENTITY.items())
         for row in existing
     ):
-        raise SystemExit("persisted results harvest model does not match linear_ramp_v1")
+        raise SystemExit(
+            "persisted results harvest model does not match "
+            f"{experiment.HARVEST_MODEL}"
+        )
     if any(
         row.get("experiment") != experiment_name
         or row.get("deadline_mode") not in deadline_modes

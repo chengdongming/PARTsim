@@ -128,20 +128,40 @@ def _single_task_closure(demand: Fraction, available: Fraction):
     )
 
 
-def _reference_linear_ramp_harvest(
+def _reference_slow_variation_primitive(time_ms: int) -> Fraction:
+    if time_ms <= 0:
+        return Fraction(0)
+    if time_ms <= 10000:
+        return Fraction(time_ms) * (
+            Fraction(1) + (Fraction(1) - Fraction(time_ms, 50000))
+        ) / 2
+    area = Fraction(9000)
+    if time_ms <= 20000:
+        return area + Fraction(time_ms - 10000) * Fraction(4, 5)
+    area += Fraction(8000)
+    if time_ms <= 40000:
+        start = Fraction(4, 5)
+        end = Fraction(4, 5) + Fraction(time_ms - 20000, 50000)
+        return area + Fraction(time_ms - 20000) * (start + end) / 2
+    area += Fraction(20000)
+    if time_ms <= 50000:
+        return area + Fraction(time_ms - 40000) * Fraction(6, 5)
+    area += Fraction(12000)
+    end = Fraction(6, 5) - Fraction(time_ms - 50000, 50000)
+    return area + Fraction(time_ms - 50000) * (Fraction(6, 5) + end) / 2
+
+
+def _reference_slow_variation_harvest(
     config: legacy_rta.RTASystemConfig, tick: int,
 ) -> float:
-    midpoint_ms = (float(tick) + float(tick + 1)) * 0.5
-    if midpoint_ms < 60000.0:
-        power = config.base_harvesting_rate * (
-            0.975 + 0.05 * midpoint_ms / 60000.0
-        )
-    else:
-        power = config.base_harvesting_rate * 1.025
-    return power * (1.0 * legacy_rta.TICK_SECONDS)
+    area_ms = (
+        _reference_slow_variation_primitive(tick + 1)
+        - _reference_slow_variation_primitive(tick)
+    )
+    return config.base_harvesting_rate * float(area_ms) * legacy_rta.TICK_SECONDS
 
 
-def test_harvest_materializer_matches_independent_linear_ramp_reference():
+def test_harvest_materializer_matches_independent_slow_variation_reference():
     system = legacy_rta.load_system_config(
         str(ROOT / "system_config_unified_template.yml")
     )
@@ -151,16 +171,23 @@ def test_harvest_materializer_matches_independent_linear_ramp_reference():
         base_harvesting_rate=0.054,
     )
     trace = legacy_rta._harvest_trace_from_config(system, 60002)
-    compared_ticks = (0, 1, 29999, 30000, 59998, 59999, 60000, 60001)
-    assert [
-        _bits(trace[tick]) for tick in compared_ticks
-    ] == [
-        _bits(_reference_linear_ramp_harvest(system, tick))
+    compared_ticks = (
+        0, 9999, 10000, 19999, 20000, 29999, 30000, 39999,
+        40000, 49999, 50000, 59999, 60000, 60001,
+    )
+    # The independent oracle integrates with exact Fractions and converts at
+    # the assertion boundary; the production mirror follows the C++ binary64
+    # operation order. This is the explicit cross-language tolerance.
+    assert all(
+        math.isclose(
+            trace[tick], _reference_slow_variation_harvest(system, tick),
+            rel_tol=0.0, abs_tol=4e-16,
+        )
         for tick in compared_ticks
-    ]
+    )
 
 
-def test_synthetic_linear_ramp_ignores_calendar_and_pv_parameters():
+def test_synthetic_slow_variation_ignores_calendar_and_pv_parameters():
     system = legacy_rta.load_system_config(
         str(ROOT / "system_config_unified_template.yml")
     )
@@ -179,6 +206,34 @@ def test_synthetic_linear_ramp_ignores_calendar_and_pv_parameters():
     assert legacy_rta._harvest_trace_from_config(reference, 60001) == (
         legacy_rta._harvest_trace_from_config(changed, 60001)
     )
+
+
+def test_synthetic_slow_variation_beta_dominates_date22_reference():
+    system = legacy_rta.load_system_config(
+        str(ROOT / "system_config_unified_template.yml")
+    )
+    system = replace(system, use_real_solar_data=False, base_harvesting_rate=1.0)
+    trace = [Fraction.from_float(value)
+             for value in legacy_rta._harvest_trace_from_config(system, 60000)]
+    prefix = [Fraction(0)]
+    for value in trace:
+        prefix.append(prefix[-1] + value)
+    selected = (1, 2, 10, 100, 1000, 5000, 10000, 10001,
+                20000, 30000, 40000, 50000, 60000)
+    for delta in selected:
+        doubled = trace + trace[:delta]
+        doubled_prefix = [Fraction(0)]
+        for value in doubled:
+            doubled_prefix.append(doubled_prefix[-1] + value)
+        beta = min(
+            doubled_prefix[start + delta] - doubled_prefix[start]
+            for start in range(60000)
+        )
+        reference = Fraction(4, 5) * Fraction(1, 1000) * max(
+            Fraction(delta) - Fraction(2, 5), Fraction(0)
+        )
+        assert beta >= reference
+    assert math.isclose(float(sum(trace)), 60.0, rel_tol=0.0, abs_tol=1e-12)
 
 
 def test_closure_boundary_cannot_flip_failure_to_success():

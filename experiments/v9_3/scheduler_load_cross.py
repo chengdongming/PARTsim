@@ -74,12 +74,23 @@ V6_SHARED_IMPLICIT_CONTRACT_VERSION = 1
 FORMAL_NORMALIZATION_HORIZON = perf_g.FORMAL_HORIZON_MS
 ORDINARY_SYSTEM_TEMPLATE = "system_config_unified_template.yml"
 DEFAULT_KAPPA = Fraction(10)
-HARVEST_MODEL = "linear_ramp_v1"
+HARVEST_MODEL = "slow_variation_date22_bounded_v1"
 HARVEST_MODEL_IDENTITY = {
     "harvest_model": HARVEST_MODEL,
-    "ramp_half_span": "1/40",
-    "ramp_horizon_ms": 60000,
-    "post_horizon_policy": "hold_last",
+    "period_ms": 60000,
+    "minimum_factor": "4/5",
+    "maximum_factor": "6/5",
+    "mean_factor": "1",
+    "breakpoints_ms": [0, 10000, 20000, 30000, 40000, 50000, 60000],
+    "integration_contract": "piecewise_linear_analytic_interval_integral_v1",
+    "periodic": True,
+    "reference_service_curve": "DATE2022_RATE_LATENCY_REFERENCE_V1",
+    "reference_paper_rate": "11/2",
+    "reference_paper_latency": "2/5",
+    "reference_physical_rate_factor": "4/5",
+    "paper_time_unit_mapping":
+        "1_paper_time_unit_equals_1_PARTsim_tick_1ms",
+    "claim": "trace_lower_bound_dominates_scaled_DATE22_reference",
 }
 FORMAL_UC_SCAN = tuple(Fraction(value) for value in (
     "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",

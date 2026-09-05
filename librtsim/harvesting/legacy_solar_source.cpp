@@ -9,14 +9,73 @@
 
 namespace RTSim {
     namespace {
-        constexpr std::int64_t SyntheticHorizonMs = INT64_C(60000);
-        constexpr double SyntheticBaseFactor = 0.975;
-        constexpr double SyntheticRampSpan = 0.05;
-        constexpr double SyntheticFinalFactor = 1.025;
+        constexpr std::int64_t SyntheticPeriodMs = INT64_C(60000);
         constexpr double MillisecondsToSeconds = 0.001;
 
         double positiveZero(double value) {
             return value == 0.0 ? 0.0 : value;
+        }
+
+        double normalizedLinearIntegral(
+            std::int64_t start,
+            std::int64_t end,
+            double intercept,
+            double slope) {
+            if (end <= start) {
+                return 0.0;
+            }
+            const double start_factor =
+                intercept + slope * static_cast<double>(start);
+            const double end_factor =
+                intercept + slope * static_cast<double>(end);
+            return static_cast<double>(end - start) *
+                   (start_factor + end_factor) * 0.5;
+        }
+
+        double normalizedPrimitiveWithinPeriod(std::int64_t time_ms) {
+            if (time_ms <= 0) {
+                return 0.0;
+            }
+            if (time_ms <= INT64_C(10000)) {
+                return normalizedLinearIntegral(
+                    0, time_ms, 1.0, -1.0 / 50000.0);
+            }
+
+            double area = normalizedLinearIntegral(
+                0, INT64_C(10000), 1.0, -1.0 / 50000.0);
+            if (time_ms <= INT64_C(20000)) {
+                return area + static_cast<double>(time_ms - 10000) *
+                    (4.0 / 5.0);
+            }
+
+            area += static_cast<double>(10000) * (4.0 / 5.0);
+            if (time_ms <= INT64_C(40000)) {
+                return area + normalizedLinearIntegral(
+                    INT64_C(20000), time_ms, 0.4, 1.0 / 50000.0);
+            }
+
+            area += normalizedLinearIntegral(
+                INT64_C(20000), INT64_C(40000), 0.4, 1.0 / 50000.0);
+            if (time_ms <= INT64_C(50000)) {
+                return area + static_cast<double>(time_ms - 40000) *
+                    (6.0 / 5.0);
+            }
+
+            area += static_cast<double>(10000) * (6.0 / 5.0);
+            return area + normalizedLinearIntegral(
+                INT64_C(50000), time_ms, 2.2, -1.0 / 50000.0);
+        }
+
+        double normalizedCumulative(std::int64_t time_ms) {
+            if (time_ms < 0) {
+                throw std::invalid_argument(
+                    "synthetic harvesting time must be non-negative");
+            }
+            const std::int64_t periods = time_ms / SyntheticPeriodMs;
+            const std::int64_t remainder = time_ms % SyntheticPeriodMs;
+            return static_cast<double>(periods) *
+                       static_cast<double>(SyntheticPeriodMs) +
+                   normalizedPrimitiveWithinPeriod(remainder);
         }
     } // namespace
 
@@ -149,47 +208,12 @@ namespace RTSim {
             static_cast<std::int64_t>(interval.start_time_ms);
         const std::int64_t end_time_ms =
             static_cast<std::int64_t>(interval.end_time_ms);
-        double offered_j = 0.0;
-
-        const auto add_linear_segment = [&](std::int64_t start,
-                                            std::int64_t end) {
-            if (end <= start) {
-                return;
-            }
-            // The midpoint rule is exact for this linear segment and gives
-            // the required [l,l+1) midpoint for a one-ms query.
-            const double midpoint_ms =
-                (static_cast<double>(start) +
-                 static_cast<double>(end)) * 0.5;
-            const double power =
-                _config.base_harvesting_power_w *
-                (SyntheticBaseFactor +
-                 SyntheticRampSpan * midpoint_ms / 60000.0);
-            const double elapsed_seconds =
-                static_cast<double>(end - start) * MillisecondsToSeconds;
-            offered_j += power * elapsed_seconds;
-        };
-
-        const auto add_hold_segment = [&](std::int64_t start,
-                                          std::int64_t end) {
-            if (end <= start) {
-                return;
-            }
-            const double elapsed_seconds =
-                static_cast<double>(end - start) * MillisecondsToSeconds;
-            offered_j +=
-                (_config.base_harvesting_power_w * SyntheticFinalFactor) *
-                elapsed_seconds;
-        };
-
-        if (start_time_ms < SyntheticHorizonMs) {
-            const std::int64_t linear_end =
-                std::min(end_time_ms, SyntheticHorizonMs);
-            add_linear_segment(start_time_ms, linear_end);
-            add_hold_segment(linear_end, end_time_ms);
-        } else {
-            add_hold_segment(start_time_ms, end_time_ms);
-        }
+        const double normalized_area_ms =
+            normalizedCumulative(end_time_ms) -
+            normalizedCumulative(start_time_ms);
+        const double offered_j =
+            _config.base_harvesting_power_w * normalized_area_ms *
+            MillisecondsToSeconds;
         return checkedOfferedEnergy(offered_j);
     }
 

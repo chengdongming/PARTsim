@@ -1597,6 +1597,63 @@ def materialize_runtime_start_offset_ms(
     return ((day_of_year - 1) * 1440 + time_of_day_ms // 60000) * 60000
 
 
+_SYNTHETIC_PERIOD_MS = 60000
+
+
+def _synthetic_normalized_linear_integral(
+    start_ms: int, end_ms: int, intercept: float, slope: float,
+) -> float:
+    if end_ms <= start_ms:
+        return 0.0
+    start_factor = intercept + slope * float(start_ms)
+    end_factor = intercept + slope * float(end_ms)
+    return float(end_ms - start_ms) * (start_factor + end_factor) * 0.5
+
+
+def _synthetic_normalized_primitive(time_ms: int) -> float:
+    if time_ms <= 0:
+        return 0.0
+    if time_ms <= 10000:
+        return _synthetic_normalized_linear_integral(
+            0, time_ms, 1.0, -1.0 / 50000.0,
+        )
+
+    area = _synthetic_normalized_linear_integral(
+        0, 10000, 1.0, -1.0 / 50000.0,
+    )
+    if time_ms <= 20000:
+        return area + float(time_ms - 10000) * (4.0 / 5.0)
+
+    area += float(10000) * (4.0 / 5.0)
+    if time_ms <= 40000:
+        return area + _synthetic_normalized_linear_integral(
+            20000, time_ms, 0.4, 1.0 / 50000.0,
+        )
+
+    area += _synthetic_normalized_linear_integral(
+        20000, 40000, 0.4, 1.0 / 50000.0,
+    )
+    if time_ms <= 50000:
+        return area + float(time_ms - 40000) * (6.0 / 5.0)
+
+    area += float(10000) * (6.0 / 5.0)
+    return area + _synthetic_normalized_linear_integral(
+        50000, time_ms, 2.2, -1.0 / 50000.0,
+    )
+
+
+def _synthetic_normalized_cumulative(time_ms: int) -> float:
+    if time_ms < 0:
+        raise InputValidationError(
+            "synthetic harvesting time must be non-negative"
+        )
+    periods, remainder = divmod(time_ms, _SYNTHETIC_PERIOD_MS)
+    return (
+        float(periods) * float(_SYNTHETIC_PERIOD_MS)
+        + _synthetic_normalized_primitive(remainder)
+    )
+
+
 def _harvest_trace_from_config(
     config: RTASystemConfig, horizon_ms: int
 ) -> List[float]:
@@ -1617,21 +1674,19 @@ def _harvest_trace_from_config(
             )
         return trace
 
-    # Mirror LegacySolarSource's binary64 operation order for the synthetic
-    # one-ms tick.  The synthetic clock starts at the beginning of this
-    # simulation; calendar and photovoltaic parameters are intentionally not
-    # consulted on this path.
+    # Mirror LegacySolarSource's binary64 analytic interval integration for
+    # the synthetic one-ms tick. The synthetic clock starts at the beginning
+    # of this simulation; calendar and photovoltaic parameters are
+    # intentionally not consulted on this path.
     trace = []
     for tick in range(horizon_ms):
-        midpoint_ms = (float(tick) + float(tick + 1)) * 0.5
-        if midpoint_ms < 60000.0:
-            power = config.base_harvesting_rate * (
-                0.975 + 0.05 * midpoint_ms / 60000.0
-            )
-        else:
-            power = config.base_harvesting_rate * 1.025
-        elapsed_seconds = 1.0 * TICK_SECONDS
-        trace.append(power * elapsed_seconds)
+        normalized_area_ms = (
+            _synthetic_normalized_cumulative(tick + 1)
+            - _synthetic_normalized_cumulative(tick)
+        )
+        trace.append(
+            config.base_harvesting_rate * normalized_area_ms * TICK_SECONDS
+        )
     return trace
 
 
