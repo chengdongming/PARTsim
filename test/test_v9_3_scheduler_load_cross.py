@@ -1255,6 +1255,11 @@ def test_synthetic_service_does_not_require_solar_csv(tmp_path, monkeypatch):
 
     assert material["use_real_solar_data"] is False
     assert material["harvest_model"] == experiment.HARVEST_MODEL
+    assert material["integration_contract"] == (
+        "piecewise_linear_analytic_interval_integral_v1"
+    )
+    assert material["reference_paper_rate"] == "11/2"
+    assert material["reference_paper_latency"] == "2/5"
     assert material["base_harvesting_rate"]
     assert "solar_data_sha256" not in material
     assert "effective_pv_area_m2" not in material
@@ -3771,6 +3776,25 @@ def test_v7_supply_levels_and_identity_isolation():
                "energy_control": "SERVICE_ONLY_SCALING"}
     assert experiment.run_identity(base) != experiment.run_identity(v7)
     assert experiment.run_identity(v7) != experiment.run_identity(service)
+
+
+def test_old_linear_ramp_identity_cannot_resume_as_new_model():
+    base = {
+        "experiment": experiment.V6_EXPERIMENT,
+        "domain": experiment.V6_DOMAIN,
+        "seed": 20260820,
+        "cells": [["1/10", "1/5"]],
+    }
+    old = {
+        **base,
+        "harvest_model": "linear_ramp_v1",
+        "ramp_half_span": "1/40",
+        "ramp_horizon_ms": 60000,
+        "post_horizon_policy": "hold_last",
+    }
+    new = {**base, **experiment.HARVEST_MODEL_IDENTITY}
+    assert old["harvest_model"] != experiment.HARVEST_MODEL
+    assert experiment.run_identity(old) != experiment.run_identity(new)
 
 
 def test_v7_cli_uses_only_the_frozen_grid(tmp_path):

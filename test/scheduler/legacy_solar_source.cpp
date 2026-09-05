@@ -152,9 +152,8 @@ namespace RTSim {
         }
 
         // Frozen test-only real-data oracle copied from the pre-I3B-2
-        // production path. The synthetic branch below is an independent
-        // linear-ramp oracle and shares no implementation helper with the
-        // production source.
+        // production path. It is intentionally independent of the source
+        // implementation so the real-solar behavior remains regression-tested.
         double preMigrationRealIrradiance(
             const LegacySolarConfig &config,
             std::int64_t time_ms) {
@@ -199,54 +198,15 @@ namespace RTSim {
                 return 0.0;
             }
 
-            double energy = 0.0;
-            if (config.use_real_solar_data) {
-                const double irradiance =
-                    preMigrationRealIrradiance(config, current_ms);
-                const double elapsed_seconds =
-                    static_cast<double>(elapsed) * 0.001;
-                energy = irradiance * config.pv_area_m2 *
-                         config.pv_efficiency * elapsed_seconds;
-            } else {
-                double reference = 0.0;
-                const auto add_linear = [&](std::int64_t start,
-                                            std::int64_t end) {
-                    if (end <= start) {
-                        return;
-                    }
-                    const double midpoint_ms =
-                        (static_cast<double>(start) +
-                         static_cast<double>(end)) * 0.5;
-                    const double power =
-                        config.base_harvesting_power_w *
-                        (0.975 + 0.05 * midpoint_ms / 60000.0);
-                    reference += power *
-                        (static_cast<double>(end - start) * 0.001);
-                };
-                const auto add_hold = [&](std::int64_t start,
-                                          std::int64_t end) {
-                    if (end <= start) {
-                        return;
-                    }
-                    reference +=
-                        (config.base_harvesting_power_w * 1.025) *
-                        (static_cast<double>(end - start) * 0.001);
-                };
-                const std::int64_t start =
-                    static_cast<std::int64_t>(interval.start_time_ms);
-                const std::int64_t end =
-                    static_cast<std::int64_t>(interval.end_time_ms);
-                if (start < 60000) {
-                    const std::int64_t linear_end =
-                        std::min(end, INT64_C(60000));
-                    add_linear(start, linear_end);
-                    add_hold(linear_end, end);
-                } else {
-                    add_hold(start, end);
-                }
-                energy = reference;
+            if (!config.use_real_solar_data) {
+                return 0.0;
             }
-            return energy;
+            const double irradiance =
+                preMigrationRealIrradiance(config, current_ms);
+            const double elapsed_seconds =
+                static_cast<double>(elapsed) * 0.001;
+            return irradiance * config.pv_area_m2 *
+                   config.pv_efficiency * elapsed_seconds;
         }
 
         std::string selectedDomainError(
@@ -332,46 +292,54 @@ namespace RTSim {
             (void)LegacySolarSource(config), std::invalid_argument);
     }
 
-    TEST(LegacySolarSourceGolden, SyntheticLinearRampMatchesIndependentOracle) {
+    TEST(LegacySolarSourceGolden, SyntheticPeriodicAnalyticIntegration) {
         const auto interval = [](std::uint64_t start, std::uint64_t end) {
             return HarvestInterval{0u, start, end};
         };
         LegacySolarConfig config = syntheticConfig();
-        config.start_offset_ms = UINT64_C(86399999);
+        config.base_harvesting_power_w = 1.0;
         LegacySolarSource source(config);
 
-        const std::vector<std::pair<const char *, HarvestInterval>> cases = {
-            {"first-tick", interval(0u, 1u)},
-            {"thirty-seconds", interval(30000u, 30001u)},
-            {"last-ramp-tick", interval(59999u, 60000u)},
-            {"first-held-tick", interval(60000u, 60001u)},
-            {"long-linear-interval", interval(10000u, 10007u)},
-            {"crosses-horizon", interval(59995u, 60005u)},
+        const std::vector<std::pair<const char *,
+                                    std::pair<HarvestInterval, double>>> cases = {
+            {"first-second", {interval(0u, 1000u), 0.99}},
+            {"descending-ramp", {interval(0u, 10000u), 9.0}},
+            {"low-plateau", {interval(10000u, 20000u), 8.0}},
+            {"first-rising-ramp", {interval(20000u, 30000u), 9.0}},
+            {"second-rising-ramp", {interval(30000u, 40000u), 11.0}},
+            {"high-plateau", {interval(40000u, 50000u), 12.0}},
+            {"final-ramp", {interval(50000u, 60000u), 11.0}},
+            {"full-period", {interval(0u, 60000u), 60.0}},
+            {"next-period", {interval(60000u, 120000u), 60.0}},
+            {"period-crossing", {interval(59999u, 60001u), 0.002}},
         };
         for (const auto &test_case : cases) {
             SCOPED_TRACE(test_case.first);
-            const double expected = preMigrationOfferedEnergy(
-                config, test_case.second);
-            const double actual =
-                source.offeredEnergyForInterval(test_case.second);
-            expectExactBits(expected, actual);
+            const double actual = source.offeredEnergyForInterval(
+                test_case.second.first);
+            EXPECT_NEAR(actual, test_case.second.second, 1e-12);
             EXPECT_TRUE(std::isfinite(actual));
-            EXPECT_GE(actual, 0.0);
         }
 
-        double total = 0.0;
-        for (std::uint64_t tick = 0; tick < 60000u; ++tick) {
-            total += source.offeredEnergyForInterval(
-                interval(tick, tick + 1u));
-        }
-        EXPECT_NEAR(total, 60.0 * config.base_harvesting_power_w, 1e-12);
+        const auto additivity_left = source.offeredEnergyForInterval(
+            interval(9999u, 20001u));
+        const auto additivity_right = source.offeredEnergyForInterval(
+            interval(9999u, 10000u)) +
+            source.offeredEnergyForInterval(interval(10000u, 20000u)) +
+            source.offeredEnergyForInterval(interval(20000u, 20001u));
+        EXPECT_NEAR(additivity_left, additivity_right, 1e-15);
+
+        EXPECT_NEAR(source.offeredEnergyForInterval(interval(10000u, 10001u)),
+                    0.0008, 1e-15);
+        EXPECT_NEAR(source.offeredEnergyForInterval(interval(40000u, 40001u)),
+                    0.0012, 4e-15);
 
         LegacySolarConfig nondefault = config;
         nondefault.pv_area_m2 = 0.037;
         nondefault.pv_efficiency = 0.213;
         LegacySolarSource nondefault_source(nondefault);
         const HarvestInterval comparison = interval(12345u, 12352u);
-        expectExactBits(
+        EXPECT_DOUBLE_EQ(
             source.offeredEnergyForInterval(comparison),
             nondefault_source.offeredEnergyForInterval(comparison));
 

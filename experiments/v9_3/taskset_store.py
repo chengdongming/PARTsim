@@ -250,6 +250,15 @@ def prepare_service_curve(
         "validated_prefix": [fraction_text(item) for item in values],
         "numeric_contract": exact_energy.numeric_contract_metadata(),
     }
+    for key in (
+        "harvest_model", "period_ms", "minimum_factor", "maximum_factor",
+        "mean_factor", "breakpoints_ms", "integration_contract", "periodic",
+        "reference_service_curve", "reference_paper_rate",
+        "reference_paper_latency", "reference_physical_rate_factor",
+        "paper_time_unit_mapping", "claim",
+    ):
+        if key in spec:
+            raw[key] = spec[key]
     if "exact_scale" in spec:
         raw.update({
             "source_template_sha256": hashlib.sha256(
@@ -292,12 +301,6 @@ def prepare_service_curve(
                     ).exact_value
                 ),
             })
-            for key in (
-                "harvest_model", "ramp_half_span", "ramp_horizon_ms",
-                "post_horizon_policy",
-            ):
-                if key in spec:
-                    raw[key] = spec[key]
     identity = domain_hash("ASAP_BLOCK:V9.3:SERVICE_CURVE:v1", raw)
     return ServiceCurveMaterial(values, identity, canonical_json(raw), system_path)
 

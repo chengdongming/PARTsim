@@ -83,7 +83,9 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _validate_harvest_model(value: Any, label: str) -> None:
     if value != experiment.HARVEST_MODEL_IDENTITY:
-        raise SystemExit(f"{label} does not identify linear_ramp_v1")
+        raise SystemExit(
+            f"{label} does not identify {experiment.HARVEST_MODEL}"
+        )
 
 
 def wilson_ci(k: int, n: int, *, z: float = 1.959963984540054) -> tuple[float, float]:
