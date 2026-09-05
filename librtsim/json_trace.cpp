@@ -2118,16 +2118,15 @@ namespace RTSim {
         bool nonblock_block_seen = false;
         double nonblock_remaining_energy_mJ = available_energy_mJ;
         std::size_t nonblock_selected_seen = 0;
+        std::size_t alap_selected_seen = 0;
         for (std::size_t i = 0; i < ready_jobs.size(); ++i) {
             const SchedulerTraceJob &job = ready_jobs[i];
             const std::string key = identity(job);
             const bool timing_gate_open = urgent.count(key) > 0;
             const bool is_selected = selected.count(key) > 0;
             const bool is_continuing = continuing.count(key) > 0;
-            const bool cpu_available = blocking_policy == "NONBLOCK"
-                ? (is_selected || is_continuing ||
-                   nonblock_selected_seen < processor_count)
-                : (is_selected || is_continuing || i < processor_count);
+            const bool cpu_available = is_selected || is_continuing ||
+                (timing_gate_open && alap_selected_seen < processor_count);
 
             double decision_required_mJ = job.task_unit_energy_mJ;
             if (timing_gate_open && blocking_policy == "BLOCK") {
@@ -2180,6 +2179,9 @@ namespace RTSim {
                 is_selected) {
                 nonblock_remaining_energy_mJ -= job.task_unit_energy_mJ;
                 ++nonblock_selected_seen;
+            }
+            if (timing_gate_open && (is_selected || is_continuing)) {
+                ++alap_selected_seen;
             }
             B3TimingObservation observation{
                 scheduler,

@@ -648,6 +648,7 @@ namespace RTSim {
             std::vector<AbsRTTask *> selected_tasks = continuation_tasks;
             std::vector<AbsRTTask *> blocked_batch;
             double required_batch_energy = continuation_energy;
+            bool final_atomic_reject = false;
             const double epsilon = 1e-9;
             const bool continuation_affordable =
                 _current_energy + epsilon >= continuation_energy;
@@ -657,6 +658,7 @@ namespace RTSim {
                     continuation_energy + idle_core_batch_energy;
             if (desired_contains_waiting) {
                 blocked_batch = desired_tasks;
+                final_atomic_reject = true;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
                 _stats.total_batch_skipped++;
@@ -665,6 +667,7 @@ namespace RTSim {
                 // Once a continuation in global top-M cannot be paid, the whole
                 // desired synchronization group is blocked atomically.
                 blocked_batch = desired_tasks;
+                final_atomic_reject = true;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
                 _stats.total_batch_skipped++;
@@ -672,6 +675,7 @@ namespace RTSim {
             } else if (!idle_core_batch.empty() &&
                        !idle_core_batch_affordable) {
                 blocked_batch = desired_tasks;
+                final_atomic_reject = true;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
                 _stats.total_batch_skipped++;
@@ -735,15 +739,18 @@ namespace RTSim {
                             selected_tasks = desired_tasks;
                             required_batch_energy =
                                 continuation_energy + idle_core_batch_energy;
+                            final_atomic_reject = false;
                         }
                     }
                 }
 
-                SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync] 实际同步组原子验资失败: K=") +
-                                      std::to_string(blocked_batch.size()) +
-                                      " group_slack=" + std::to_string(static_cast<int64_t>(group_slack)) +
-                                      " 需要=" + std::to_string(calculateBatchUnitEnergy(blocked_batch) * 1000.0) + " mJ" +
-                                      " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+                if (final_atomic_reject) {
+                    SCHEDULER_LOG_WARNING(std::string("⚠️ [ST-Sync] 实际同步组原子验资失败: K=") +
+                                          std::to_string(blocked_batch.size()) +
+                                          " group_slack=" + std::to_string(static_cast<int64_t>(group_slack)) +
+                                          " 需要=" + std::to_string(calculateBatchUnitEnergy(blocked_batch) * 1000.0) + " mJ" +
+                                          " 当前=" + std::to_string(_current_energy * 1000.0) + " mJ");
+                }
             } else if (charging_wait_active && !_waiting_queue.empty()) {
                 // A lower-priority waiting group can remain outside this tick's
                 // global top-M.  Preserve its charging window without skipping
@@ -775,7 +782,7 @@ namespace RTSim {
                 const bool charge_wait =
                     !blocked_batch.empty() &&
                     (group_slack > Tick(0) || desired_contains_waiting);
-                const bool sync_energy_blocked = !blocked_batch.empty();
+                const bool sync_energy_blocked = final_atomic_reject;
                 std::map<AbsRTTask *, double> costs;
                 std::map<AbsRTTask *, DecisionExclusionReason> reasons;
                 for (AbsRTTask *task : active_tasks) {
