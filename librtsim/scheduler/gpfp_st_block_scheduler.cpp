@@ -713,7 +713,6 @@ namespace RTSim {
                 }
                 const double decision_available_energy =
                     std::max(0.0, _current_energy - reserved_energy);
-                observation_available_energy = decision_available_energy;
                 if (!charging_hold_task || charge_head_changed) {
                     logSTChargeEvent(charge_head_changed
                                          ? "st_charge_head_replace"

@@ -229,15 +229,21 @@ public:
 class ScopedSTSyncBaseHarvestRate {
 public:
     explicit ScopedSTSyncBaseHarvestRate(double rate)
-        : _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        : _original_source(ConfigManager::getInstance().getHarvestSourceConfig()),
+          _original(ConfigManager::getInstance().getBaseHarvestRate()) {
         ConfigManager::getInstance().setBaseHarvestRate(rate);
+        LegacySolarConfig zero_harvest;
+        zero_harvest.base_harvesting_power_w = 0.0;
+        ConfigManager::getInstance()._harvest_source_config = zero_harvest;
     }
 
     ~ScopedSTSyncBaseHarvestRate() {
+        ConfigManager::getInstance()._harvest_source_config = _original_source;
         ConfigManager::getInstance().setBaseHarvestRate(_original);
     }
 
 private:
+    HarvestSourceConfig _original_source;
     double _original;
 };
 
@@ -340,8 +346,75 @@ TEST(STSyncScheduler, BatchInsufficientEnergyWithSlackWaits) {
     simulation.endSingleRun();
 }
 
+TEST(STSyncScheduler, UrgentNewTopMExecutesSameTickWhenChargingSlackExpires) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-urgent-top-m-cpu0", nullptr);
+    CPU cpu1("st-sync-urgent-top-m-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask h(1, 11, 1, 1.0, 2);
+    FakeSTSyncTask a(2, 17, 10, 3.0);
+    FakeSTSyncTask b(3, 19, 12, 2.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &h, 11, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &a, 17, 3, 2.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &b, 19, 2, 2.0);
+
+    ScaledPiecewiseConfig harvest;
+    harvest.scale_w = 2000.0;
+    harvest.segments = {{0, 1, 0.0}, {1, 2, 1.0}};
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setHarvestConfig(
+        scheduler, HarvestSourceConfig{harvest});
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    a.releaseAt(Tick(0));
+    b.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &a);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &b);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    ASSERT_EQ(scheduler._waiting_queue.size(), 2u);
+    ASSERT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
+
+    STSyncTestActionEvent continue_hold([&]() {
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    continue_hold.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    STSyncTestActionEvent urgent_arrival([&]() {
+        h.releaseAt(Tick(2));
+        STSyncSchedulerTestPeer::arrive(scheduler, &h);
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    urgent_arrival.post(Tick(2));
+    simulation.run_to(Tick(2));
+
+    EXPECT_EQ(scheduler.getCurrentBatchTasks().size(), 2u);
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &h));
+    EXPECT_TRUE(ContainsTask(scheduler.getCurrentBatchTasks(), &a));
+    EXPECT_FALSE(ContainsTask(scheduler.getCurrentBatchTasks(), &b));
+    EXPECT_EQ(h.getScheduleCount(), 1);
+    EXPECT_EQ(a.getScheduleCount(), 1);
+    EXPECT_EQ(b.getScheduleCount(), 0);
+    EXPECT_FALSE(scheduler.isChargingSleepActive());
+    EXPECT_TRUE(scheduler._waiting_queue.empty());
+    EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 0.0);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 3.0);
+    EXPECT_LE(STSyncSchedulerTestPeer::slack(scheduler, &h), Tick(0));
+    EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+
+    simulation.endSingleRun();
+}
+
 TEST(STSyncScheduler, ChargingBatchHoldsUntilBatteryFullOrSlackExhausted) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTSyncBaseHarvestRate zero_harvest(0.0);
     TestSTSyncScheduler scheduler;
     CPU cpu0("st-sync-recharge-cpu0", nullptr);
     CPU cpu1("st-sync-recharge-cpu1", nullptr);
@@ -396,6 +469,7 @@ TEST(STSyncScheduler, ChargingBatchHoldsUntilBatteryFullOrSlackExhausted) {
 TEST(STSyncScheduler,
      ReportingCountsOnlyCurrentlyUnaffordableHeadDuringChargeHold) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTSyncBaseHarvestRate zero_harvest(0.0);
     TestSTSyncScheduler scheduler;
     CPU cpu("st-sync-reporting-head-cpu", nullptr);
     TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
@@ -761,6 +835,7 @@ TEST(STSyncScheduler, ExactBatchEnergyChargedOnce) {
 
 TEST(STSyncScheduler, ChargingBatchReleasesWhenGroupSlackExhausted) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTSyncBaseHarvestRate zero_harvest(0.0);
     TestSTSyncScheduler scheduler;
     CPU cpu0("st-sync-slack-release-cpu0", nullptr);
     CPU cpu1("st-sync-slack-release-cpu1", nullptr);
@@ -1011,6 +1086,7 @@ TEST(STSyncScheduler,
 TEST(STSyncScheduler,
      ChargingSleepDoesNotLetContinuationRunForFreeAcrossTicks) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTSyncBaseHarvestRate zero_harvest(0.0);
     TestSTSyncScheduler scheduler;
     CPU cpu0("st-sync-charging-continuation-cpu0", nullptr);
     CPU cpu1("st-sync-charging-continuation-cpu1", nullptr);

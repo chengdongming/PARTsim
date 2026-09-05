@@ -12,7 +12,9 @@
 
 #include <rtsim/cpu.hpp>
 #include <rtsim/mrtkernel.hpp>
+#define private public
 #include <rtsim/scheduler/gpfp_alap_nonblock_scheduler.hpp>
+#undef private
 #include <rtsim/task.hpp>
 
 namespace RTSim {
@@ -146,6 +148,27 @@ public:
     }
 };
 
+class ScopedALAPNonBlockBaseHarvestRate {
+public:
+    explicit ScopedALAPNonBlockBaseHarvestRate(double rate)
+        : _original_source(ConfigManager::getInstance().getHarvestSourceConfig()),
+          _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        ConfigManager::getInstance().setBaseHarvestRate(rate);
+        LegacySolarConfig zero_harvest;
+        zero_harvest.base_harvesting_power_w = 0.0;
+        ConfigManager::getInstance()._harvest_source_config = zero_harvest;
+    }
+
+    ~ScopedALAPNonBlockBaseHarvestRate() {
+        ConfigManager::getInstance()._harvest_source_config = _original_source;
+        ConfigManager::getInstance().setBaseHarvestRate(_original);
+    }
+
+private:
+    HarvestSourceConfig _original_source;
+    double _original;
+};
+
 TEST(ALAPNonBlockScheduler, ActiveHigherPriorityReserveGate) {
     auto &simulation = MetaSim::Simulation::getInstance();
     ALAPNonBlockScheduler scheduler;
@@ -203,6 +226,7 @@ TEST(ALAPNonBlockScheduler, ActiveHigherPriorityReserveGate) {
 
 TEST(ALAPNonBlockScheduler, UsesRelativeDeadlineNotPeriod) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedALAPNonBlockBaseHarvestRate zero_harvest(0.0);
     ALAPNonBlockScheduler scheduler;
     CPU cpu("alap-nonblock-deadline-cpu", nullptr);
     MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
@@ -416,6 +440,7 @@ TEST(ALAPNonBlockScheduler, PreserveResidualEnergy) {
 
 TEST(ALAPNonBlockScheduler, NoStaleEndDispatch) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedALAPNonBlockBaseHarvestRate zero_harvest(0.0);
     ALAPNonBlockScheduler scheduler;
     CPU cpu("alap-nonblock-stale-dispatch-cpu", nullptr);
     MRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});

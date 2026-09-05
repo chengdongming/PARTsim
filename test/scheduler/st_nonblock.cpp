@@ -107,6 +107,17 @@ public:
     void setRunning(CPU *cpu, AbsRTTask *task) {
         _m_currExe[cpu] = task;
     }
+
+    void clearRunning(AbsRTTask *task) {
+        for (auto &[cpu, running] : _m_currExe) {
+            if (running == task) {
+                _m_currExe[cpu] = nullptr;
+                _m_dispatched[task] = nullptr;
+                task->deschedule();
+                return;
+            }
+        }
+    }
 };
 
 class STNonBlockSchedulerTestPeer {
@@ -196,6 +207,27 @@ public:
     }
 };
 
+class ScopedSTNonBlockBaseHarvestRate {
+public:
+    explicit ScopedSTNonBlockBaseHarvestRate(double rate)
+        : _original_source(ConfigManager::getInstance().getHarvestSourceConfig()),
+          _original(ConfigManager::getInstance().getBaseHarvestRate()) {
+        ConfigManager::getInstance().setBaseHarvestRate(rate);
+        LegacySolarConfig zero_harvest;
+        zero_harvest.base_harvesting_power_w = 0.0;
+        ConfigManager::getInstance()._harvest_source_config = zero_harvest;
+    }
+
+    ~ScopedSTNonBlockBaseHarvestRate() {
+        ConfigManager::getInstance()._harvest_source_config = _original_source;
+        ConfigManager::getInstance().setBaseHarvestRate(_original);
+    }
+
+private:
+    HarvestSourceConfig _original_source;
+    double _original;
+};
+
 TEST(STNonBlockScheduler, EnergyAvailableRunsBeforeSlackZero) {
     auto &simulation = MetaSim::Simulation::getInstance();
     TestSTNonBlockScheduler scheduler;
@@ -257,6 +289,202 @@ TEST(STNonBlockScheduler,
     simulation.endSingleRun();
 }
 
+TEST(STNonBlockScheduler, SuspendReasonIsPerTaskNotGlobalWaitingState) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu0("st-nonblock-per-task-reason-cpu0", nullptr);
+    CPU cpu1("st-nonblock-per-task-reason-cpu1", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTNonBlockTask h0(0, 5, 20, 1.0);
+    FakeSTNonBlockTask h1(1, 10, 20, 1.0);
+    FakeSTNonBlockTask h2(2, 15, 20, 1.0);
+    FakeSTNonBlockTask l1(3, 50, 50, 1.0);
+    FakeSTNonBlockTask l2(4, 60, 60, 1.0);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &h0, 5, 1, 3.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &h1, 10, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &h2, 15, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &l1, 50, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &l2, 60, 1, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    for (FakeSTNonBlockTask *task : {&h0, &h1, &h2}) {
+        task->releaseAt(Tick(0));
+        STNonBlockSchedulerTestPeer::enqueue(scheduler, task);
+    }
+    for (FakeSTNonBlockTask *task : {&l1, &l2}) {
+        task->releaseAt(Tick(0));
+        task->markRunningWithoutScheduleCount();
+    }
+    kernel.setRunning(&cpu0, &l1);
+    kernel.setRunning(&cpu1, &l2);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+
+    ASSERT_EQ(scheduler._skipped_tasks.count(&h0), 1u);
+    EXPECT_EQ(STNonBlockSchedulerTestPeer::selectSlot(scheduler, 0), &h1);
+    EXPECT_EQ(STNonBlockSchedulerTestPeer::selectSlot(scheduler, 1), &h2);
+    EXPECT_EQ(scheduler.getSuspendReason(&l1), "preemption");
+    EXPECT_EQ(scheduler.getSuspendReason(&l2), "preemption");
+    EXPECT_EQ(scheduler._skipped_tasks.count(&l1), 0u);
+    EXPECT_EQ(scheduler._skipped_tasks.count(&l2), 0u);
+    EXPECT_EQ(scheduler._skipped_slack_at_begin.count(&l1), 0u);
+    EXPECT_EQ(scheduler._skipped_slack_at_begin.count(&l2), 0u);
+    EXPECT_EQ(scheduler._skipped_required_energy.count(&l1), 0u);
+    EXPECT_EQ(scheduler._skipped_required_energy.count(&l2), 0u);
+    EXPECT_EQ(scheduler._skip_wake_events.count(&l1), 0u);
+    EXPECT_EQ(scheduler._skip_wake_events.count(&l2), 0u);
+    EXPECT_NE(scheduler._pending_wake_task, &l1);
+    EXPECT_NE(scheduler._pending_wake_task, &l2);
+    EXPECT_DOUBLE_EQ(scheduler._pending_wake_energy, 0.0);
+    EXPECT_TRUE(STNonBlockSchedulerTestPeer::isInReadyQueue(
+        scheduler, &l1));
+    EXPECT_TRUE(STNonBlockSchedulerTestPeer::isInReadyQueue(
+        scheduler, &l2));
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler, PreemptedTaskResumesBeforeHeldTaskSlackExpires) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTNonBlockScheduler scheduler;
+    CPU cpu0("st-nonblock-preemption-resume-cpu0", nullptr);
+    CPU cpu1("st-nonblock-preemption-resume-cpu1", nullptr);
+    TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTNonBlockTask h0(0, 5, 20, 1.0);
+    FakeSTNonBlockTask h1(1, 10, 20, 1.0);
+    FakeSTNonBlockTask h2(2, 15, 20, 1.0);
+    FakeSTNonBlockTask l1(3, 50, 50, 1.0);
+    FakeSTNonBlockTask l2(4, 60, 60, 1.0);
+
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &h0, 5, 1, 3.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &h1, 10, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &h2, 15, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &l1, 50, 1, 1.0);
+    STNonBlockSchedulerTestPeer::addTaskModel(
+        scheduler, &l2, 60, 1, 1.0);
+
+    simulation.initSingleRun();
+    STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STNonBlockSchedulerTestPeer::setEnergy(scheduler, 2.0);
+    for (FakeSTNonBlockTask *task : {&h0, &h1, &h2}) {
+        task->releaseAt(Tick(0));
+        STNonBlockSchedulerTestPeer::enqueue(scheduler, task);
+    }
+    for (FakeSTNonBlockTask *task : {&l1, &l2}) {
+        task->releaseAt(Tick(0));
+        task->markRunningWithoutScheduleCount();
+    }
+    kernel.setRunning(&cpu0, &l1);
+    kernel.setRunning(&cpu1, &l2);
+
+    STNonBlockSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_EQ(scheduler._skipped_tasks.count(&h0), 1u);
+    ASSERT_GT(STNonBlockSchedulerTestPeer::slack(scheduler, &h0), Tick(5));
+
+    STNonBlockTestActionEvent freeOneCPU([&]() {
+        h1.setRemaining(0.0);
+        kernel.clearRunning(&h1);
+        scheduler._current_energy = 2.0;
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+    });
+    freeOneCPU.post(Tick(1));
+    simulation.run_to(Tick(1));
+
+    EXPECT_EQ(scheduler._skipped_tasks.count(&h0), 1u);
+    EXPECT_LT(scheduler.getCurrentEnergy(), scheduler._max_energy);
+    EXPECT_GT(STNonBlockSchedulerTestPeer::slack(scheduler, &h0), Tick(0));
+    EXPECT_EQ(scheduler._skipped_tasks.count(&l1), 0u);
+    EXPECT_EQ(scheduler._skip_wake_events.count(&l1), 0u);
+    EXPECT_GE(l1.getScheduleCount(), 1);
+
+    simulation.endSingleRun();
+}
+
+TEST(STNonBlockScheduler,
+     DirectEnergyShortageClassificationDoesNotDependOnObservability) {
+    struct Observation {
+        std::string suspend_reason;
+        Tick task_slack;
+        std::size_t skipped_tasks;
+        std::size_t wake_events;
+        AbsRTTask *pending_wake_task;
+        double pending_wake_energy;
+    };
+
+    auto run_case = [](bool enable_observability,
+                       const char *cpu_name,
+                       const char *trace_path) {
+        auto &simulation = MetaSim::Simulation::getInstance();
+        TestSTNonBlockScheduler scheduler;
+        CPU cpu(cpu_name, nullptr);
+        TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
+        FakeSTNonBlockTask task(1, 10, 1, 1.0);
+        JSONTrace trace(trace_path, Tick(1));
+
+        STNonBlockSchedulerTestPeer::addTaskModel(
+            scheduler, &task, 10, 1, 2.0);
+        if (enable_observability) {
+            trace.enableObservabilitySummaries(Tick(1));
+            scheduler.setTraceLogger(&trace);
+        }
+
+        simulation.initSingleRun();
+        STNonBlockSchedulerTestPeer::cancelAutomaticTick(scheduler);
+        STNonBlockSchedulerTestPeer::setEnergy(scheduler, 1.0);
+        task.releaseAt(Tick(0));
+        task.markRunningWithoutScheduleCount();
+        kernel.setRunning(&cpu, &task);
+
+        STNonBlockSchedulerTestPeer::tick(scheduler);
+        simulation.run_to(Tick(0));
+
+        Observation observation{
+            scheduler.getSuspendReason(&task),
+            STNonBlockSchedulerTestPeer::slack(scheduler, &task),
+            scheduler._skipped_tasks.size(),
+            scheduler._skip_wake_events.size(),
+            scheduler._pending_wake_task,
+            scheduler._pending_wake_energy};
+        simulation.endSingleRun();
+        return observation;
+    };
+
+    const Observation without_observability = run_case(
+        false,
+        "st-nonblock-direct-shortage-no-observability-cpu",
+        "/tmp/partsim_st_nonblock_direct_shortage_no_observability.json");
+    const Observation with_observability = run_case(
+        true,
+        "st-nonblock-direct-shortage-observability-cpu",
+        "/tmp/partsim_st_nonblock_direct_shortage_observability.json");
+
+    for (const Observation &observation :
+         {without_observability, with_observability}) {
+        EXPECT_LE(observation.task_slack, Tick(0));
+        EXPECT_EQ(observation.suspend_reason, "insufficient_energy");
+        EXPECT_EQ(observation.skipped_tasks, 0u);
+        EXPECT_EQ(observation.wake_events, 0u);
+        EXPECT_EQ(observation.pending_wake_task, nullptr);
+        EXPECT_DOUBLE_EQ(observation.pending_wake_energy, 0.0);
+    }
+    EXPECT_EQ(without_observability.suspend_reason,
+              with_observability.suspend_reason);
+}
+
 TEST(STNonBlockScheduler,
      SkippedHighPriorityHoldsUntilBatteryFullOrSlackExhausted) {
     auto &simulation = MetaSim::Simulation::getInstance();
@@ -311,6 +539,7 @@ TEST(STNonBlockScheduler,
 TEST(STNonBlockScheduler,
      ReportingCountsOnlyCurrentlyUnaffordableHeadDuringChargeHold) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTNonBlockBaseHarvestRate zero_harvest(0.0);
     TestSTNonBlockScheduler scheduler;
     CPU cpu("st-nonblock-reporting-head-cpu", nullptr);
     TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
@@ -726,6 +955,7 @@ TEST(STNonBlockScheduler, NoMidTickArrivalPreemptsFrozenSelection) {
 
 TEST(STNonBlockScheduler, RealStaleEndDispatchIgnored) {
     auto &simulation = MetaSim::Simulation::getInstance();
+    ScopedSTNonBlockBaseHarvestRate zero_harvest(0.0);
     TestSTNonBlockScheduler scheduler;
     CPU cpu("st-nonblock-real-stale-dispatch-cpu", nullptr);
     TestSTNonBlockMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu});
