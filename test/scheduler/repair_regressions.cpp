@@ -152,6 +152,37 @@ static std::string writeALAPResidualBudgetTrace() {
                        std::istreambuf_iterator<char>());
 }
 
+static std::string writeSTNonBlockTrace(
+    const std::string &path,
+    double available_energy_mJ,
+    std::size_t processor_count,
+    const std::vector<SchedulerTraceJob> &ready_jobs,
+    const std::vector<SchedulerTraceJob> &selected_jobs,
+    const std::vector<SchedulerTraceJob> &timing_wait_jobs = {}) {
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3STDecision(
+            "ST-NonBlock",
+            "NONBLOCK",
+            available_energy_mJ,
+            20000.0,
+            processor_count,
+            ready_jobs,
+            selected_jobs,
+            {},
+            timing_wait_jobs,
+            "ST_NONBLOCK_DIAGNOSTIC");
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    EXPECT_TRUE(input.good());
+    return std::string((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+}
+
 TEST(B3TimingTrace, NonBlockResidualBudgetIsRecordedForASAP) {
     const std::string contents = writeASAPResidualBudgetTrace();
     const std::string blocked = readB3TaskObservation(
@@ -187,6 +218,107 @@ TEST(B3TimingTrace, NonBlockResidualBudgetIsRecordedForALAP) {
               std::string::npos);
     EXPECT_NE(bypassed.find("\"selected\": true"), std::string::npos);
     EXPECT_NE(bypassed.find("\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, StNonBlockMultipleDirectShortagesReportBypass) {
+    const std::vector<SchedulerTraceJob> jobs = {
+        {"st-nb-shortage-a", 0.0, 1.0, 0, 8000.0, 1.0, 20.0},
+        {"st-nb-shortage-b", 0.0, 2.0, 1, 7000.0, 1.0, 20.0},
+        {"st-nb-shortage-c", 0.0, 3.0, 2, 2000.0, 1.0, 20.0},
+    };
+    const std::string contents = writeSTNonBlockTrace(
+        "/tmp/partsim_b3_st_nonblock_shortages.json",
+        5000.0,
+        1,
+        jobs,
+        {jobs[2]});
+    const std::string first = readB3TaskObservation(contents, jobs[0].task_name);
+    const std::string second = readB3TaskObservation(contents, jobs[1].task_name);
+    const std::string lower = readB3TaskObservation(contents, jobs[2].task_name);
+
+    EXPECT_NE(first.find("\"cpu_available\": true"), std::string::npos);
+    EXPECT_NE(first.find(
+                  "\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+    EXPECT_NE(second.find("\"cpu_available\": true"), std::string::npos);
+    EXPECT_NE(second.find(
+                  "\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+    EXPECT_NE(lower.find("\"cpu_available\": true"), std::string::npos);
+    EXPECT_NE(lower.find(
+                  "\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+    EXPECT_NE(lower.find("\"actual_outcome\": \"DISPATCH_SELECTED\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, StNonBlockResidualBudgetReportsBypass) {
+    const auto jobs = std::vector<SchedulerTraceJob>{
+        {"st-nb-residual-a", 0.0, 1.0, 0, 6000.0, 1.0, 20.0},
+        {"st-nb-residual-b", 0.0, 2.0, 1, 4000.0, 1.0, 20.0},
+        {"st-nb-residual-c", 0.0, 3.0, 2, 2000.0, 1.0, 20.0},
+    };
+    const std::string contents = writeSTNonBlockTrace(
+        "/tmp/partsim_b3_st_nonblock_residual_budget.json",
+        8000.0,
+        3,
+        jobs,
+        {jobs[0], jobs[2]});
+    const std::string middle = readB3TaskObservation(contents, jobs[1].task_name);
+    const std::string lower = readB3TaskObservation(contents, jobs[2].task_name);
+
+    EXPECT_NE(middle.find("\"cpu_available\": true"), std::string::npos);
+    EXPECT_NE(middle.find(
+                  "\"blocking_policy_reason\": \"ENERGY_INSUFFICIENT\""),
+              std::string::npos);
+    EXPECT_NE(lower.find("\"selected\": true"), std::string::npos);
+    EXPECT_NE(lower.find(
+                  "\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, StNonBlockPositiveSlackWaitBypassIsPreserved) {
+    const std::vector<SchedulerTraceJob> jobs = {
+        {"st-nb-timing-wait", 0.0, 1.0, 0, 1000.0, 1.0, 20.0},
+        {"st-nb-timing-lower", 0.0, 10.0, 1, 1000.0, 1.0, 20.0},
+    };
+    const std::string contents = writeSTNonBlockTrace(
+        "/tmp/partsim_b3_st_nonblock_timing_wait.json",
+        1000.0,
+        1,
+        jobs,
+        {jobs[1]},
+        {jobs[0]});
+    const std::string waiting = readB3TaskObservation(contents, jobs[0].task_name);
+    const std::string lower = readB3TaskObservation(contents, jobs[1].task_name);
+
+    EXPECT_NE(waiting.find("\"actual_outcome\": \"TIMING_DEFERRED\""),
+              std::string::npos);
+    EXPECT_NE(waiting.find(
+                  "\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+    EXPECT_NE(lower.find(
+                  "\"blocking_policy_reason\": \"NONBLOCK_BYPASS\""),
+              std::string::npos);
+}
+
+TEST(B3TimingTrace, StNonBlockFullCpuStillReportsCapacity) {
+    const std::vector<SchedulerTraceJob> jobs = {
+        {"st-nb-capacity-a", 0.0, 1.0, 0, 2000.0, 1.0, 20.0},
+        {"st-nb-capacity-b", 0.0, 2.0, 1, 100000.0, 1.0, 20.0},
+    };
+    const std::string contents = writeSTNonBlockTrace(
+        "/tmp/partsim_b3_st_nonblock_capacity.json",
+        2000.0,
+        1,
+        jobs,
+        {jobs[0]});
+    const std::string blocked = readB3TaskObservation(contents, jobs[1].task_name);
+
+    EXPECT_NE(blocked.find("\"cpu_available\": false"), std::string::npos);
+    EXPECT_NE(blocked.find(
+                  "\"blocking_policy_reason\": \"CPU_CAPACITY\""),
               std::string::npos);
 }
 

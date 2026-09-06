@@ -2252,33 +2252,41 @@ namespace RTSim {
             sync_group_mJ += ready_jobs[i].task_unit_energy_mJ;
         }
         double reserved_prefix_mJ = 0.0;
-        bool nonblock_wait_seen = false;
+        bool nonblock_bypass_seen = false;
+        double nonblock_remaining_energy_mJ = available_energy_mJ;
+        std::size_t nonblock_selected_seen = 0;
         for (std::size_t i = 0; i < ready_jobs.size(); ++i) {
             const SchedulerTraceJob &job = ready_jobs[i];
             const std::string key = identity(job);
             const bool is_selected = selected.count(key) > 0;
             const bool is_continuing = continuing.count(key) > 0;
             const bool is_timing_wait = timing_wait.count(key) > 0;
-            const bool cpu_available =
-                is_selected || is_continuing || i < processor_count;
+            const bool cpu_available = blocking_policy == "NONBLOCK"
+                ? (is_selected || is_continuing ||
+                   nonblock_selected_seen < processor_count)
+                : (is_selected || is_continuing || i < processor_count);
 
             double decision_required_mJ = job.task_unit_energy_mJ;
             if (is_timing_wait) {
                 decision_required_mJ = maximum_energy_mJ;
             } else if (blocking_policy == "SYNC") {
                 decision_required_mJ = sync_group_mJ;
+            } else if (blocking_policy == "NONBLOCK") {
+                decision_required_mJ = job.task_unit_energy_mJ;
             } else {
                 decision_required_mJ =
                     reserved_prefix_mJ + job.task_unit_energy_mJ;
             }
-            if (is_selected) {
+            if (is_selected && blocking_policy != "NONBLOCK") {
                 reserved_prefix_mJ += job.task_unit_energy_mJ;
             }
 
             const bool job_affordable = available_energy_mJ + epsilon_mJ >=
                 job.task_unit_energy_mJ;
+            const double decision_available_mJ = blocking_policy == "NONBLOCK"
+                ? nonblock_remaining_energy_mJ : available_energy_mJ;
             const bool decision_affordable =
-                available_energy_mJ + epsilon_mJ >= decision_required_mJ;
+                decision_available_mJ + epsilon_mJ >= decision_required_mJ;
             const double rounded_remaining =
                 std::ceil(job.remaining_time_ms);
             const double slack = job.absolute_deadline - rounded_remaining -
@@ -2297,22 +2305,27 @@ namespace RTSim {
             }
 
             std::string policy_reason = "NONE";
-            if (!cpu_available) {
+            if (blocking_policy == "NONBLOCK" && is_timing_wait &&
+                lower_selected) {
+                policy_reason = "NONBLOCK_BYPASS";
+                nonblock_bypass_seen = true;
+            } else if (blocking_policy == "NONBLOCK" && is_timing_wait) {
+                policy_reason = "NONE";
+            } else if (!cpu_available) {
                 policy_reason = "CPU_CAPACITY";
             } else if (is_timing_wait && blocking_policy == "SYNC" &&
                        timing_wait_jobs.size() > 1) {
                 policy_reason = "SYNC_ATOMIC_BATCH_WAIT";
-            } else if (is_timing_wait && blocking_policy == "NONBLOCK" &&
-                       lower_selected) {
-                policy_reason = "NONBLOCK_BYPASS";
-                nonblock_wait_seen = true;
             } else if (is_selected && blocking_policy == "NONBLOCK" &&
-                       nonblock_wait_seen) {
+                       nonblock_bypass_seen) {
                 policy_reason = "NONBLOCK_BYPASS";
             } else if (!is_selected && !is_timing_wait) {
                 if (blocking_policy == "SYNC" && i < processor_count) {
                     policy_reason = "SYNC_ATOMIC_BATCH_WAIT";
                 } else if (!decision_affordable) {
+                    if (blocking_policy == "NONBLOCK") {
+                        nonblock_bypass_seen = true;
+                    }
                     policy_reason = blocking_policy == "BLOCK"
                         ? "BLOCK_HEAD_OF_LINE" : "ENERGY_INSUFFICIENT";
                 } else {
@@ -2352,6 +2365,11 @@ namespace RTSim {
                 decision_reason,
             };
             logB3TimingObservation(observation);
+            if (blocking_policy == "NONBLOCK" &&
+                (is_selected || is_continuing)) {
+                nonblock_remaining_energy_mJ -= job.task_unit_energy_mJ;
+                ++nonblock_selected_seen;
+            }
         }
     }
 
