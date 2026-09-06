@@ -226,6 +226,91 @@ TEST(B3TimingTrace, AlapTimingDeferredJobDoesNotConsumeCpuSlot) {
               std::string::npos);
 }
 
+TEST(B3TimingTrace, AlapTimingDeferredAffordableJobIsReportedAsTimingDeferred) {
+    const std::vector<std::pair<std::string, std::string>> policies = {
+        {"ALAP-Block", "BLOCK"},
+        {"ALAP-NonBlock", "NONBLOCK"},
+        {"ALAP-Sync", "SYNC"},
+    };
+    for (const auto &[scheduler, policy] : policies) {
+        const std::string path = "/tmp/partsim_b3_alap_deferred_" + policy + ".json";
+        const SchedulerTraceJob job{
+            "timing-deferred-affordable", 0.0, 20.0, 0, 1000.0, 1.0, 20.0};
+        {
+            JSONTrace trace(path, MetaSim::Tick(1));
+            trace.setSemanticTraceEnabled(true);
+            MetaSim::SIMUL.initSingleRun();
+            trace.logB3ALAPDecision(
+                scheduler,
+                policy,
+                1000.0,
+                1,
+                {job},
+                {},
+                {},
+                {},
+                "ALAP_TIMING_DEFERRED");
+            MetaSim::SIMUL.endSingleRun();
+        }
+
+        std::ifstream input(path);
+        ASSERT_TRUE(input.good());
+        const std::string contents(
+            (std::istreambuf_iterator<char>(input)),
+            std::istreambuf_iterator<char>());
+        const std::string observation = readB3TaskObservation(
+            contents, "timing-deferred-affordable");
+        EXPECT_NE(observation.find("\"timing_gate_open\": false"),
+                  std::string::npos) << policy;
+        EXPECT_NE(observation.find("\"cpu_available\": true"),
+                  std::string::npos) << policy;
+        EXPECT_NE(observation.find(
+                      "\"blocking_policy_reason\": \"NONE\""),
+                  std::string::npos) << policy;
+        EXPECT_NE(observation.find(
+                      "\"actual_outcome\": \"TIMING_DEFERRED\""),
+                  std::string::npos) << policy;
+    }
+}
+
+TEST(B3TimingTrace, AlapTimingDeferredUnaffordableJobRemainsTimingDeferred) {
+    const SchedulerTraceJob job{
+        "timing-deferred-unaffordable", 0.0, 20.0, 0, 1000.0, 1.0, 20.0};
+    const std::string path = "/tmp/partsim_b3_alap_deferred_unaffordable.json";
+    {
+        JSONTrace trace(path, MetaSim::Tick(1));
+        trace.setSemanticTraceEnabled(true);
+        MetaSim::SIMUL.initSingleRun();
+        trace.logB3ALAPDecision(
+            "ALAP-Block",
+            "BLOCK",
+            0.0,
+            1,
+            {job},
+            {},
+            {},
+            {},
+            "ALAP_TIMING_DEFERRED");
+        MetaSim::SIMUL.endSingleRun();
+    }
+
+    std::ifstream input(path);
+    ASSERT_TRUE(input.good());
+    const std::string contents(
+        (std::istreambuf_iterator<char>(input)),
+        std::istreambuf_iterator<char>());
+    const std::string observation = readB3TaskObservation(
+        contents, "timing-deferred-unaffordable");
+    EXPECT_NE(observation.find("\"job_energy_affordable\": false"),
+              std::string::npos);
+    EXPECT_NE(observation.find(
+                  "\"blocking_policy_reason\": \"NONE\""),
+              std::string::npos);
+    EXPECT_NE(observation.find(
+                  "\"actual_outcome\": \"TIMING_DEFERRED\""),
+              std::string::npos);
+}
+
 TEST(B3TimingTrace, AlapBlockTimingDeferredJobDoesNotConsumeCpuSlot) {
     const std::string path = "/tmp/partsim_b3_alap_block_cpu_availability.json";
     const SchedulerTraceJob high{

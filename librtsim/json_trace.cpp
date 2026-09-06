@@ -2126,7 +2126,7 @@ namespace RTSim {
             const bool is_selected = selected.count(key) > 0;
             const bool is_continuing = continuing.count(key) > 0;
             const bool cpu_available = is_selected || is_continuing ||
-                (timing_gate_open && alap_selected_seen < processor_count);
+                alap_selected_seen < processor_count;
 
             double decision_required_mJ = job.task_unit_energy_mJ;
             if (timing_gate_open && blocking_policy == "BLOCK") {
@@ -2143,7 +2143,9 @@ namespace RTSim {
                 epsilon_mJ >= decision_required_mJ;
 
             std::string policy_reason = "NONE";
-            if (!cpu_available) {
+            if (!timing_gate_open && !is_selected && !is_continuing) {
+                policy_reason = "NONE";
+            } else if (!cpu_available) {
                 policy_reason = "CPU_CAPACITY";
             } else if (timing_gate_open && blocking_policy == "SYNC" &&
                        !is_selected && !decision_affordable) {

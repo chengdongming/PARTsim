@@ -661,7 +661,6 @@ namespace RTSim {
                 final_atomic_reject = true;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
-                _stats.total_batch_skipped++;
                 _energy_depleted = true;
             } else if (!continuation_affordable) {
                 // Once a continuation in global top-M cannot be paid, the whole
@@ -670,7 +669,6 @@ namespace RTSim {
                 final_atomic_reject = true;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
-                _stats.total_batch_skipped++;
                 _energy_depleted = true;
             } else if (!idle_core_batch.empty() &&
                        !idle_core_batch_affordable) {
@@ -678,7 +676,6 @@ namespace RTSim {
                 final_atomic_reject = true;
                 selected_tasks.clear();
                 required_batch_energy = 0.0;
-                _stats.total_batch_skipped++;
                 _energy_depleted = true;
             } else {
                 selected_tasks = desired_tasks;
@@ -758,6 +755,10 @@ namespace RTSim {
                 _deep_charging = true;
                 _is_charging_sleep = true;
                 _energy_depleted = true;
+            }
+
+            if (final_atomic_reject) {
+                _stats.total_batch_skipped++;
             }
 
             _current_batch_tasks = selected_tasks;
