@@ -410,7 +410,68 @@ TEST(STSyncScheduler, UrgentNewTopMExecutesSameTickWhenChargingSlackExpires) {
     EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 3.0);
     EXPECT_LE(STSyncSchedulerTestPeer::slack(scheduler, &h), Tick(0));
     EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+    EXPECT_EQ(scheduler._stats.total_batch_schedules, 1);
+    EXPECT_EQ(scheduler._stats.total_batch_skipped, 2);
     EXPECT_EQ(tick_output.find("实际同步组原子验资失败"), std::string::npos);
+
+    simulation.endSingleRun();
+}
+
+TEST(STSyncScheduler, UrgentNewTopMRemainsSkippedWhenReAdmissionIsUnaffordable) {
+    auto &simulation = MetaSim::Simulation::getInstance();
+    TestSTSyncScheduler scheduler;
+    CPU cpu0("st-sync-urgent-top-m-unaffordable-cpu0", nullptr);
+    CPU cpu1("st-sync-urgent-top-m-unaffordable-cpu1", nullptr);
+    TestSTSyncMRTKernel kernel(&scheduler, std::set<CPU *>{&cpu0, &cpu1});
+    FakeSTSyncTask h(1, 11, 1, 1.0, 2);
+    FakeSTSyncTask a(2, 17, 10, 3.0);
+    FakeSTSyncTask b(3, 19, 12, 2.0);
+
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &h, 11, 1, 1.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &a, 17, 3, 2.0);
+    STSyncSchedulerTestPeer::addTaskModel(scheduler, &b, 19, 2, 2.0);
+
+    ScaledPiecewiseConfig harvest;
+    harvest.scale_w = 1000.0;
+    harvest.segments = {{0, 1, 0.0}, {1, 2, 1.0}};
+
+    simulation.initSingleRun();
+    STSyncSchedulerTestPeer::cancelAutomaticTick(scheduler);
+    STSyncSchedulerTestPeer::setHarvestConfig(
+        scheduler, HarvestSourceConfig{harvest});
+    STSyncSchedulerTestPeer::setEnergy(scheduler, 1.0);
+    a.releaseAt(Tick(0));
+    b.releaseAt(Tick(0));
+    STSyncSchedulerTestPeer::enqueue(scheduler, &a);
+    STSyncSchedulerTestPeer::enqueue(scheduler, &b);
+
+    STSyncSchedulerTestPeer::tick(scheduler);
+    simulation.run_to(Tick(0));
+    ASSERT_TRUE(scheduler.isChargingSleepActive());
+    ASSERT_EQ(scheduler._stats.total_batch_skipped, 1);
+
+    STSyncTestActionEvent continue_hold([&]() {
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    continue_hold.post(Tick(1));
+    simulation.run_to(Tick(1));
+    ASSERT_EQ(scheduler._stats.total_batch_skipped, 2);
+
+    STSyncTestActionEvent urgent_arrival([&]() {
+        h.releaseAt(Tick(2));
+        STSyncSchedulerTestPeer::arrive(scheduler, &h);
+        STSyncSchedulerTestPeer::tick(scheduler);
+    });
+    urgent_arrival.post(Tick(2));
+    simulation.run_to(Tick(2));
+
+    EXPECT_TRUE(scheduler.getCurrentBatchTasks().empty());
+    EXPECT_EQ(h.getScheduleCount(), 0);
+    EXPECT_EQ(a.getScheduleCount(), 0);
+    EXPECT_EQ(b.getScheduleCount(), 0);
+    EXPECT_EQ(scheduler._stats.total_batch_schedules, 0);
+    EXPECT_EQ(scheduler._stats.total_batch_skipped, 3);
+    EXPECT_DOUBLE_EQ(scheduler.getTotalEnergyConsumed(), 0.0);
 
     simulation.endSingleRun();
 }
@@ -639,6 +700,8 @@ TEST(STSyncScheduler,
     EXPECT_DOUBLE_EQ(scheduler.getCurrentEnergy(), 1.0);
     EXPECT_DOUBLE_EQ(task.getRemainingWCET(), 1.0);
     EXPECT_EQ(STSyncSchedulerTestPeer::deadlineMisses(scheduler), 0);
+    EXPECT_EQ(scheduler._stats.total_batch_schedules, 0);
+    EXPECT_EQ(scheduler._stats.total_batch_skipped, 1);
 
     simulation.endSingleRun();
 }
