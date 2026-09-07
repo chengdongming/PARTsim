@@ -561,7 +561,7 @@ def make_parser() -> argparse.ArgumentParser:
         "--campaign", choices=(
             "v6", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
             experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
-        ), default=None,
+        ), default="v6",
         help="v6 for the historical contract, or one explicit versioned campaign",
     )
     parser.add_argument(
@@ -631,11 +631,6 @@ def _resolve_grid(args: argparse.Namespace) -> tuple[
     tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any] | None, bool,
 ]:
     campaign = args.campaign
-    if campaign is None:
-        structured = args.cells is not None or any(
-            getattr(args, name) is not None for name in _V4_GRID_ARGS
-        )
-        campaign = "v6" if structured else experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
     if campaign != "v6":
         if args.cells is not None or any(
             getattr(args, name) is not None for name in _V4_GRID_ARGS
@@ -725,11 +720,6 @@ def _validate_implicit_streaming_scope(
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     campaign = args.campaign
-    if campaign is None:
-        structured = args.cells is not None or any(
-            getattr(args, name) is not None for name in _V4_GRID_ARGS
-        )
-        campaign = "v6" if structured else experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
     version = "v6" if campaign == "v6" else args.experiment_version
     if campaign == "v6" and args.experiment_version == "v8":
         raise SystemExit("v8 requires an explicit v8 campaign")
