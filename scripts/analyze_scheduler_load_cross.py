@@ -624,6 +624,7 @@ def _axis_values(contract: dict[str, Any]) -> tuple[float, float, list[float], l
 
 def _v7_publication_slice_labels(
     campaign: str, slice_rows: list[tuple[dict[str, Any], list[dict[str, Any]]]],
+    version: str = "v7",
 ) -> list[str]:
     if campaign == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN:
         return [
@@ -637,7 +638,7 @@ def _v7_publication_slice_labels(
             f"{experiment.decimal_text(slice_config['fixed_value'])}"
             for slice_config, _rows in slice_rows
         ]
-    raise ValueError(f"unsupported v7 publication campaign: {campaign}")
+    raise ValueError(f"unsupported {version} publication campaign: {campaign}")
 
 
 def _draw_composite_axes(
@@ -1092,18 +1093,22 @@ def _v6_validate_energy(row: dict[str, Any]) -> None:
 
 def _v7_validate_config(
     root: Path,
+    version: str = "v7",
 ) -> tuple[dict[str, Any], tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any], str]:
+    expected_experiment = experiment.V8_EXPERIMENT if version == "v8" else experiment.V7_EXPERIMENT
+    expected_domain = experiment.V8_DOMAIN if version == "v8" else experiment.V7_DOMAIN
+    expected_initial_rule = "zero" if version == "v8" else "battery_capacity/2"
     try:
         config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
     except (OSError, TypeError, ValueError) as exc:
         raise SystemExit(f"v7 run_config cannot be read: {root}") from exc
-    if config.get("experiment") != experiment.V7_EXPERIMENT:
-        raise SystemExit("v7 run_config experiment mismatch")
-    if config.get("domain") != experiment.V7_DOMAIN:
-        raise SystemExit("v7 run_config domain mismatch")
+    if config.get("experiment") != expected_experiment:
+        raise SystemExit(f"{version} run_config experiment mismatch")
+    if config.get("domain") != expected_domain:
+        raise SystemExit(f"{version} run_config domain mismatch")
     campaign = config.get("campaign")
     try:
-        spec = experiment.v7_campaign_spec(campaign)
+        spec = experiment.campaign_spec(version, campaign)
     except (TypeError, ValueError) as exc:
         raise SystemExit(f"v7 campaign is invalid: {exc}") from exc
     if config.get("campaign_contract") != spec["campaign_contract"]:
@@ -1152,11 +1157,14 @@ def _v7_validate_config(
         raise SystemExit("v7 expected_taskset_count is inconsistent")
     if config.get("run_identity") != experiment.run_identity(config):
         raise SystemExit("v7 run_identity is invalid")
+    if config.get("initial_energy_rule") != expected_initial_rule:
+        raise SystemExit(f"{version} initial energy rule is invalid")
     return config, cells, spec["scan_contract"], spec["figure_slices"], priority_policy
 
 
 def _v7_validate_energy(
     row: dict[str, Any], config: dict[str, Any], taskset: dict[str, Any],
+    version: str = "v7",
 ) -> None:
     energy = row.get("energy")
     if not isinstance(energy, dict):
@@ -1207,11 +1215,12 @@ def _v7_validate_energy(
         if Fraction(energy["E_burst_j"]) != burst:
             raise SystemExit("v7 burst energy changed")
         kappa = Fraction(config["kappa"])
+        expected_initial = Fraction(0) if version == "v8" else kappa * burst / 2
         if (
             Fraction(energy["battery_capacity_j"]) != kappa * burst
-            or Fraction(energy["initial_energy_j"]) != kappa * burst / 2
+            or Fraction(energy["initial_energy_j"]) != expected_initial
         ):
-            raise SystemExit("v7 battery or initial energy rule changed")
+            raise SystemExit(f"{version} battery or initial energy rule changed")
         if runtime_supply <= 0 or actual_ue <= 0:
             raise SystemExit("v7 runtime average supply and actual U_E must be positive")
         calculated_abs = abs(actual_ue - reference_ue)
@@ -1610,12 +1619,14 @@ def analyze(
             experiment.V4_EXPERIMENT,
             experiment.V5_EXPERIMENT,
             experiment.V7_EXPERIMENT,
+            experiment.V8_EXPERIMENT,
         }
         or initial_config.get("domain") in {
             experiment.V3_DOMAIN,
             experiment.V4_DOMAIN,
             experiment.V5_DOMAIN,
             experiment.V7_DOMAIN,
+            experiment.V8_DOMAIN,
         }
     ):
         raise SystemExit(
@@ -1637,9 +1648,14 @@ def analyze(
     analysis_started = time.perf_counter()
     validation_started = analysis_started
     config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
-    is_v7 = config.get("experiment") == experiment.V7_EXPERIMENT
+    is_v7 = config.get("experiment") in {
+        experiment.V7_EXPERIMENT, experiment.V8_EXPERIMENT,
+    }
+    version = "v8" if config.get("experiment") == experiment.V8_EXPERIMENT else "v7"
     if is_v7:
-        config, cells, scan_contract, figure_slices, priority_policy = _v7_validate_config(root)
+        config, cells, scan_contract, figure_slices, priority_policy = _v7_validate_config(
+            root, version=version,
+        )
     _validate_harvest_model(
         {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
         "run_config harvest model",
@@ -1735,16 +1751,20 @@ def analyze(
         if is_v5 or is_v4 or is_v7:
             expected_experiment = experiment.V5_EXPERIMENT if is_v5 else experiment.V4_EXPERIMENT
             if is_v7:
-                expected_experiment = experiment.V7_EXPERIMENT
+                expected_experiment = (
+                    experiment.V8_EXPERIMENT if version == "v8"
+                    else experiment.V7_EXPERIMENT
+                )
             for key, expected_value in (("experiment", expected_experiment),):
                 if request.get(key) != expected_value or row.get(key) != expected_value:
                     raise SystemExit(f"{expected_experiment} result/request identity mismatch for {key}")
         if is_v7:
+            expected_domain = experiment.V8_DOMAIN if version == "v8" else experiment.V7_DOMAIN
             for key in ("domain", "campaign", "energy_control", "deadline_mode"):
                 if request.get(key) != config.get(key) and key != "deadline_mode":
                     raise SystemExit(f"v7 request {key} does not match run_config")
-                if key == "domain" and request.get(key) != experiment.V7_DOMAIN:
-                    raise SystemExit("v7 request domain mismatch")
+                if key == "domain" and request.get(key) != expected_domain:
+                    raise SystemExit(f"{version} request domain mismatch")
                 if key == "deadline_mode" and request.get(key) != "constrained":
                     raise SystemExit("v7 request deadline mode mismatch")
             if row.get("campaign") != config.get("campaign") or row.get("energy_control") != config.get("energy_control"):
@@ -1755,7 +1775,7 @@ def analyze(
                     or request.get("target_ue_role") != "calibration_reference"
                     or request.get("energy_level") != experiment.v7_energy_level(Fraction(request["target_ue"]))
                 ):
-                    raise SystemExit("v7 fixed-supply request reference identity is invalid")
+                    raise SystemExit(f"{version} fixed-supply request reference identity is invalid")
         if (is_v5 or is_v7) and row.get("deadline_mode") != request.get("deadline_mode"):
             raise SystemExit("deadline-mode result/request mismatch")
         _validate_harvest_model(
@@ -1826,7 +1846,7 @@ def analyze(
             raise SystemExit("result/taskset deadline_mode mismatch")
         energy = row["energy"]
         if is_v7:
-            _v7_validate_energy(row, config, taskset)
+            _v7_validate_energy(row, config, taskset, version=version)
             continue
         _validate_harvest_model(
             {key: energy.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
@@ -2184,14 +2204,14 @@ def analyze(
              "filename": f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices.png",
              "xkey": x_key, "schedulers": schedulers, "xlabel": xlabel,
              "title": f"{priority_policy} — Whole-taskset pass ratio versus {xlabel}",
-             "slice_display_labels": _v7_publication_slice_labels(config["campaign"], slice_rows),
+             "slice_display_labels": _v7_publication_slice_labels(config["campaign"], slice_rows, version),
              **axis},
             {"composite": True, "slice_rows": dmr_slice_rows, "output": str(root),
              "filename": f"figure_scheduler_{'uc' if scan_key == 'uc_scans' else 'ue'}_slices_dmr.png",
              "xkey": x_key, "schedulers": schedulers, "xlabel": xlabel, "metric": "dmr",
              "ymin": uc_dmr_ymin if scan_key == "uc_scans" else ue_dmr_ymin,
              "title": f"{priority_policy} — Job-level deadline-meeting ratio (DMR) versus {xlabel}",
-             "slice_display_labels": _v7_publication_slice_labels(config["campaign"], dmr_slice_rows),
+             "slice_display_labels": _v7_publication_slice_labels(config["campaign"], dmr_slice_rows, version),
              **axis},
         ]
     else:

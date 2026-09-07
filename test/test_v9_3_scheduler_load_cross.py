@@ -3888,6 +3888,86 @@ def test_v7_freezes_task_generation_parameters_and_v6_remains_compatible():
     )
 
 
+def test_v8_contract_uses_zero_initial_energy_and_new_grids():
+    fixed = experiment.v8_campaign_spec(experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN)
+    service = experiment.v8_campaign_spec(experiment.V7_UE_SERVICE_SCALING_CAMPAIGN)
+    assert tuple(Fraction(value) for value in fixed["scan_contract"]["scan_values"]) == experiment.V8_UC_SCAN
+    assert tuple(Fraction(value) for value in service["scan_contract"]["scan_values"]) == experiment.V8_UE_SCAN
+    assert len(fixed["cells"]) == len(set(fixed["cells"])) == 27
+    assert len(service["cells"]) == len(set(service["cells"])) == 27
+    assert tuple(uc for uc, _ue in service["cells"][::9]) == experiment.V8_UE_FIXED_UCS
+    assert experiment.V8_MODE_PLAN == {"RM": ("constrained",), "DM": ("constrained",)}
+    assert fixed["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
+    assert service["energy_control"] == "SERVICE_ONLY_SCALING"
+    assert {
+        level: experiment.V7_FIXED_SUPPLIES[level]
+        for level in ("low", "medium", "high")
+    } == experiment.V7_FIXED_SUPPLIES
+
+    class Taskset:
+        processors = 4
+        task_count = 2
+        task_payload = (
+            {"C": 1, "T": 10, "P": "2"},
+            {"C": 1, "T": 10, "P": "4"},
+        )
+
+    raw = (Fraction(1),) * 10
+    service_energy = experiment.energy_material(
+        Taskset(), Fraction(2, 5), raw, kappa=Fraction(10),
+        normalization_horizon=10, initial_energy_rule="zero",
+    )
+    fixed_energy = experiment.fixed_supply_energy_material(
+        Taskset(), experiment.V7_FIXED_SUPPLIES["low"], raw,
+        kappa=Fraction(10), reference_ue=Fraction(9, 10), energy_level="low",
+        normalization_horizon=10, initial_energy_rule="zero",
+    )
+    assert service_energy["initial_energy_j"] == "0"
+    assert fixed_energy["initial_energy_j"] == "0"
+    assert service_energy["battery_capacity_j"] == fixed_energy["battery_capacity_j"] == "60"
+    assert service_energy["actual_ue"] == service_energy["target_ue"]
+
+
+def test_v8_identity_and_cli_are_isolated_from_v7():
+    class Taskset:
+        processors = 4
+        actual_utilization = Fraction(1)
+        taskset_index = 0
+        seed = 1
+        deadline_mode = "constrained"
+        target_utilization = Fraction(1, 5) * processors
+        taskset_id = "v8-taskset"
+        semantic_hash = "v8-hash"
+
+    campaign = experiment.V7_UE_SERVICE_SCALING_CAMPAIGN
+    spec = experiment.v8_campaign_spec(campaign)
+    v7_rows = experiment.request_rows(
+        [Taskset()], ((Fraction(1, 5), Fraction(1, 10)),),
+        ("ASAP-BLOCK",), 60000, experiment_name=experiment.V7_EXPERIMENT,
+        deadline_mode="constrained", campaign=campaign,
+        energy_control=spec["energy_control"],
+    )
+    v8_rows = experiment.request_rows(
+        [Taskset()], ((Fraction(1, 5), Fraction(1, 10)),),
+        ("ASAP-BLOCK",), 60000, experiment_name=experiment.V8_EXPERIMENT,
+        deadline_mode="constrained", campaign=campaign,
+        energy_control=spec["energy_control"],
+    )
+    assert v7_rows[0]["domain"] == experiment.V7_DOMAIN
+    assert v8_rows[0]["experiment"] == experiment.V8_EXPERIMENT
+    assert v8_rows[0]["domain"] == experiment.V8_DOMAIN
+    assert v7_rows[0]["request_id"] != v8_rows[0]["request_id"]
+    assert experiment.run_identity({"experiment": experiment.V7_EXPERIMENT, "domain": experiment.V7_DOMAIN}) != experiment.run_identity({"experiment": experiment.V8_EXPERIMENT, "domain": experiment.V8_DOMAIN})
+    parsed = scheduler_runner.make_parser().parse_args([
+        "--output", "/tmp/v8-contract", "--seed", "1",
+        "--campaign", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+    ])
+    assert parsed.experiment_version == "v7"
+    cells, _slices, contract, structured = scheduler_runner._resolve_grid(parsed)
+    assert len(cells) == contract["unique_cell_count"] == 24
+    assert structured is False
+
+
 @pytest.mark.parametrize("passed", [True, False])
 def test_v6_implicit_wholepass_fast_result_is_strictly_validated(passed):
     value = _fast_result_fixture(passed=passed)
