@@ -554,11 +554,15 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument(
+        "--experiment-version", choices=("v7", "v8"), default="v7",
+        help="versioned formal campaign contract (default: v7)",
+    )
+    parser.add_argument(
         "--campaign", choices=(
             "v6", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
             experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
-        ), default="v6",
-        help="v6 for the historical contract, or one explicit constrained-only v7 campaign",
+        ), default=None,
+        help="v6 for the historical contract, or one explicit versioned campaign",
     )
     parser.add_argument(
         "--energy-control", choices=("FIXED_ABSOLUTE_SUPPLY", "SERVICE_ONLY_SCALING"),
@@ -626,13 +630,19 @@ _V4_GRID_ARGS = (
 def _resolve_grid(args: argparse.Namespace) -> tuple[
     tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any] | None, bool,
 ]:
-    if args.campaign != "v6":
+    campaign = args.campaign
+    if campaign is None:
+        structured = args.cells is not None or any(
+            getattr(args, name) is not None for name in _V4_GRID_ARGS
+        )
+        campaign = "v6" if structured else experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
+    if campaign != "v6":
         if args.cells is not None or any(
             getattr(args, name) is not None for name in _V4_GRID_ARGS
         ):
             raise SystemExit("v7 campaigns use their frozen grid and do not accept grid overrides")
         try:
-            spec = experiment.v7_campaign_spec(args.campaign)
+            spec = experiment.campaign_spec(args.experiment_version, campaign)
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
         return spec["cells"], spec["figure_slices"], spec["scan_contract"], False
@@ -715,6 +725,15 @@ def _validate_implicit_streaming_scope(
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     campaign = args.campaign
+    if campaign is None:
+        structured = args.cells is not None or any(
+            getattr(args, name) is not None for name in _V4_GRID_ARGS
+        )
+        campaign = "v6" if structured else experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
+    version = "v6" if campaign == "v6" else args.experiment_version
+    if campaign == "v6" and args.experiment_version == "v8":
+        raise SystemExit("v8 requires an explicit v8 campaign")
+    is_versioned = version in {"v7", "v8"}
     if campaign == "v6":
         if args.energy_control is not None and args.energy_control != "SERVICE_ONLY_SCALING":
             raise SystemExit("v6 uses SERVICE_ONLY_SCALING and cannot select another energy control")
@@ -726,7 +745,7 @@ def main(argv: list[str] | None = None) -> int:
             else "SERVICE_ONLY_SCALING"
         )
         if args.energy_control is not None and args.energy_control != selected_energy_control:
-            raise SystemExit("energy-control does not match the selected v7 campaign")
+            raise SystemExit("energy-control does not match the selected campaign")
     prepare_workers = args.workers if args.prepare_workers is None else args.prepare_workers
     try:
         validate_workers(prepare_workers, "prepare-workers")
@@ -755,8 +774,8 @@ def main(argv: list[str] | None = None) -> int:
         priority_policy=priority_policy, resume=args.resume,
         requests_by_id={}, remaining_ids=set(),
     )
-    if campaign != "v6" and tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
-        raise SystemExit("v7 formal campaigns require all nine canonical schedulers")
+    if is_versioned and tuple(schedulers) != tuple(perf_g.FORMAL_SCHEDULERS):
+        raise SystemExit("versioned formal campaigns require all nine canonical schedulers")
     is_frozen_main_figure = tuple(cells) == tuple(experiment.FORMAL_CELLS)
     min_util = experiment.parse_fraction(args.min_task_util, "min-task-util")
     max_util = experiment.parse_fraction(args.max_task_util, "max-task-util")
@@ -772,12 +791,12 @@ def main(argv: list[str] | None = None) -> int:
     kappa = experiment.parse_fraction(args.kappa, "kappa")
     if kappa != experiment.DEFAULT_KAPPA:
         raise SystemExit("scheduler LOAD-CROSS freezes kappa=10")
-    if campaign != "v6" and (
+    if is_versioned and (
         args.processors != perf_g.PROCESSORS
         or args.tasks != perf_g.TASK_COUNT
         or args.simulation_horizon != perf_g.FORMAL_HORIZON_MS
     ):
-        raise SystemExit("v7 formal campaigns freeze processors=4, tasks=10, and simulation horizon=60000 ms")
+        raise SystemExit("versioned formal campaigns freeze processors=4, tasks=10, and simulation horizon=60000 ms")
     if is_frozen_main_figure:
         try:
             experiment.validate_v6_main_figure(
@@ -791,20 +810,29 @@ def main(argv: list[str] | None = None) -> int:
     rho = experiment.parse_fraction(args.rho, "rho")
     latency = experiment.parse_fraction(args.latency, "latency")
     root = args.output
-    is_v7 = campaign != "v6"
-    experiment_name = experiment.V7_EXPERIMENT if is_v7 else experiment.V6_EXPERIMENT
+    is_v7 = is_versioned
+    experiment_name = (
+        experiment.V8_EXPERIMENT if version == "v8"
+        else experiment.V7_EXPERIMENT if version == "v7"
+        else experiment.V6_EXPERIMENT
+    )
+    spec = experiment.campaign_spec(version, campaign) if is_versioned else None
     deadline_modes = (
-        experiment.v7_deadline_modes_for_priority_policy(priority_policy)
-        if is_v7 else experiment.deadline_modes_for_priority_policy(priority_policy)
+        experiment.deadline_modes_for_experiment(version, priority_policy)
+        if is_versioned else experiment.deadline_modes_for_priority_policy(priority_policy)
     )
     expected_request_count = len(cells) * args.samples_per_cell * len(schedulers) * len(deadline_modes)
     expected_taskset_count = len(set(uc for uc, _ue in cells)) * args.samples_per_cell * len(deadline_modes)
     config = {
         "experiment": experiment_name,
-        "domain": experiment.V7_DOMAIN if is_v7 else experiment.V6_DOMAIN,
+        "domain": (
+            experiment.V8_DOMAIN if version == "v8"
+            else experiment.V7_DOMAIN if version == "v7"
+            else experiment.V6_DOMAIN
+        ),
         "campaign_contract": (
-            experiment.v7_campaign_spec(campaign)["campaign_contract"]
-            if is_v7 else experiment.V6_CAMPAIGN_CONTRACT
+            spec["campaign_contract"] if is_versioned
+            else experiment.V6_CAMPAIGN_CONTRACT
         ),
         "seed": args.seed, "workers": args.workers,
         "deadline_modes": list(deadline_modes),
@@ -820,7 +848,8 @@ def main(argv: list[str] | None = None) -> int:
         "period_min": args.period_min, "period_max": args.period_max,
         "min_task_util": str(min_util), "max_task_util": str(max_util),
         "util_tolerance_total": str(tolerance), "rho": str(rho), "latency": str(latency),
-        "kappa": str(kappa), "initial_energy_rule": "battery_capacity/2",
+        "kappa": str(kappa),
+        "initial_energy_rule": "zero" if version == "v8" else "battery_capacity/2",
         "normalization_horizon_ms": experiment.FORMAL_NORMALIZATION_HORIZON,
         "simulation_horizon_ms": args.simulation_horizon,
         "use_real_solar_data": False,
@@ -838,7 +867,7 @@ def main(argv: list[str] | None = None) -> int:
             "keep_traces": bool(args.keep_traces),
         },
     }
-    if is_v7:
+    if is_versioned:
         for key in (
             "implicit_priority_equivalence", "implicit_canonical_priority_policy",
             "implicit_reuse_policy", "shared_implicit_contract_version",
@@ -859,8 +888,8 @@ def main(argv: list[str] | None = None) -> int:
     run_config = root / "run_config.json"
     if args.resume:
         stored_config = json.loads(run_config.read_text(encoding="utf-8")) if run_config.is_file() else None
-        expected_experiment = experiment.V7_EXPERIMENT if is_v7 else experiment.V6_EXPERIMENT
-        expected_domain = experiment.V7_DOMAIN if is_v7 else experiment.V6_DOMAIN
+        expected_experiment = experiment_name
+        expected_domain = config["domain"]
         if (stored_config or {}).get("experiment") != expected_experiment:
             if not is_v7:
                 raise SystemExit("resume experiment mismatch: v6 cannot resume non-v6 results")
@@ -1006,6 +1035,7 @@ def main(argv: list[str] | None = None) -> int:
             "task_count": taskset.task_count,
             "kappa": kappa,
             "raw_trace_id": raw_trace_id,
+            "initial_energy_rule": config["initial_energy_rule"],
         }
         if is_v7:
             energy_job["energy_control"] = selected_energy_control
@@ -1301,7 +1331,7 @@ def main(argv: list[str] | None = None) -> int:
             ) if selected_energy_control == "SERVICE_ONLY_SCALING" else False
         ),
         "experiment": experiment_name,
-        "domain": experiment.V7_DOMAIN if is_v7 else experiment.V6_DOMAIN,
+        "domain": config["domain"],
         "priority_policy": priority_policy,
         "deadline_modes": list(deadline_modes),
         "expected_request_count": expected_request_count,
