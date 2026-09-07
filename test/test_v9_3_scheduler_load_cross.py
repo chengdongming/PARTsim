@@ -3968,6 +3968,43 @@ def test_v8_identity_and_cli_are_isolated_from_v7():
     assert structured is False
 
 
+def test_scheduler_runner_restores_legacy_v6_default_and_explicit_v8_selection(tmp_path):
+    legacy = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path / "legacy"), "--seed", "1",
+    ])
+    assert legacy.campaign == "v6"
+    assert legacy.experiment_version == "v7"
+    cells, _slices, contract, structured = scheduler_runner._resolve_grid(legacy)
+    assert len(cells) == contract["unique_cell_count"] == len(experiment.FORMAL_CELLS)
+    assert structured is True
+
+    v7 = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path / "v7"), "--seed", "1",
+        "--campaign", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+    ])
+    assert v7.campaign == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
+    assert v7.experiment_version == "v7"
+    v7_cells, _slices, v7_contract, structured = scheduler_runner._resolve_grid(v7)
+    assert len(v7_cells) == v7_contract["unique_cell_count"] == 24
+    assert structured is False
+
+    v8 = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path / "v8"), "--seed", "1",
+        "--experiment-version", "v8",
+        "--campaign", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+    ])
+    assert v8.experiment_version == "v8"
+    v8_cells, _slices, v8_contract, structured = scheduler_runner._resolve_grid(v8)
+    assert len(v8_cells) == v8_contract["unique_cell_count"] == 27
+    assert structured is False
+
+    with pytest.raises(SystemExit, match="v8 requires an explicit v8 campaign"):
+        scheduler_runner.main([
+            "--output", str(tmp_path / "missing-campaign"), "--seed", "1",
+            "--experiment-version", "v8",
+        ])
+
+
 @pytest.mark.parametrize("passed", [True, False])
 def test_v6_implicit_wholepass_fast_result_is_strictly_validated(passed):
     value = _fast_result_fixture(passed=passed)
