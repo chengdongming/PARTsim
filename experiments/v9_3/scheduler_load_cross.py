@@ -68,10 +68,10 @@ V7_REFERENCE_UES = {
 V8_FIXED_SUPPLIES = V7_FIXED_SUPPLIES
 V8_REFERENCE_UES = V7_REFERENCE_UES
 V7_UC_SCAN = tuple(Fraction(value) for value in (
-    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10",
 ))
 V7_UE_SCAN = tuple(Fraction(value) for value in (
-    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10",
 ))
 V8_UC_SCAN = tuple(Fraction(value) for value in (
     "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10",

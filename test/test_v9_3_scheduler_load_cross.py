@@ -2463,6 +2463,37 @@ def test_resume_comparison_allows_only_explicit_runtime_fields():
         assert not scheduler_runner._resume_configs_match(stored, changed)
 
 
+def test_v7_old_and_new_scan_contracts_cannot_resume_each_other():
+    current = experiment.v7_campaign_spec(
+        experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+    )
+    old = {
+        "experiment": experiment.V7_EXPERIMENT,
+        "domain": experiment.V7_DOMAIN,
+        "campaign": experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+        "cells": [
+            [str(uc), str(ue)]
+            for uc, ue in (
+                (uc, experiment.V7_REFERENCE_UES[level])
+                for level in ("low", "medium", "high")
+                for uc in experiment.V7_UC_SCAN[:-1]
+            )
+        ],
+        "scan_contract": {
+            **current["scan_contract"],
+            "uc_scan_values": [str(value) for value in experiment.V7_UC_SCAN[:-1]],
+            "scan_values": [str(value) for value in experiment.V7_UC_SCAN[:-1]],
+            "unique_cell_count": 24,
+        },
+    }
+    new = {
+        **old,
+        "cells": [[str(uc), str(ue)] for uc, ue in current["cells"]],
+        "scan_contract": current["scan_contract"],
+    }
+    assert not scheduler_runner._resume_configs_match(old, new)
+
+
 def test_resume_configuration_failure_does_not_append_history(tmp_path, monkeypatch):
     def run_simulation(**kwargs):
         return SimpleNamespace(
@@ -3711,12 +3742,31 @@ def test_v4_runner_grid_resolution_binds_scan_configuration(tmp_path):
 
 
 def test_v7_campaign_grids_are_exact_and_constrained_only():
+    expected_scan = tuple(Fraction(value) for value in (
+        "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10",
+    ))
+    assert experiment.V7_UC_SCAN == expected_scan
+    assert experiment.V7_UE_SCAN == expected_scan
+    assert experiment.V7_UE_SCAN == experiment.V7_UC_SCAN
     fixed = experiment.v7_campaign_spec(experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN)
     service = experiment.v7_campaign_spec(experiment.V7_UE_SERVICE_SCALING_CAMPAIGN)
-    assert len(fixed["cells"]) == 24
-    assert len(set(fixed["cells"])) == 24
-    assert len(service["cells"]) == 30
-    assert len(set(service["cells"])) == 30
+    assert len(fixed["cells"]) == 27
+    assert len(set(fixed["cells"])) == 27
+    assert len(service["cells"]) == 27
+    assert len(set(service["cells"])) == 27
+    assert all(
+        tuple(Fraction(value) for value in slice_config["x_values"]) == expected_scan
+        for slice_config in fixed["figure_slices"]["uc_scans"]
+    )
+    assert all(
+        tuple(Fraction(value) for value in slice_config["x_values"]) == expected_scan
+        for slice_config in service["figure_slices"]["ue_scans"]
+    )
+    assert tuple(Fraction(value) for value in fixed["scan_contract"]["scan_values"]) == expected_scan
+    assert tuple(Fraction(value) for value in service["scan_contract"]["scan_values"]) == expected_scan
+    assert tuple(uc for uc, _ue in service["cells"][::9]) == (
+        Fraction(3, 10), Fraction(1, 2), Fraction(7, 10),
+    )
     assert experiment.v7_deadline_modes_for_priority_policy("RM") == ("constrained",)
     assert experiment.v7_deadline_modes_for_priority_policy("DM") == ("constrained",)
     assert fixed["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
@@ -3799,8 +3849,8 @@ def test_old_linear_ramp_identity_cannot_resume_as_new_model():
 
 def test_v7_cli_uses_only_the_frozen_grid(tmp_path):
     for campaign, expected_count in (
-        (experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN, 24),
-        (experiment.V7_UE_SERVICE_SCALING_CAMPAIGN, 30),
+        (experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN, 27),
+        (experiment.V7_UE_SERVICE_SCALING_CAMPAIGN, 27),
     ):
         args = scheduler_runner.make_parser().parse_args([
             "--output", str(tmp_path), "--seed", "1", "--campaign", campaign,
@@ -3889,6 +3939,14 @@ def test_v7_freezes_task_generation_parameters_and_v6_remains_compatible():
 
 
 def test_v8_contract_uses_zero_initial_energy_and_new_grids():
+    expected_scan = tuple(Fraction(value) for value in (
+        "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10",
+    ))
+    assert experiment.V8_UC_SCAN == expected_scan
+    assert experiment.V8_UE_SCAN == expected_scan
+    assert experiment.V8_UE_FIXED_UCS == (
+        Fraction(1, 5), Fraction(2, 5), Fraction(3, 5),
+    )
     fixed = experiment.v8_campaign_spec(experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN)
     service = experiment.v8_campaign_spec(experiment.V7_UE_SERVICE_SCALING_CAMPAIGN)
     assert tuple(Fraction(value) for value in fixed["scan_contract"]["scan_values"]) == experiment.V8_UC_SCAN
@@ -3964,7 +4022,7 @@ def test_v8_identity_and_cli_are_isolated_from_v7():
     ])
     assert parsed.experiment_version == "v7"
     cells, _slices, contract, structured = scheduler_runner._resolve_grid(parsed)
-    assert len(cells) == contract["unique_cell_count"] == 24
+    assert len(cells) == contract["unique_cell_count"] == 27
     assert structured is False
 
 
@@ -3985,7 +4043,7 @@ def test_scheduler_runner_restores_legacy_v6_default_and_explicit_v8_selection(t
     assert v7.campaign == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
     assert v7.experiment_version == "v7"
     v7_cells, _slices, v7_contract, structured = scheduler_runner._resolve_grid(v7)
-    assert len(v7_cells) == v7_contract["unique_cell_count"] == 24
+    assert len(v7_cells) == v7_contract["unique_cell_count"] == 27
     assert structured is False
 
     v8 = scheduler_runner.make_parser().parse_args([
