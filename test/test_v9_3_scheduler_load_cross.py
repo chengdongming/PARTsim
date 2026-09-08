@@ -18,6 +18,8 @@ import pytest
 
 from experiments.v9_3 import perf_g
 from experiments.v9_3 import scheduler_load_cross as experiment
+from experiments.v9_3 import simulation_engine as simulation_engine_module
+from experiments.v9_3 import simulation_result as simulation_result_module
 from experiments.v9_3 import taskset_store
 from experiments.v9_3.simulation_engine import should_retain_failure_trace
 from experiments.v9_3.simulation_engine import (
@@ -324,7 +326,31 @@ def _harvest_model_fields():
     return dict(experiment.HARVEST_MODEL_IDENTITY)
 
 
-def _write_schema2_stream_trace(path, scheduler="gpfp_asap_block"):
+def _write_schema2_stream_trace(
+    path, scheduler="gpfp_asap_block", *, deadline_miss=False,
+):
+    events = [
+        {
+            "time": 0, "event_type": "arrival", "task_name": "v93_task_0",
+            "arrival_time": 0, "current_energy_mJ": 1,
+            "note": 'escaped "events" text',
+        },
+        {
+            "time": 0, "event_type": "scheduled", "task_name": "v93_task_0",
+            "arrival_time": 0, "task_unit_energy_mJ": 1,
+        },
+    ]
+    if deadline_miss:
+        events.append({
+            "time": 1, "event_type": "dline_miss",
+            "task_name": "v93_task_0", "arrival_time": 0,
+            "deadline": 1, "remaining_execution_ms": 1,
+        })
+    else:
+        events.append({
+            "time": 1, "event_type": "end_instance",
+            "task_name": "v93_task_0", "arrival_time": 0,
+        })
     document = {
         "trace_schema_version": 2,
         "run_id": "stream-test",
@@ -340,28 +366,20 @@ def _write_schema2_stream_trace(path, scheduler="gpfp_asap_block"):
         "simulation_completed": True,
         "simulation_completion_reason": "reached_horizon",
         "metadata_note": {"events": "not the top-level array"},
-        "events": [
-            {
-                "time": 0, "event_type": "arrival", "task_name": "v93_task_0",
-                "arrival_time": 0, "current_energy_mJ": 1,
-                "note": 'escaped "events" text',
-            },
-            {
-                "time": 0, "event_type": "scheduled", "task_name": "v93_task_0",
-                "arrival_time": 0, "task_unit_energy_mJ": 1,
-            },
-            {
-                "time": 1, "event_type": "end_instance", "task_name": "v93_task_0",
-                "arrival_time": 0,
-            },
-        ],
+        "events": events,
     }
     path.write_text(json.dumps(document), encoding="utf-8")
 
 
-def _parse_schema2_stream_trace(path, scheduler="gpfp_asap_block", stream=False):
+def _parse_schema2_stream_trace(
+    path, scheduler="gpfp_asap_block", stream=False, *, deadline_miss=False,
+):
     return parse_simulation_trace(
-        path, [{"task_id": "0", "priority_rank": 0, "C": 1, "D": 5, "T": 5}],
+        path, [{
+            "task_id": "0", "priority_rank": 0,
+            "C": 2 if deadline_miss else 1,
+            "D": 1 if deadline_miss else 5, "T": 5,
+        }],
         expected_taskset_hash="a" * 64, horizon=2, warmup=0,
         minimum_jobs_per_task=0, release_e0=Fraction(0),
         expected_scheduler=scheduler, stream_events=stream,
@@ -1974,18 +1992,34 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
     def fake_request_rows(*args, **kwargs):
         row = dict(request)
         mode = kwargs["deadline_mode"]
+        experiment_name = kwargs.get("experiment_name", experiment.V6_EXPERIMENT)
+        domain = {
+            experiment.V6_EXPERIMENT: experiment.V6_DOMAIN,
+            experiment.V7_EXPERIMENT: experiment.V7_DOMAIN,
+            experiment.V8_EXPERIMENT: experiment.V8_DOMAIN,
+        }[experiment_name]
         row.update({
-            "experiment": experiment.V6_EXPERIMENT,
-            "domain": experiment.V6_DOMAIN,
+            "experiment": experiment_name,
+            "domain": domain,
             "priority_policy": kwargs.get("priority_policy", "RM"),
             "deadline_mode": mode,
+            "horizon_ms": args[3],
         })
         rows = []
-        for index, (uc, ue) in enumerate(args[1]):
-            item = dict(row, target_uc=str(uc), target_ue=str(ue))
-            suffix = "" if index == 0 and mode == "constrained" else f"-{index}-{mode}"
-            item["request_id"] = f"{request['request_id']}{suffix}"
-            rows.append(item)
+        for cell_index, (uc, ue) in enumerate(args[1]):
+            for scheduler_index, scheduler in enumerate(args[2]):
+                item = dict(
+                    row, target_uc=str(uc), target_ue=str(ue),
+                    scheduler=scheduler,
+                    scheduler_cli=perf_g.SCHEDULER_CLI[scheduler],
+                )
+                index = cell_index * len(args[2]) + scheduler_index
+                suffix = (
+                    "" if index == 0 and mode == "constrained"
+                    else f"-{index}-{mode}"
+                )
+                item["request_id"] = f"{request['request_id']}{suffix}"
+                rows.append(item)
         return rows
 
     monkeypatch.setattr(
@@ -2235,6 +2269,63 @@ def test_implicit_streaming_opt_in_is_equivalent_for_all_nine_scheduler_ids(tmp_
         assert simulation_result_to_dict(legacy) == simulation_result_to_dict(streamed)
 
 
+@pytest.mark.parametrize(
+    ("deadline_miss", "expected_status"),
+    [
+        (False, SimulationStatus.PASS_OBSERVED),
+        (True, SimulationStatus.DEADLINE_MISS),
+    ],
+)
+def test_full_and_streaming_trace_results_are_exactly_equivalent(
+    tmp_path, deadline_miss, expected_status,
+):
+    path = tmp_path / f"{expected_status.value}.json"
+    _write_schema2_stream_trace(path, deadline_miss=deadline_miss)
+    full = _parse_schema2_stream_trace(
+        path, deadline_miss=deadline_miss,
+    )
+    streamed = _parse_schema2_stream_trace(
+        path, stream=True, deadline_miss=deadline_miss,
+    )
+    assert full.status is streamed.status is expected_status
+    assert simulation_result_to_dict(full) == simulation_result_to_dict(streamed)
+
+
+@pytest.mark.parametrize("damage", ["truncate", "duplicate_event_key"])
+def test_full_and_streaming_trace_parsers_fail_closed_on_same_invalid_json(
+    tmp_path, damage,
+):
+    path = tmp_path / f"{damage}.json"
+    _write_schema2_stream_trace(path)
+    payload = path.read_text(encoding="utf-8")
+    if damage == "truncate":
+        payload = payload[:-1]
+    else:
+        payload = payload.replace(
+            '"event_type": "arrival"',
+            '"event_type": "arrival", "event_type": "arrival"',
+            1,
+        )
+    path.write_text(payload, encoding="utf-8")
+    for stream_events in (False, True):
+        with pytest.raises(SimulationTraceError):
+            _parse_schema2_stream_trace(path, stream=stream_events)
+
+
+def test_streaming_trace_parser_never_calls_full_document_loader(
+    monkeypatch, tmp_path,
+):
+    path = tmp_path / "bounded.json"
+    _write_schema2_stream_trace(path)
+
+    def fail_if_called(_path):
+        raise AssertionError("streaming parse entered full-document loader")
+
+    monkeypatch.setattr(simulation_result_module, "_strict_json", fail_if_called)
+    result = _parse_schema2_stream_trace(path, stream=True)
+    assert result.status is SimulationStatus.PASS_OBSERVED
+
+
 def test_default_trace_parser_does_not_enter_implicit_streaming(monkeypatch, tmp_path):
     path = tmp_path / "legacy.json"
     _write_schema2_stream_trace(path)
@@ -2244,6 +2335,87 @@ def test_default_trace_parser_does_not_enter_implicit_streaming(monkeypatch, tmp
 
     monkeypatch.setattr(implicit_trace_stream, "open_strict_stream", fail_if_called)
     _parse_schema2_stream_trace(path)
+
+
+def test_bounded_parser_does_not_change_simulator_command_or_implicit_environment(
+    tmp_path, monkeypatch,
+):
+    simulator = tmp_path / "build" / "rtsim" / "rtsim"
+    simulator.parent.mkdir(parents=True)
+    simulator.write_text("simulator", encoding="utf-8")
+    system_path = tmp_path / "system.yaml"
+    taskset_path = tmp_path / "taskset.yaml"
+    system_path.write_text("system", encoding="utf-8")
+    taskset_path.write_text("taskset", encoding="utf-8")
+    monkeypatch.setattr(
+        simulation_engine_module, "materialize_simulation_inputs",
+        lambda *args, **kwargs: (system_path, taskset_path),
+    )
+    monkeypatch.setattr(
+        simulation_engine_module.uuid, "uuid4",
+        lambda: SimpleNamespace(hex="fixed-trace-id"),
+    )
+    subprocess_calls = []
+
+    def run_simulator(command, **kwargs):
+        subprocess_calls.append((command, kwargs["env"]))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(simulation_engine_module.subprocess, "run", run_simulator)
+    parser_modes = []
+
+    def parse_trace(*args, stream_events=False, **kwargs):
+        parser_modes.append(stream_events)
+        return SimpleNamespace(
+            status=SimulationStatus.PASS_OBSERVED,
+            reason="minimum_jobs_observed",
+            simulation_completed=True,
+            completion_reason="reached_horizon",
+            observed_task_power_j_per_tick={},
+            release_e0_valid=True,
+        )
+
+    monkeypatch.setattr(
+        simulation_engine_module, "parse_simulation_trace", parse_trace,
+    )
+    monkeypatch.setenv("PARTSIM_V6_IMPLICIT_STREAMING_TRACE", "inherited")
+    simulation_config = {
+        "simulator_bin": str(simulator), "horizon": 2,
+        "maximum_horizon": 2, "horizon_extension_policy": "none",
+        "priority_policy": "RM", "deadline_mode": "constrained",
+        "warmup": 0, "minimum_jobs_per_task": 0,
+        "trace_mode": "semantic", "trace_on_failure": False,
+        "retain_trace": False, "timeout_seconds": 5,
+    }
+    common = {
+        "simulation_id_value": "environment-isolation",
+        "base_system_path": system_path,
+        "run_root": tmp_path / "run",
+        "task_payload": (), "taskset_hash": "a" * 64,
+        "processors": 4, "exact_e0": Fraction(0),
+        "energy_config": {
+            "simulation_initial_battery": "0", "battery_capacity": "2",
+            "allow_harvest_clipping": True,
+        },
+        "simulation_config": simulation_config,
+    }
+    simulation_engine_module.run_paired_simulation(**common)
+    simulation_engine_module.run_paired_simulation(
+        **common, bounded_streaming_parse=True,
+    )
+    assert parser_modes == [False, True]
+    assert subprocess_calls[0][0] == subprocess_calls[1][0]
+    assert all(
+        "PARTSIM_V6_IMPLICIT_STREAMING_TRACE" not in environment
+        for _command, environment in subprocess_calls
+    )
+
+    simulation_config["deadline_mode"] = "implicit"
+    simulation_engine_module.run_paired_simulation(
+        **common, implicit_streaming_parse=True,
+    )
+    assert parser_modes[-1] is True
+    assert subprocess_calls[-1][1]["PARTSIM_V6_IMPLICIT_STREAMING_TRACE"] == "1"
 
 
 @pytest.mark.parametrize("payload", [
@@ -4024,6 +4196,60 @@ def test_v8_identity_and_cli_are_isolated_from_v7():
     cells, _slices, contract, structured = scheduler_runner._resolve_grid(parsed)
     assert len(cells) == contract["unique_cell_count"] == 27
     assert structured is False
+
+
+@pytest.mark.parametrize("priority_policy", ["RM", "DM"])
+def test_v8_runner_routes_all_jobs_to_only_bounded_streaming_parser(
+    tmp_path, monkeypatch, priority_policy,
+):
+    calls = []
+
+    def run_simulation(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed",
+                jobs=(), metrics={}, simulation_completed=True,
+            ),
+            runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    profile = experiment.normalize_scan_profile(
+        uc_scan_values="1/10", ue_scan_values="1/5",
+        uc_figure_fixed_ues="1/5", uc_figure_labels="selected",
+        ue_figure_fixed_ucs="1/10", ue_figure_labels="selected",
+    )
+    monkeypatch.setattr(
+        scheduler_runner, "_resolve_grid",
+        lambda _args: (
+            ((Fraction(1, 10), Fraction(1, 5)),),
+            experiment.build_v4_figure_slices(profile),
+            experiment.build_scan_contract(profile), False,
+        ),
+    )
+    output = tmp_path / f"v8-{priority_policy.lower()}"
+    argv = [
+        "--output", str(output), "--seed", "710213",
+        "--experiment-version", "v8",
+        "--campaign", experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+        "--priority-policy", priority_policy,
+        "--workers", "1", "--samples-per-cell", "1",
+        "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
+    ]
+    assert scheduler_runner.main(argv) == 0
+    assert len(calls) == len(perf_g.FORMAL_SCHEDULERS)
+    assert all(call["bounded_streaming_parse"] is True for call in calls)
+    assert all(call["implicit_streaming_parse"] is False for call in calls)
+    assert "bounded_streaming_parse" not in (
+        output / "run_config.json"
+    ).read_text(encoding="utf-8")
+
+    assert scheduler_runner.main([*argv, "--resume"]) == 0
+    assert "bounded_streaming_parse" not in (
+        output / "run_config.json"
+    ).read_text(encoding="utf-8")
 
 
 def test_scheduler_runner_restores_legacy_v6_default_and_explicit_v8_selection(tmp_path):

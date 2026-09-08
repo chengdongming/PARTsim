@@ -105,6 +105,7 @@ def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
             simulation_config=job["simulation_config"],
             scheduler_id=str(job["scheduler_id"]),
             implicit_streaming_parse=bool(job.get("implicit_streaming_parse", False)),
+            bounded_streaming_parse=bool(job.get("bounded_streaming_parse", False)),
         )
     except Exception as exc:
         return None, f"{type(exc).__name__}: {exc}"
@@ -1071,6 +1072,7 @@ def main(argv: list[str] | None = None) -> int:
             "simulation_config": simulation,
             "scheduler_id": request["scheduler_cli"],
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
+            "bounded_streaming_parse": version == "v8",
         })
 
     prepare_energy_started = time.perf_counter()
