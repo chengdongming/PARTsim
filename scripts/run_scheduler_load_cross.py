@@ -618,6 +618,14 @@ def make_parser() -> argparse.ArgumentParser:
         "--implicit-streaming-parse", action="store_true",
         help="opt in to bounded-memory parsing for v6 RM implicit resume only",
     )
+    parser.add_argument(
+        "--bounded-streaming-parse", action="store_true",
+        help=(
+            "opt in to the generic bounded-memory semantic trace parser for "
+            "V8 only; this is runtime-only and the default uses the "
+            "full-document parser"
+        ),
+    )
     return parser
 
 
@@ -722,6 +730,10 @@ def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     campaign = args.campaign
     version = "v6" if campaign == "v6" else args.experiment_version
+    if args.implicit_streaming_parse and args.bounded_streaming_parse:
+        raise SystemExit("streaming parser flags cannot be enabled together")
+    if args.bounded_streaming_parse and version != "v8":
+        raise SystemExit("bounded streaming parse is supported for V8 only")
     if campaign == "v6" and args.experiment_version == "v8":
         raise SystemExit("v8 requires an explicit v8 campaign")
     is_versioned = version in {"v7", "v8"}
@@ -1072,7 +1084,7 @@ def main(argv: list[str] | None = None) -> int:
             "simulation_config": simulation,
             "scheduler_id": request["scheduler_cli"],
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
-            "bounded_streaming_parse": version == "v8",
+            "bounded_streaming_parse": bool(args.bounded_streaming_parse),
         })
 
     prepare_energy_started = time.perf_counter()
