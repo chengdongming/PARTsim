@@ -403,9 +403,19 @@ def parse_simulation_trace(
 
     if stream_events:
         try:
-            data, events = implicit_trace_stream.open_strict_stream(trace_path)
+            data, streamed_events = implicit_trace_stream.open_strict_stream(
+                trace_path
+            )
         except (OSError, ValueError) as exc:
             raise SimulationTraceError(str(exc)) from exc
+
+        def strict_streamed_events():
+            try:
+                yield from streamed_events
+            except (OSError, ValueError) as exc:
+                raise SimulationTraceError(str(exc)) from exc
+
+        events = strict_streamed_events()
     else:
         data = _strict_json(trace_path)
         events = data["events"]

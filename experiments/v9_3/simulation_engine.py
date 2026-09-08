@@ -1463,6 +1463,7 @@ def run_paired_simulation(
     task_energy_factors: Optional[Mapping[str, str]] = None,
     expected_task_power_j_per_tick: Optional[Mapping[str, float]] = None,
     implicit_streaming_parse: bool = False,
+    bounded_streaming_parse: bool = False,
     implicit_wholepass_fast: bool = False,
 ) -> SimulationExecution | WholePassFastExecution:
     priority_policy = normalize_scheduler_priority_policy(
@@ -1643,7 +1644,10 @@ def run_paired_simulation(
                             release_e0=exact_e0,
                             expected_scheduler=scheduler_id,
                             expected_processors=processors,
-                            stream_events=implicit_streaming_parse,
+                            stream_events=(
+                                implicit_streaming_parse
+                                or bounded_streaming_parse
+                            ),
                         )
                         for task_id, observed in result.observed_task_power_j_per_tick.items():
                             task_row = _task_payload_for_trace_id(
