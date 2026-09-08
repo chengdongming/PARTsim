@@ -4199,8 +4199,9 @@ def test_v8_identity_and_cli_are_isolated_from_v7():
 
 
 @pytest.mark.parametrize("priority_policy", ["RM", "DM"])
-def test_v8_runner_routes_all_jobs_to_only_bounded_streaming_parser(
-    tmp_path, monkeypatch, priority_policy,
+@pytest.mark.parametrize("bounded_streaming_parse", [False, True])
+def test_v8_runner_uses_explicit_bounded_streaming_parser_opt_in(
+    tmp_path, monkeypatch, priority_policy, bounded_streaming_parse,
 ):
     calls = []
 
@@ -4238,18 +4239,58 @@ def test_v8_runner_routes_all_jobs_to_only_bounded_streaming_parser(
         "--workers", "1", "--samples-per-cell", "1",
         "--timeout-seconds", "5", "--simulator", str(output / "rtsim"),
     ]
+    if bounded_streaming_parse:
+        argv.append("--bounded-streaming-parse")
     assert scheduler_runner.main(argv) == 0
     assert len(calls) == len(perf_g.FORMAL_SCHEDULERS)
-    assert all(call["bounded_streaming_parse"] is True for call in calls)
+    assert all(
+        call["bounded_streaming_parse"] is bounded_streaming_parse
+        for call in calls
+    )
     assert all(call["implicit_streaming_parse"] is False for call in calls)
-    assert "bounded_streaming_parse" not in (
-        output / "run_config.json"
-    ).read_text(encoding="utf-8")
+    config_path = output / "run_config.json"
+    initial_config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert "bounded_streaming_parse" not in config_path.read_text(encoding="utf-8")
 
-    assert scheduler_runner.main([*argv, "--resume"]) == 0
-    assert "bounded_streaming_parse" not in (
-        output / "run_config.json"
-    ).read_text(encoding="utf-8")
+    results_path = output / "results.jsonl"
+    results = results_path.read_text(encoding="utf-8").splitlines()
+    results_path.write_text("\n".join(results[:-1]) + "\n", encoding="utf-8")
+    calls.clear()
+    resume_argv = [
+        argument for argument in argv
+        if argument != "--bounded-streaming-parse"
+    ]
+    if not bounded_streaming_parse:
+        resume_argv.append("--bounded-streaming-parse")
+    assert scheduler_runner.main([*resume_argv, "--resume"]) == 0
+    assert len(calls) == 1
+    assert calls[0]["bounded_streaming_parse"] is not bounded_streaming_parse
+    assert calls[0]["implicit_streaming_parse"] is False
+    resumed_config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert resumed_config["run_identity"] == initial_config["run_identity"]
+    assert "bounded_streaming_parse" not in config_path.read_text(encoding="utf-8")
+
+
+def test_bounded_streaming_runner_rejects_v6_and_v7(tmp_path):
+    with pytest.raises(SystemExit, match="supported for V8 only"):
+        scheduler_runner.main([
+            "--output", str(tmp_path / "v6"), "--seed", "1",
+            "--bounded-streaming-parse",
+        ])
+    with pytest.raises(SystemExit, match="supported for V8 only"):
+        scheduler_runner.main([
+            "--output", str(tmp_path / "v7"), "--seed", "1",
+            "--campaign", experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+            "--bounded-streaming-parse",
+        ])
+
+
+def test_bounded_and_implicit_streaming_flags_cannot_be_combined(tmp_path):
+    with pytest.raises(SystemExit, match="cannot be enabled together"):
+        scheduler_runner.main([
+            "--output", str(tmp_path / "conflict"), "--seed", "1",
+            "--implicit-streaming-parse", "--bounded-streaming-parse",
+        ])
 
 
 def test_scheduler_runner_restores_legacy_v6_default_and_explicit_v8_selection(tmp_path):
