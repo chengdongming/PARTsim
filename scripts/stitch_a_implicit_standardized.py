@@ -21,6 +21,7 @@ if str(ROOT) not in sys.path:
 
 from experiments.v9_3 import perf_g  # noqa: E402
 from experiments.v9_3 import scheduler_load_cross as experiment  # noqa: E402
+from scripts.analyze_scheduler_load_cross import wilson_ci  # noqa: E402
 
 
 STANDARDIZED_DOMAIN = "0.1_to_0.9"
@@ -326,10 +327,13 @@ def _summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = []
     for (uc, ue, scheduler, level), selected in sorted(grouped.items(), key=lambda item: (Fraction(item[0][0]), Fraction(item[0][1]), item[0][2], item[0][3])):
         passed = sum(row.get("wholepass") is True for row in selected)
+        n_total = len(selected)
+        ci95_low, ci95_high = wilson_ci(passed, n_total)
         result.append({
             "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
-            "energy_level": level, "n_total": len(selected),
+            "energy_level": level, "n_total": n_total,
             "n_wholepass": passed, "wholepass_ratio": passed / len(selected),
+            "ci95_low": ci95_low, "ci95_high": ci95_high,
             "source_dataset": selected[0]["source_dataset"],
             "composite_contract": COMPOSITE_CONTRACT,
         })
@@ -359,12 +363,23 @@ def _plot(path: Path, rows: list[dict[str, Any]], *, axis: str, fixed: list[tupl
         for scheduler in perf_g.FORMAL_SCHEDULERS:
             selected = [row for row in rows if row["scheduler"] == scheduler and str(row["target_ue"] if axis == "target_uc" else row["target_uc"]) == fixed_value]
             selected.sort(key=lambda row: Fraction(row[axis]))
-            ax.plot([float(Fraction(row[axis])) for row in selected], [row["wholepass_ratio"] for row in selected], marker="o", linestyle=styles[scheduler], label=scheduler)
+            if not selected:
+                continue
+            ax.errorbar(
+                [float(Fraction(row[axis])) for row in selected],
+                [row["wholepass_ratio"] for row in selected],
+                yerr=[
+                    [row["wholepass_ratio"] - row["ci95_low"] for row in selected],
+                    [row["ci95_high"] - row["wholepass_ratio"] for row in selected],
+                ],
+                marker="o", linestyle=styles[scheduler], label=scheduler,
+                capsize=2,
+            )
         ax.set_xlim(0.1, 0.9)
         ax.set_xticks([float(value) for value in STANDARDIZED_SCAN])
         ax.set_ylim(0, 1)
         ax.grid(True, alpha=0.25)
-        ax.set_ylabel("WholePass")
+        ax.set_ylabel("Whole-taskset pass ratio")
         ax.set_title(label)
     axes[-1][0].set_xlabel(xlabel)
     axes[0][0].legend(ncol=3, fontsize=8)

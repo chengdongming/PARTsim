@@ -4953,4 +4953,38 @@ def test_a_implicit_standardized_summary_is_wholepass_only():
     summary = stitcher._summary(rows)
     assert len(summary) == len(perf_g.FORMAL_SCHEDULERS)
     assert all(row["wholepass_ratio"] == 1.0 for row in summary)
+    assert all(row["ci95_low"] <= row["wholepass_ratio"] <= row["ci95_high"] for row in summary)
+    assert all((row["ci95_low"], row["ci95_high"]) == wilson_ci(1, 1) for row in summary)
     assert all("dmr" not in row for row in summary)
+
+
+def test_a_implicit_standardized_plot_has_ci_and_canonical_domain(tmp_path):
+    rows = []
+    for scheduler in perf_g.FORMAL_SCHEDULERS:
+        rows.append({
+            "target_uc": "1/10", "target_ue": "3/5", "generation_index": 0,
+            "scheduler": scheduler, "wholepass": True,
+            "energy_level": "high", "source_dataset": "supplement",
+        })
+    summary = stitcher._summary(rows)
+    assert {row["target_uc"] for row in summary} == {"1/10"}
+    assert {row["target_ue"] for row in summary} == {"3/5"}
+    assert [str(value) for value in stitcher.STANDARDIZED_SCAN] == [
+        "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10",
+    ]
+    for row in summary:
+        assert row["ci95_low"] <= row["wholepass_ratio"] <= row["ci95_high"]
+    uc_path = tmp_path / "uc.png"
+    ue_path = tmp_path / "ue.png"
+    stitcher._plot(
+        uc_path, summary, axis="target_uc",
+        fixed=[("9/10", "low"), ("3/4", "medium"), ("3/5", "high")],
+        xlabel="U_C",
+    )
+    stitcher._plot(
+        ue_path, summary, axis="target_ue",
+        fixed=[("3/10", "U_C=0.3"), ("1/2", "U_C=0.5"), ("7/10", "U_C=0.7")],
+        xlabel="U_E",
+    )
+    assert uc_path.is_file()
+    assert ue_path.is_file()
