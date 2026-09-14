@@ -21,7 +21,7 @@ if str(ROOT) not in sys.path:
 
 from experiments.v9_3 import perf_g  # noqa: E402
 from experiments.v9_3 import scheduler_load_cross as experiment  # noqa: E402
-from scripts.analyze_scheduler_load_cross import wilson_ci  # noqa: E402
+from scripts.analyze_scheduler_load_cross import _v5_plot_style, wilson_ci  # noqa: E402
 
 
 STANDARDIZED_DOMAIN = "0.1_to_0.9"
@@ -356,7 +356,6 @@ def _plot(path: Path, rows: list[dict[str, Any]], *, axis: str, fixed: list[tupl
         import matplotlib.pyplot as plt
     except ImportError as exc:
         raise SystemExit("matplotlib is required for standardized figures") from exc
-    styles = {name: style for name, style in zip(perf_g.FORMAL_SCHEDULERS, ("-", "--", ":", "-.", (0, (3, 1, 1, 1)), (0, (5, 1)), (0, (1, 1)), (0, (5, 2, 1, 2)), (0, (2, 2))))}
     fig, axes = plt.subplots(len(fixed), 1, figsize=(10, 3.0 * len(fixed)), squeeze=False, sharex=True)
     for index, (fixed_value, label) in enumerate(fixed):
         ax = axes[index][0]
@@ -365,6 +364,7 @@ def _plot(path: Path, rows: list[dict[str, Any]], *, axis: str, fixed: list[tupl
             selected.sort(key=lambda row: Fraction(row[axis]))
             if not selected:
                 continue
+            style = _v5_plot_style(scheduler)
             ax.errorbar(
                 [float(Fraction(row[axis])) for row in selected],
                 [row["wholepass_ratio"] for row in selected],
@@ -372,8 +372,13 @@ def _plot(path: Path, rows: list[dict[str, Any]], *, axis: str, fixed: list[tupl
                     [row["wholepass_ratio"] - row["ci95_low"] for row in selected],
                     [row["ci95_high"] - row["wholepass_ratio"] for row in selected],
                 ],
-                marker="o", linestyle=styles[scheduler], label=scheduler,
-                capsize=2,
+                marker=style["marker"], linestyle=style["linestyle"],
+                color=style["color"], linewidth=style["linewidth"],
+                markersize=style["markersize"],
+                markerfacecolor=style["markerfacecolor"],
+                markeredgewidth=style["markeredgewidth"],
+                alpha=style["alpha"], zorder=style["zorder"],
+                capsize=2, label=scheduler,
             )
         ax.set_xlim(0.1, 0.9)
         ax.set_xticks([float(value) for value in STANDARDIZED_SCAN])
