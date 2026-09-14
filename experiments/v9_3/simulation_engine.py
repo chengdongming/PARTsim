@@ -43,7 +43,9 @@ from .simulation_result import (
     TaskObservation,
     parse_simulation_trace,
 )
-from .implicit_wholepass_fast import validate_fast_result
+from .implicit_wholepass_fast import (
+    A_FAST_CAMPAIGNS, validate_fast_result,
+)
 from .task_identity import runtime_task_name_for_source_id
 
 
@@ -486,6 +488,7 @@ def _run_implicit_wholepass_fast(
     horizon: int,
     timeout_seconds: float,
     environment: Mapping[str, str],
+    campaign: str = "v6",
 ) -> WholePassFastExecution:
     """Run only the opt-in compact observer; never create a semantic trace."""
 
@@ -499,7 +502,7 @@ def _run_implicit_wholepass_fast(
         "--run-id", run_id,
         "--taskset-semantic-hash", taskset_hash,
         "--wholepass-fast-output", str(output_path),
-        "--wholepass-fast-campaign", "v6",
+        "--wholepass-fast-campaign", campaign,
         "--wholepass-fast-priority-policy", "RM",
         "--wholepass-fast-deadline-mode", "implicit",
         "--wholepass-fast-mode", "hard-rt-wholepass",
@@ -531,6 +534,7 @@ def _run_implicit_wholepass_fast(
             expected_processors=processors,
             expected_task_ids=expected_task_ids,
             expected_horizon=horizon,
+            expected_campaign=campaign,
         )
     except Exception as exc:
         raise SimulationTraceError(f"fast compact result rejected: {exc}") from exc
@@ -1479,11 +1483,11 @@ def run_paired_simulation(
     if implicit_wholepass_fast and (
         priority_policy != "RM"
         or simulation_config.get("deadline_mode") != "implicit"
-        or simulation_config.get("campaign") != "v6"
+        or simulation_config.get("campaign") not in {"v6", *A_FAST_CAMPAIGNS}
         or simulation_config.get("wholepass_mode") != "hard-rt"
     ):
         raise SimulationConfigurationError(
-            "implicit WholePass fast path requires v6 RM implicit hard-RT mode"
+            "implicit WholePass fast path requires v6 RM implicit hard-RT or a supported A-implicit campaign"
         )
     try:
         initial = exact_energy.exact_e0_lower_bound(
@@ -1542,6 +1546,7 @@ def run_paired_simulation(
             horizon=int(simulation_config["horizon"]),
             timeout_seconds=float(simulation_config["timeout_seconds"]),
             environment=environment,
+            campaign=str(simulation_config.get("campaign", "v6")),
         )
         return fast  # type: ignore[return-value]
     trace_work = run_root / "simulation_trace_work"

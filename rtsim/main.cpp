@@ -392,13 +392,15 @@ public:
         std::string taskset_hash,
         std::string scheduler,
         std::size_t processors,
-        const std::string &output)
+        const std::string &output,
+        std::string campaign)
         : horizon_(horizon),
           run_id_(std::move(run_id)),
           taskset_hash_(std::move(taskset_hash)),
           scheduler_(std::move(scheduler)),
           processors_(processors),
-          output_(output) {}
+          output_(output),
+          campaign_(std::move(campaign)) {}
 
     void attachToTask(RTSim::AbsRTTask &task) {
         auto *concrete = dynamic_cast<RTSim::Task *>(&task);
@@ -563,8 +565,18 @@ private:
         std::ofstream file(partial, std::ios::binary | std::ios::trunc);
         if (!file)
             throw std::runtime_error("cannot open fast output");
-        file << "{\"schema\":\"PARTSIM_V6_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1\","
-             << "\"fast_mode\":\"v6_rm_implicit_hardrt_wholepass\","
+        const bool a_implicit = campaign_ == "a-implicit-uc-fixed-supply" ||
+            campaign_ == "a-implicit-ue-service-scaling";
+        file << "{\"schema\":\""
+             << (a_implicit ? "PARTSIM_A_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1"
+                            : "PARTSIM_V6_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1")
+             << "\",\"fast_mode\":\""
+             << (a_implicit ? "a_implicit_rm_hardrt_wholepass"
+                            : "v6_rm_implicit_hardrt_wholepass")
+             << "\",";
+        if (a_implicit)
+            file << "\"campaign\":\"" << escapeJson(campaign_) << "\",";
+        file
              << "\"run_id\":\"" << escapeJson(run_id_) << "\","
              << "\"taskset_semantic_hash\":\"" << escapeJson(taskset_hash_)
              << "\",\"configured_scheduler\":\""
@@ -616,6 +628,7 @@ private:
     std::string scheduler_;
     std::size_t processors_;
     std::string output_;
+    std::string campaign_;
     std::vector<std::string> task_ids_;
     std::map<std::string, Job> jobs_;
     std::uint64_t released_jobs_{0};
@@ -1399,13 +1412,16 @@ int main(int argc, char *argv[]) {
     if (wholepass_fast) {
         if (!opts["trace"].empty() || semantic_traces ||
             b4_observability_summary ||
-            opts["wholepass-fast-campaign"] != "v6" ||
+            (opts["wholepass-fast-campaign"] != "v6" &&
+             opts["wholepass-fast-campaign"] != "a-implicit-uc-fixed-supply" &&
+             opts["wholepass-fast-campaign"] != "a-implicit-ue-service-scaling") ||
             opts["wholepass-fast-priority-policy"] != "RM" ||
             opts["wholepass-fast-deadline-mode"] != "implicit" ||
             opts["wholepass-fast-mode"] != "hard-rt-wholepass") {
             std::cerr
                 << "PRE-FLIGHT ERROR: WholePass fast path requires an "
-                   "explicit v6/RM/implicit/hard-rt-wholepass invocation "
+                   "explicit v6/RM/implicit/hard-rt-wholepass or "
+                   "A-implicit/RM/implicit/hard-rt-wholepass invocation "
                    "without a legacy trace"
                 << std::endl;
             return EXIT_FAILURE;
@@ -1533,7 +1549,7 @@ int main(int argc, char *argv[]) {
     if (wholepass_fast) {
         if (taskset.size() != 10 || sys->cpus.size() != 4) {
             std::cerr
-                << "PRE-FLIGHT ERROR: v6 WholePass fast path requires "
+                   << "PRE-FLIGHT ERROR: WholePass fast path requires "
                    "exactly ten tasks and four processors"
                 << std::endl;
             return EXIT_FAILURE;
@@ -1569,7 +1585,8 @@ int main(int argc, char *argv[]) {
         WholePassFastObserver observer(
             static_cast<std::int64_t>(duration), opts["run-id"],
             opts["taskset-semantic-hash"], identity.configured_scheduler,
-            sys->cpus.size(), opts["wholepass-fast-output"]);
+            sys->cpus.size(), opts["wholepass-fast-output"],
+            opts["wholepass-fast-campaign"]);
         for (auto &[tasksrv, cpu, params] : taskset) {
             (void)cpu;
             (void)params;

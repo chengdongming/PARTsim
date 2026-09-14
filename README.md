@@ -45,6 +45,22 @@ python3 -m experiments.v9_3.rta4_formal_runner_v5 \
   --preflight-only
 ```
 
+The optional Experiment-A implicit-deadline extension is selected explicitly:
+
+```bash
+python3 scripts/run_scheduler_load_cross.py --output OUTPUT --seed 20260906 \
+  --experiment-version a-implicit \
+  --campaign a-implicit-uc-fixed-supply --samples-per-cell 120
+
+python3 scripts/analyze_scheduler_load_cross.py --input OUTPUT
+```
+
+It uses implicit deadlines (`D=T`), with RM as the canonical run because
+RM=DM for implicit deadlines.  Formal A-implicit runs use the compact
+hard-real-time WholePass path by default and do not retain a semantic trace;
+the analyzer therefore publishes Whole-taskset pass CSV/figures only.  DMR
+is explicitly unavailable for this fast-path output and is never fabricated.
+
 ## Tests
 
 Run the current target suite with `python3 -m pytest` and the selected RTA,

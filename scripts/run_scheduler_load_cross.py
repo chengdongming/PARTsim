@@ -106,6 +106,7 @@ def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
             scheduler_id=str(job["scheduler_id"]),
             implicit_streaming_parse=bool(job.get("implicit_streaming_parse", False)),
             bounded_streaming_parse=bool(job.get("bounded_streaming_parse", False)),
+            implicit_wholepass_fast=bool(job.get("implicit_wholepass_fast", False)),
         )
     except Exception as exc:
         return None, f"{type(exc).__name__}: {exc}"
@@ -555,13 +556,15 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument(
-        "--experiment-version", choices=("v7", "v8"), default="v7",
+        "--experiment-version", choices=("v7", "v8", "a-implicit"), default="v7",
         help="versioned formal campaign contract (default: v7)",
     )
     parser.add_argument(
         "--campaign", choices=(
             "v6", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
             experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
+            experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
+            experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN,
         ), default="v6",
         help="v6 for the historical contract, or one explicit versioned campaign",
     )
@@ -729,6 +732,11 @@ def _validate_implicit_streaming_scope(
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
     campaign = args.campaign
+    if campaign in {
+        experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
+        experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN,
+    } and args.experiment_version != "a-implicit":
+        raise SystemExit("A-implicit campaigns require --experiment-version a-implicit")
     version = "v6" if campaign == "v6" else args.experiment_version
     if args.implicit_streaming_parse and args.bounded_streaming_parse:
         raise SystemExit("streaming parser flags cannot be enabled together")
@@ -736,7 +744,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("bounded streaming parse is supported for V8 only")
     if campaign == "v6" and args.experiment_version == "v8":
         raise SystemExit("v8 requires an explicit v8 campaign")
-    is_versioned = version in {"v7", "v8"}
+    is_versioned = version in {"v7", "v8", "a-implicit"}
+    is_a_implicit = version == "a-implicit"
     if campaign == "v6":
         if args.energy_control is not None and args.energy_control != "SERVICE_ONLY_SCALING":
             raise SystemExit("v6 uses SERVICE_ONLY_SCALING and cannot select another energy control")
@@ -744,7 +753,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         selected_energy_control = (
             "FIXED_ABSOLUTE_SUPPLY"
-            if campaign == experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN
+            if campaign in {
+                experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+                experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
+            }
             else "SERVICE_ONLY_SCALING"
         )
         if args.energy_control is not None and args.energy_control != selected_energy_control:
@@ -772,6 +784,8 @@ def main(argv: list[str] | None = None) -> int:
         else ",".join(perf_g.FORMAL_SCHEDULERS)
     )
     priority_policy = args.priority_policy
+    if is_a_implicit and priority_policy != "RM":
+        raise SystemExit("A-implicit campaigns accept canonical RM only")
     _validate_implicit_streaming_scope(
         enabled=args.implicit_streaming_parse, campaign=campaign,
         priority_policy=priority_policy, resume=args.resume,
@@ -816,6 +830,7 @@ def main(argv: list[str] | None = None) -> int:
     is_v7 = is_versioned
     experiment_name = (
         experiment.V8_EXPERIMENT if version == "v8"
+        else experiment.A_IMPLICIT_EXPERIMENT if version == "a-implicit"
         else experiment.V7_EXPERIMENT if version == "v7"
         else experiment.V6_EXPERIMENT
     )
@@ -830,6 +845,7 @@ def main(argv: list[str] | None = None) -> int:
         "experiment": experiment_name,
         "domain": (
             experiment.V8_DOMAIN if version == "v8"
+            else experiment.A_IMPLICIT_DOMAIN if version == "a-implicit"
             else experiment.V7_DOMAIN if version == "v7"
             else experiment.V6_DOMAIN
         ),
@@ -885,6 +901,14 @@ def main(argv: list[str] | None = None) -> int:
                 }
                 for level in ("low", "medium", "high")
             }
+    if is_a_implicit:
+        config.update({
+            "deadline_semantics": "D=T; RM=DM; canonical source=RM",
+            "canonical_priority_policy": "RM",
+            "wholepass_fast_path": True,
+            "full_trace_default": False,
+            "dmr_available": False,
+        })
     if scan_contract is not None:
         config["scan_contract"] = scan_contract
     config["run_identity"] = experiment.run_identity(config)
@@ -1054,7 +1078,8 @@ def main(argv: list[str] | None = None) -> int:
             "simulator_bin": str(args.simulator), "horizon": args.simulation_horizon,
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
             "priority_policy": priority_policy,
-            "warmup": 0, "minimum_jobs_per_task": 1, "trace_mode": "semantic",
+            "warmup": 0, "minimum_jobs_per_task": 1,
+            "trace_mode": "none" if is_a_implicit else "semantic",
             "trace_on_failure": args.keep_traces,
             "retain_trace": args.keep_traces,
             "timeout_seconds": args.timeout_seconds,
@@ -1064,6 +1089,8 @@ def main(argv: list[str] | None = None) -> int:
             "trace_parse_concurrency": parser_limit,
             "trace_parse_slot_dir": "/tmp/partsim_trace_parse_slots",
             "deadline_mode": request["deadline_mode"],
+            "campaign": campaign,
+            "wholepass_mode": "hard-rt" if is_a_implicit else None,
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
         }
         pending_jobs.append({
@@ -1085,6 +1112,7 @@ def main(argv: list[str] | None = None) -> int:
             "scheduler_id": request["scheduler_cli"],
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
             "bounded_streaming_parse": bool(args.bounded_streaming_parse),
+            "implicit_wholepass_fast": is_a_implicit,
         })
 
     prepare_energy_started = time.perf_counter()
@@ -1183,36 +1211,70 @@ def main(argv: list[str] | None = None) -> int:
                 stderr_tail = ""
                 retained_trace_path = None
             else:
-                status = execution.result.status
-                is_technical = status.value not in _NORMAL_SCIENTIFIC_STATUSES
-                technical_error = execution.result.reason if is_technical else None
-                outcome = evaluate_outcome(
-                    [asdict(observation) for observation in execution.result.jobs],
-                    [str(row["task_id"]) for row in task_payload],
-                    horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
-                    simulation_completed=execution.result.simulation_completed,
-                    technical_error=technical_error,
-                    strict_wholepass=True,
-                )
-                reason = execution.result.reason
-                status = status.value
-                if outcome.get("technical_failure"):
-                    technical_error = outcome.get("reason") or "wholepass_outcome_unavailable"
-                    status = "TECHNICAL_FAILURE"
                 runtime_seconds = execution.runtime_seconds
-                metrics = _persisted_metrics(execution.result.metrics)
-                stdout_tail = execution.stdout_tail
-                stderr_tail = execution.stderr_tail
-                retained_trace_path = str(execution.retained_trace_path) if execution.retained_trace_path else None
-                row = {**request, "energy": job["energy"], "simulation_status": status,
-                       "simulation_reason": reason,
-                       "technical_error": technical_error,
-                       "schedulable": outcome.get("taskset_pass"),
-                       "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
-                       "runtime_seconds": runtime_seconds,
-                       "metrics": metrics, "outcome": outcome,
-                       "taskset_pass": outcome.get("taskset_pass"),
-                       "wholepass": outcome.get("wholepass", outcome.get("taskset_pass"))}
+                if isinstance(execution, simulation_engine.WholePassFastExecution):
+                    fast_result = dict(execution.result)
+                    status = (
+                        SimulationStatus.PASS_OBSERVED.value
+                        if fast_result["taskset_pass"]
+                        else SimulationStatus.DEADLINE_MISS.value
+                    )
+                    reason = fast_result["completion_reason"]
+                    technical_error = None
+                    outcome = {
+                        "outcome_status": "AVAILABLE",
+                        "wholepass": fast_result["taskset_pass"],
+                        "taskset_pass": fast_result["taskset_pass"],
+                    }
+                    metrics = {}
+                    stdout_tail = ""
+                    stderr_tail = ""
+                    retained_trace_path = None
+                    row = {
+                        **request, "energy": job["energy"],
+                        "simulation_status": status,
+                        "simulation_reason": reason,
+                        "technical_error": None,
+                        "schedulable": fast_result["taskset_pass"],
+                        "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
+                        "runtime_seconds": runtime_seconds,
+                        "metrics": metrics, "outcome": outcome,
+                        "taskset_pass": fast_result["taskset_pass"],
+                        "wholepass": fast_result["taskset_pass"],
+                        "fast_mode": fast_result["fast_mode"],
+                        "fast_result": fast_result,
+                    }
+                else:
+                    result = execution.result
+                    status = result.status
+                    is_technical = status.value not in _NORMAL_SCIENTIFIC_STATUSES
+                    technical_error = result.reason if is_technical else None
+                    outcome = evaluate_outcome(
+                        [asdict(observation) for observation in result.jobs],
+                        [str(row["task_id"]) for row in task_payload],
+                        horizon=args.simulation_horizon, minimum_adjudicable_jobs=1,
+                        simulation_completed=result.simulation_completed,
+                        technical_error=technical_error,
+                        strict_wholepass=True,
+                    )
+                    reason = result.reason
+                    status = status.value
+                    if outcome.get("technical_failure"):
+                        technical_error = outcome.get("reason") or "wholepass_outcome_unavailable"
+                        status = "TECHNICAL_FAILURE"
+                    metrics = _persisted_metrics(result.metrics)
+                    stdout_tail = execution.stdout_tail
+                    stderr_tail = execution.stderr_tail
+                    retained_trace_path = str(execution.retained_trace_path) if execution.retained_trace_path else None
+                    row = {**request, "energy": job["energy"], "simulation_status": status,
+                           "simulation_reason": reason,
+                           "technical_error": technical_error,
+                           "schedulable": outcome.get("taskset_pass"),
+                           "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
+                           "runtime_seconds": runtime_seconds,
+                           "metrics": metrics, "outcome": outcome,
+                           "taskset_pass": outcome.get("taskset_pass"),
+                           "wholepass": outcome.get("wholepass", outcome.get("taskset_pass"))}
             attempt_row = {
                 **request,
                 "request_id": request_id,

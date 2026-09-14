@@ -1,4 +1,4 @@
-"""Strict validation for the v6 implicit hard-RT WholePass fast result."""
+"""Strict validation for compact implicit hard-RT WholePass results."""
 
 from __future__ import annotations
 
@@ -10,6 +10,13 @@ from typing import Any, Mapping, Sequence
 
 FAST_SCHEMA = "PARTSIM_V6_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1"
 FAST_MODE = "v6_rm_implicit_hardrt_wholepass"
+A_FAST_SCHEMA = "PARTSIM_A_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1"
+A_FAST_MODES = frozenset({
+    "a_implicit_rm_hardrt_wholepass",
+})
+A_FAST_CAMPAIGNS = frozenset({
+    "a-implicit-uc-fixed-supply", "a-implicit-ue-service-scaling",
+})
 _MISSING = object()
 
 
@@ -75,6 +82,7 @@ def validate_fast_result(
     expected_processors: int,
     expected_task_ids: Sequence[str],
     expected_horizon: int,
+    expected_campaign: str = "v6",
 ) -> dict[str, Any]:
     return validate_fast_document(
         _load(path),
@@ -84,6 +92,7 @@ def validate_fast_result(
         expected_processors=expected_processors,
         expected_task_ids=expected_task_ids,
         expected_horizon=expected_horizon,
+        expected_campaign=expected_campaign,
     )
 
 
@@ -96,20 +105,31 @@ def validate_fast_document(
     expected_processors: int,
     expected_task_ids: Sequence[str],
     expected_horizon: int,
+    expected_campaign: str = "v6",
 ) -> dict[str, Any]:
     """Validate one compact result and return its immutable document."""
 
     value = dict(value)
-    _exact_keys(value, {
+    if expected_campaign != "v6" and expected_campaign not in A_FAST_CAMPAIGNS:
+        raise FastWholePassError("unsupported fast-path campaign")
+    expected_a = expected_campaign in A_FAST_CAMPAIGNS
+    expected_keys = {
         "schema", "fast_mode", "run_id", "taskset_semantic_hash",
         "configured_scheduler", "processors", "task_count", "task_ids",
         "deadline_mode", "horizon", "simulation_generation",
         "simulation_completed", "completion_reason", "taskset_pass",
         "released_jobs", "adjudicable_jobs", "completed_adjudicable_jobs",
         "first_deadline_miss",
-    })
-    if value["schema"] != FAST_SCHEMA or value["fast_mode"] != FAST_MODE:
+    }
+    if expected_a:
+        expected_keys.add("campaign")
+    _exact_keys(value, expected_keys)
+    expected_schema = A_FAST_SCHEMA if expected_a else FAST_SCHEMA
+    expected_mode = next(iter(A_FAST_MODES)) if expected_a else FAST_MODE
+    if value["schema"] != expected_schema or value["fast_mode"] != expected_mode:
         raise FastWholePassError("compact result schema/mode mismatch")
+    if expected_a and value["campaign"] != expected_campaign:
+        raise FastWholePassError("compact result campaign mismatch")
     if value["run_id"] != expected_run_id:
         raise FastWholePassError("compact result run identity mismatch")
     if value["taskset_semantic_hash"] != expected_taskset_hash:
@@ -175,6 +195,7 @@ def validate_fast_document(
 
 
 __all__ = [
+    "A_FAST_CAMPAIGNS", "A_FAST_MODES", "A_FAST_SCHEMA",
     "FAST_SCHEMA", "FAST_MODE", "FastWholePassError",
     "validate_fast_document", "validate_fast_result",
 ]

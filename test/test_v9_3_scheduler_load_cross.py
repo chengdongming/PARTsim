@@ -32,7 +32,8 @@ from experiments.v9_3.simulation_result import (
 )
 from experiments.v9_3 import implicit_trace_stream
 from experiments.v9_3.implicit_wholepass_fast import (
-    FAST_MODE, FAST_SCHEMA, FastWholePassError, validate_fast_document,
+    A_FAST_SCHEMA, FAST_MODE, FAST_SCHEMA, FastWholePassError,
+    validate_fast_document,
 )
 from experiments.v9_3.simulation_engine import simulation_result_to_dict
 from experiments.v9_3.performance_outcome import evaluate_outcome
@@ -4734,3 +4735,127 @@ def test_v6_fast_python_scope_requires_explicit_v6_campaign(
                 simulation_config=simulation_config,
                 implicit_wholepass_fast=True,
             )
+
+
+def test_a_implicit_campaign_contracts_and_formal_request_count():
+    uc = experiment.a_implicit_campaign_spec(
+        experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN
+    )
+    ue = experiment.a_implicit_campaign_spec(
+        experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN
+    )
+    assert len(uc["cells"]) == 24
+    assert len(ue["cells"]) == 30
+    assert 24 * 120 * 9 == 25920
+    assert 30 * 120 * 9 == 32400
+    assert (24 + 30) * 120 * 9 == 58320
+    assert experiment.deadline_modes_for_experiment("a-implicit", "RM") == ("implicit",)
+    with pytest.raises(ValueError, match="canonical RM"):
+        experiment.deadline_modes_for_experiment("a-implicit", "DM")
+
+
+def test_a_implicit_taskset_and_priority_contracts(tmp_path):
+    tasksets, _service = experiment.materialize_tasksets(
+        tmp_path, seed=20260906, utilizations=(Fraction(1, 10),), count=1,
+        processors=4, tasks=10, period_min=40, period_max=200,
+        min_task_util=perf_g.MIN_TASK_UTILIZATION,
+        max_task_util=perf_g.MAX_TASK_UTILIZATION,
+        tolerance=perf_g.UTILIZATION_TOLERANCE,
+        deadline_mode="implicit",
+    )
+    assert tasksets
+    assert all(
+        0 < int(item["C"]) <= int(item["D"]) <= int(item["T"])
+        and int(item["D"]) == int(item["T"])
+        for taskset in tasksets for item in taskset.task_payload
+    )
+    payload = [
+        {"task_id": "short", "C": 1, "D": 50, "T": 50, "priority_rank": 0},
+        {"task_id": "long", "C": 1, "D": 100, "T": 100, "priority_rank": 1},
+    ]
+    assert derive_fixed_priority_ranks(payload, "DM") == {
+        "short": 0, "long": 1,
+    }
+
+
+def test_a_implicit_request_identity_is_disjoint_from_v7():
+    class Taskset:
+        processors = 4
+        actual_utilization = Fraction(1, 2)
+        taskset_index = 0
+        seed = 20260906
+        deadline_mode = "implicit"
+
+        def __init__(self, uc, mode):
+            self.target_utilization = uc * self.processors
+            self.deadline_mode = mode
+            self.taskset_id = f"{mode}-{uc}"
+            self.semantic_hash = f"hash-{mode}-{uc}"
+
+    spec = experiment.a_implicit_campaign_spec(
+        experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN
+    )
+    tasksets = [Taskset(uc, "implicit") for uc in {
+        uc for uc, _ue in spec["cells"]
+    }]
+    implicit = experiment.request_rows(
+        tasksets, spec["cells"], experiment.ALL_SCHEDULERS, 60000,
+        experiment_name=experiment.A_IMPLICIT_EXPERIMENT,
+        deadline_mode="implicit", campaign=spec["campaign"],
+        energy_control=spec["energy_control"],
+    )
+    constrained = experiment.request_rows(
+        [Taskset(uc, "constrained") for uc in {
+            uc for uc, _ue in spec["cells"]
+        }], spec["cells"], experiment.ALL_SCHEDULERS, 60000,
+        experiment_name=experiment.V7_EXPERIMENT,
+        deadline_mode="constrained", campaign=experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
+        energy_control="FIXED_ABSOLUTE_SUPPLY",
+    )
+    assert len(implicit) == 24 * 9
+    assert len({row["request_id"] for row in implicit}) == len(implicit)
+    assert not ({row["request_id"] for row in implicit} & {
+        row["request_id"] for row in constrained
+    })
+
+
+def test_a_implicit_fast_schema_and_no_full_trace_dispatch(monkeypatch):
+    value = _fast_result_fixture()
+    value.update({
+        "schema": A_FAST_SCHEMA,
+        "fast_mode": "a_implicit_rm_hardrt_wholepass",
+        "campaign": experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
+    })
+    assert validate_fast_document(
+        value,
+        expected_run_id=value["run_id"],
+        expected_taskset_hash=value["taskset_semantic_hash"],
+        expected_scheduler=value["configured_scheduler"],
+        expected_processors=4,
+        expected_task_ids=value["task_ids"],
+        expected_horizon=60000,
+        expected_campaign=experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
+    ) == value
+    captured = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(scheduler_runner, "run_paired_simulation", fake_run)
+    execution, error = scheduler_runner._run_simulation_job({
+        "simulation_id": "a-implicit-smoke",
+        "base_system_path": "system.yaml", "run_root": "/tmp/a-implicit-smoke",
+        "task_payload": (), "taskset_hash": "a" * 64, "processors": 4,
+        "exact_e0": Fraction(1), "energy_config": {},
+        "simulation_config": {}, "scheduler_id": "gpfp_asap_block",
+        "implicit_wholepass_fast": True,
+    })
+    assert error is None and execution is not None
+    assert captured["implicit_wholepass_fast"] is True
+
+
+def test_a_implicit_fast_and_full_path_pass_predicate_pairing():
+    full = _available_outcome(90, 0, True)
+    compact = _fast_result_fixture(passed=True)
+    assert full["wholepass"] == compact["taskset_pass"]
