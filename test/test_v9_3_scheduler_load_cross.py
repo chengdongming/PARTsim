@@ -45,6 +45,7 @@ from scripts.analyze_scheduler_load_cross import (
 )
 import scripts.analyze_scheduler_load_cross as analyzer_module
 import scripts.run_scheduler_load_cross as scheduler_runner
+import scripts.stitch_a_implicit_standardized as stitcher
 import scripts.run_v6_implicit_wholepass_fast as fast_overlay_runner
 
 
@@ -4859,3 +4860,97 @@ def test_a_implicit_fast_and_full_path_pass_predicate_pairing():
     full = _available_outcome(90, 0, True)
     compact = _fast_result_fixture(passed=True)
     assert full["wholepass"] == compact["taskset_pass"]
+
+
+def test_a_implicit_legacy_v1_and_standardized_v2_grid_contracts():
+    legacy_uc = experiment.a_implicit_campaign_spec(
+        experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN
+    )
+    legacy_ue = experiment.a_implicit_campaign_spec(
+        experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN
+    )
+    standardized_uc = experiment.a_implicit_standardized_campaign_spec(
+        experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN
+    )
+    standardized_ue = experiment.a_implicit_standardized_campaign_spec(
+        experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN
+    )
+    assert len(legacy_uc["cells"]) == 24
+    assert len(legacy_ue["cells"]) == 30
+    assert len(standardized_uc["cells"]) == 27
+    assert len(standardized_ue["cells"]) == 27
+    assert legacy_uc["campaign_contract"] != standardized_uc["campaign_contract"]
+    assert legacy_ue["campaign_contract"] != standardized_ue["campaign_contract"]
+    assert legacy_uc["scan_contract"]["axis_display_min"] == "0"
+    assert legacy_uc["scan_contract"]["axis_display_max"] == "1"
+    assert standardized_uc["scan_contract"]["axis_display_min"] == "1/10"
+    assert standardized_uc["scan_contract"]["axis_display_max"] == "9/10"
+    assert standardized_uc["scan_contract"]["axis_ticks"] == [str(value) for value in stitcher.STANDARDIZED_SCAN]
+    assert standardized_ue["scan_contract"]["axis_ticks"] == [str(value) for value in stitcher.STANDARDIZED_SCAN]
+
+
+def test_a_implicit_uc09_supplement_contract_and_request_count():
+    spec = experiment.a_implicit_uc09_supplement_spec()
+    assert spec["campaign_contract"] == experiment.A_IMPLICIT_UC09_SUPPLEMENT_CONTRACT
+    assert set(uc for uc, _ue in spec["cells"]) == {Fraction(9, 10)}
+    assert len(spec["cells"]) == 3
+    assert len(spec["cells"]) * 120 * len(perf_g.FORMAL_SCHEDULERS) == 3240
+    assert spec["scan_contract"]["supplement_only"] is True
+    assert spec["scan_contract"]["scan_values"] == ["9/10"]
+
+
+def test_a_implicit_uc09_tasksets_match_full_canonical_generation_grid(tmp_path):
+    common = dict(
+        seed=20260906, count=1, processors=4, tasks=10,
+        period_min=40, period_max=200,
+        min_task_util=perf_g.MIN_TASK_UTILIZATION,
+        max_task_util=perf_g.MAX_TASK_UTILIZATION,
+        tolerance=perf_g.UTILIZATION_TOLERANCE,
+        prepare_workers=9, deadline_mode="implicit",
+    )
+    full, _ = experiment.materialize_tasksets(
+        tmp_path / "full", utilizations=experiment.A_IMPLICIT_STANDARDIZED_SCAN,
+        **common,
+    )
+    supplement, _ = experiment.materialize_tasksets(
+        tmp_path / "supplement", utilizations=(Fraction(9, 10),),
+        generation_utilizations=experiment.A_IMPLICIT_STANDARDIZED_SCAN,
+        **common,
+    )
+    full_09 = [row for row in full if row.target_utilization / row.processors == Fraction(9, 10)]
+    assert len(full_09) == len(supplement) == 1
+    left, right = full_09[0], supplement[0]
+    assert (left.taskset_id, left.semantic_hash, left.generation_id, left.taskset_index) == (
+        right.taskset_id, right.semantic_hash, right.generation_id, right.taskset_index
+    )
+    assert left.task_payload == right.task_payload
+
+
+def test_a_implicit_composite_helpers_keep_provenance_and_reject_duplicate_keys():
+    source = {"label": "legacy_uc", "root": "/old", "config": {"run_identity": "v1"}}
+    row = {
+        "request_id": "old-request", "target_uc": "9/10", "target_ue": "3/5",
+        "generation_index": 0, "scheduler": "ASAP-BLOCK", "wholepass": True,
+    }
+    composite = stitcher._composite_rows(source, [row])[0]
+    assert composite["request_id"] == "old-request"
+    assert composite["source_request_id"] == "old-request"
+    assert composite["source_dataset"] == "legacy_uc"
+    assert composite["source_run_identity"] == "v1"
+    stitcher._check_scientific_keys([composite], "test")
+    with pytest.raises(SystemExit, match="duplicate scientific"):
+        stitcher._check_scientific_keys([composite, dict(composite)], "test")
+
+
+def test_a_implicit_standardized_summary_is_wholepass_only():
+    rows = []
+    for scheduler in perf_g.FORMAL_SCHEDULERS:
+        rows.append({
+            "target_uc": "1/10", "target_ue": "3/5", "generation_index": 0,
+            "scheduler": scheduler, "wholepass": True,
+            "energy_level": "low", "source_dataset": "supplement",
+        })
+    summary = stitcher._summary(rows)
+    assert len(summary) == len(perf_g.FORMAL_SCHEDULERS)
+    assert all(row["wholepass_ratio"] == 1.0 for row in summary)
+    assert all("dmr" not in row for row in summary)

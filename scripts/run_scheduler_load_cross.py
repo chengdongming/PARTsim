@@ -556,7 +556,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument(
-        "--experiment-version", choices=("v7", "v8", "a-implicit"), default="v7",
+        "--experiment-version", choices=("v7", "v8", "a-implicit", "a-implicit-v1"), default="v7",
         help="versioned formal campaign contract (default: v7)",
     )
     parser.add_argument(
@@ -628,6 +628,10 @@ def make_parser() -> argparse.ArgumentParser:
             "V8 only; this is runtime-only and the default uses the "
             "full-document parser"
         ),
+    )
+    parser.add_argument(
+        "--uc09-supplement", action="store_true",
+        help="queue only the standardized A-implicit U_C=0.9 supplement",
     )
     return parser
 
@@ -735,8 +739,13 @@ def main(argv: list[str] | None = None) -> int:
     if campaign in {
         experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
         experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN,
-    } and args.experiment_version != "a-implicit":
-        raise SystemExit("A-implicit campaigns require --experiment-version a-implicit")
+    } and args.experiment_version not in {"a-implicit", "a-implicit-v1"}:
+        raise SystemExit("A-implicit campaigns require --experiment-version a-implicit or a-implicit-v1")
+    if args.uc09_supplement and (
+        args.experiment_version != "a-implicit"
+        or campaign != experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN
+    ):
+        raise SystemExit("--uc09-supplement requires canonical A-implicit UC fixed-supply")
     version = "v6" if campaign == "v6" else args.experiment_version
     if args.implicit_streaming_parse and args.bounded_streaming_parse:
         raise SystemExit("streaming parser flags cannot be enabled together")
@@ -744,8 +753,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("bounded streaming parse is supported for V8 only")
     if campaign == "v6" and args.experiment_version == "v8":
         raise SystemExit("v8 requires an explicit v8 campaign")
-    is_versioned = version in {"v7", "v8", "a-implicit"}
-    is_a_implicit = version == "a-implicit"
+    is_versioned = version in {"v7", "v8", "a-implicit", "a-implicit-v1"}
+    is_a_implicit = version in {"a-implicit", "a-implicit-v1"}
     if campaign == "v6":
         if args.energy_control is not None and args.energy_control != "SERVICE_ONLY_SCALING":
             raise SystemExit("v6 uses SERVICE_ONLY_SCALING and cannot select another energy control")
@@ -830,11 +839,17 @@ def main(argv: list[str] | None = None) -> int:
     is_v7 = is_versioned
     experiment_name = (
         experiment.V8_EXPERIMENT if version == "v8"
-        else experiment.A_IMPLICIT_EXPERIMENT if version == "a-implicit"
+        else experiment.A_IMPLICIT_V2_EXPERIMENT if version == "a-implicit"
+        else experiment.A_IMPLICIT_EXPERIMENT if version == "a-implicit-v1"
         else experiment.V7_EXPERIMENT if version == "v7"
         else experiment.V6_EXPERIMENT
     )
     spec = experiment.campaign_spec(version, campaign) if is_versioned else None
+    if args.uc09_supplement:
+        spec = experiment.a_implicit_uc09_supplement_spec()
+        cells = tuple(spec["cells"])
+        figure_slices = spec["figure_slices"]
+        scan_contract = spec["scan_contract"]
     deadline_modes = (
         experiment.deadline_modes_for_experiment(version, priority_policy)
         if is_versioned else experiment.deadline_modes_for_priority_policy(priority_policy)
@@ -845,7 +860,8 @@ def main(argv: list[str] | None = None) -> int:
         "experiment": experiment_name,
         "domain": (
             experiment.V8_DOMAIN if version == "v8"
-            else experiment.A_IMPLICIT_DOMAIN if version == "a-implicit"
+            else experiment.A_IMPLICIT_V2_DOMAIN if version == "a-implicit"
+            else experiment.A_IMPLICIT_DOMAIN if version == "a-implicit-v1"
             else experiment.V7_DOMAIN if version == "v7"
             else experiment.V6_DOMAIN
         ),
@@ -909,6 +925,16 @@ def main(argv: list[str] | None = None) -> int:
             "full_trace_default": False,
             "dmr_available": False,
         })
+    if args.uc09_supplement:
+        config.update({
+            "supplement_kind": "uc09",
+            "standardized_contract_version": "a-implicit-v2",
+            "generation_grid_utilizations": [
+                str(value) for value in experiment.A_IMPLICIT_STANDARDIZED_SCAN
+            ],
+            "queued_grid_utilizations": ["9/10"],
+            "formal_target_samples_per_cell": 120,
+        })
     if scan_contract is not None:
         config["scan_contract"] = scan_contract
     config["run_identity"] = experiment.run_identity(config)
@@ -949,6 +975,10 @@ def main(argv: list[str] | None = None) -> int:
             period_min=args.period_min, period_max=args.period_max,
             min_task_util=min_util, max_task_util=max_util, tolerance=tolerance,
             prepare_workers=prepare_workers, deadline_mode=deadline_mode,
+            generation_utilizations=(
+                experiment.A_IMPLICIT_STANDARDIZED_SCAN
+                if args.uc09_supplement else None
+            ),
         )
         if service is not None and mode_service.identity != service.identity:
             raise SystemExit("deadline modes do not share service-curve identity")
@@ -973,6 +1003,7 @@ def main(argv: list[str] | None = None) -> int:
             experiment_name=experiment_name, deadline_mode=deadline_mode,
             campaign=campaign if is_v7 else None,
             energy_control=selected_energy_control if is_v7 else None,
+            campaign_contract=config.get("campaign_contract") if is_a_implicit else None,
         )
     ]
     if len(requests) != expected_request_count:
