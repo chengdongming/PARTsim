@@ -61,6 +61,29 @@ hard-real-time WholePass path by default and do not retain a semantic trace;
 the analyzer therefore publishes Whole-taskset pass CSV/figures only.  DMR
 is explicitly unavailable for this fast-path output and is never fabricated.
 
+`a-implicit` is the canonical V2 contract: both standardized scan axes are
+exactly 0.1 through 0.9, with 27 cells per campaign. The earlier 24-cell UC
+and 30-cell UE formal roots remain readable as V1 data via
+`--experiment-version a-implicit-v1`. The only new formal simulation slice
+is UC=0.9 for the fixed-supply campaign:
+
+```bash
+python3 scripts/run_a_implicit_uc09_supplement.py \
+  --output UC09_OUTPUT --seed 20260906 --samples-per-cell 120 \
+  --workers 30 --prepare-workers 30 --parse-concurrency 30
+
+python3 scripts/stitch_a_implicit_standardized.py \
+  --legacy-uc-root LEGACY_UC_OUTPUT \
+  --legacy-ue-root LEGACY_UE_OUTPUT \
+  --uc09-supplement-root UC09_OUTPUT \
+  --output STANDARDIZED_OUTPUT
+```
+
+The stitcher validates all source identities and scientific invariants before
+writing composite outputs. Legacy UE=1.0 rows remain in the source root but
+are excluded from the standardized composite. The composite is WholePass-only
+and does not manufacture DMR values.
+
 ## Tests
 
 Run the current target suite with `python3 -m pytest` and the selected RTA,

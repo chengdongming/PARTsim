@@ -1239,13 +1239,24 @@ def _a_implicit_validate_config(
         config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
     except (OSError, TypeError, ValueError) as exc:
         raise SystemExit(f"A-implicit run_config cannot be read: {root}") from exc
-    if config.get("experiment") != experiment.A_IMPLICIT_EXPERIMENT:
+    is_legacy = config.get("experiment") == experiment.A_IMPLICIT_EXPERIMENT
+    is_standardized = config.get("experiment") == experiment.A_IMPLICIT_V2_EXPERIMENT
+    if not (is_legacy or is_standardized):
         raise SystemExit("A-implicit run_config experiment mismatch")
-    if config.get("domain") != experiment.A_IMPLICIT_DOMAIN:
+    expected_domain = (
+        experiment.A_IMPLICIT_DOMAIN if is_legacy
+        else experiment.A_IMPLICIT_V2_DOMAIN
+    )
+    if config.get("domain") != expected_domain:
         raise SystemExit("A-implicit run_config domain mismatch")
     campaign = config.get("campaign")
     try:
-        spec = experiment.campaign_spec("a-implicit", campaign)
+        if is_legacy:
+            spec = experiment.campaign_spec("a-implicit-v1", campaign)
+        elif config.get("supplement_kind") == "uc09":
+            spec = experiment.a_implicit_uc09_supplement_spec()
+        else:
+            spec = experiment.campaign_spec("a-implicit", campaign)
     except (TypeError, ValueError) as exc:
         raise SystemExit(f"A-implicit campaign is invalid: {exc}") from exc
     if config.get("campaign_contract") != spec["campaign_contract"]:
@@ -1305,6 +1316,13 @@ def _a_implicit_validate_config(
         raise SystemExit("A-implicit expected_taskset_count is inconsistent")
     if config.get("run_identity") != experiment.run_identity(config):
         raise SystemExit("A-implicit run_identity is invalid")
+    if config.get("supplement_kind") == "uc09":
+        if not is_standardized or campaign != experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN:
+            raise SystemExit("A-implicit UC09 supplement must use standardized UC fixed-supply")
+        if config.get("generation_grid_utilizations") != [
+            str(value) for value in experiment.A_IMPLICIT_STANDARDIZED_SCAN
+        ] or config.get("queued_grid_utilizations") != ["9/10"]:
+            raise SystemExit("A-implicit UC09 supplement generation provenance is invalid")
     return config, cells, spec["scan_contract"], spec["figure_slices"], "RM"
 
 
@@ -1351,9 +1369,13 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
             raise SystemExit("A-implicit requests contain duplicate request IDs")
         request_by_id[request_id] = request
         if (
-            request.get("experiment") != experiment.A_IMPLICIT_EXPERIMENT
-            or request.get("domain") != experiment.A_IMPLICIT_DOMAIN
+            request.get("experiment") != config["experiment"]
+            or request.get("domain") != config["domain"]
             or request.get("campaign") != config["campaign"]
+            or (
+                config["experiment"] == experiment.A_IMPLICIT_V2_EXPERIMENT
+                and request.get("campaign_contract") != config["campaign_contract"]
+            )
             or request.get("energy_control") != config["energy_control"]
             or request.get("priority_policy") != "RM"
             or request.get("deadline_mode") != "implicit"
@@ -1373,6 +1395,11 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         ):
             if row.get(key) != request.get(key):
                 raise SystemExit(f"A-implicit result/request identity mismatch for {key}")
+        if (
+            config["experiment"] == experiment.A_IMPLICIT_V2_EXPERIMENT
+            and row.get("campaign_contract") != request.get("campaign_contract")
+        ):
+            raise SystemExit("A-implicit result/request identity mismatch for campaign_contract")
         if row.get("technical_error") is not None or row.get("simulation_status") not in {
             "SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS",
         }:
@@ -1385,6 +1412,11 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("A-implicit scheduler changed taskset identity")
         _v7_validate_energy(row, config, taskset, version="a-implicit")
+    if any(
+        path.name == "simulation_trace_work"
+        for path in root.rglob("simulation_trace_work")
+    ):
+        raise SystemExit("A-implicit fast path must not publish semantic traces")
     expected_groups = {
         (str(uc), str(ue), index)
         for uc, ue in cells for index in range(samples)
@@ -1460,8 +1492,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         encoding="utf-8",
     )
     report = {
-        "complete": True, "experiment": experiment.A_IMPLICIT_EXPERIMENT,
-        "domain": experiment.A_IMPLICIT_DOMAIN, "campaign": config["campaign"],
+        "complete": True, "experiment": config["experiment"],
+        "domain": config["domain"], "campaign": config["campaign"],
         "priority_policy": priority_policy, "deadline_modes": ["implicit"],
         "canonical_priority_source": "RM", "rm_equals_dm_for_implicit": True,
         "tasksets": len(tasksets), "requests": len(requests), "results": len(results),
@@ -1865,6 +1897,7 @@ def analyze(
             experiment.V7_EXPERIMENT,
             experiment.V8_EXPERIMENT,
             experiment.A_IMPLICIT_EXPERIMENT,
+            experiment.A_IMPLICIT_V2_EXPERIMENT,
         }
         or initial_config.get("domain") in {
             experiment.V3_DOMAIN,
@@ -1873,6 +1906,7 @@ def analyze(
             experiment.V7_DOMAIN,
             experiment.V8_DOMAIN,
             experiment.A_IMPLICIT_DOMAIN,
+            experiment.A_IMPLICIT_V2_DOMAIN,
         }
     ):
         raise SystemExit(
@@ -1888,7 +1922,10 @@ def analyze(
             analysis_workers=analysis_workers, uc_dmr_ymin=uc_dmr_ymin,
             ue_dmr_ymin=ue_dmr_ymin,
         )
-    if initial_config.get("experiment") == experiment.A_IMPLICIT_EXPERIMENT:
+    if initial_config.get("experiment") in {
+        experiment.A_IMPLICIT_EXPERIMENT,
+        experiment.A_IMPLICIT_V2_EXPERIMENT,
+    }:
         return _analyze_a_implicit(root, analysis_workers=analysis_workers)
     validate_workers(analysis_workers, "analysis-workers")
     uc_dmr_ymin = _validate_dmr_ymin(uc_dmr_ymin, "U_C DMR y-axis lower bound")
