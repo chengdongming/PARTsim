@@ -1232,6 +1232,250 @@ def _v7_validate_energy(
         raise SystemExit("v7 energy material is invalid") from exc
 
 
+def _a_implicit_validate_config(
+    root: Path,
+) -> tuple[dict[str, Any], tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any], str]:
+    try:
+        config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError) as exc:
+        raise SystemExit(f"A-implicit run_config cannot be read: {root}") from exc
+    if config.get("experiment") != experiment.A_IMPLICIT_EXPERIMENT:
+        raise SystemExit("A-implicit run_config experiment mismatch")
+    if config.get("domain") != experiment.A_IMPLICIT_DOMAIN:
+        raise SystemExit("A-implicit run_config domain mismatch")
+    campaign = config.get("campaign")
+    try:
+        spec = experiment.campaign_spec("a-implicit", campaign)
+    except (TypeError, ValueError) as exc:
+        raise SystemExit(f"A-implicit campaign is invalid: {exc}") from exc
+    if config.get("campaign_contract") != spec["campaign_contract"]:
+        raise SystemExit("A-implicit campaign contract mismatch")
+    if config.get("energy_control") != spec["energy_control"]:
+        raise SystemExit("A-implicit energy control does not match campaign")
+    if config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY":
+        expected_levels = {
+            level: {
+                "reference_ue": str(experiment.V7_REFERENCE_UES[level]),
+                "fixed_supply_mean_j_per_tick": str(experiment.V7_FIXED_SUPPLIES[level]),
+            }
+            for level in ("low", "medium", "high")
+        }
+        if config.get("fixed_supply_levels") != expected_levels:
+            raise SystemExit("A-implicit fixed supply level map is not exact")
+    if config.get("deadline_modes") != ["implicit"]:
+        raise SystemExit("A-implicit campaign requires implicit deadline mode only")
+    if config.get("priority_policy") != "RM":
+        raise SystemExit("A-implicit campaign requires canonical RM")
+    if config.get("deadline_semantics") != "D=T; RM=DM; canonical source=RM":
+        raise SystemExit("A-implicit deadline semantics metadata is invalid")
+    if config.get("wholepass_fast_path") is not True or config.get("full_trace_default") is not False:
+        raise SystemExit("A-implicit fast-path metadata is invalid")
+    if config.get("dmr_available") is not False:
+        raise SystemExit("A-implicit DMR must be marked unavailable")
+    if config.get("processors") != 4 or config.get("tasks") != 10:
+        raise SystemExit("A-implicit campaign freezes processors=4 and tasks=10")
+    if config.get("period_min") != 40 or config.get("period_max") != 200:
+        raise SystemExit("A-implicit campaign freezes period range 40..200 ms")
+    if config.get("kappa") != "10":
+        raise SystemExit("A-implicit campaign freezes kappa=10")
+    if config.get("simulation_horizon_ms") != 60000:
+        raise SystemExit("A-implicit campaign freezes simulation horizon=60000 ms")
+    if config.get("initial_energy_rule") != "battery_capacity/2":
+        raise SystemExit("A-implicit campaign requires E0=Bmax/2")
+    if config.get("scan_contract") != spec["scan_contract"]:
+        raise SystemExit("A-implicit scan_contract is not canonical")
+    if config.get("figure_slices") != spec["figure_slices"]:
+        raise SystemExit("A-implicit figure_slices are not canonical")
+    cells = _configured_cells(config)
+    if tuple(cells) != tuple(spec["cells"]):
+        raise SystemExit("A-implicit cells do not match the frozen campaign grid")
+    schedulers = list(config.get("schedulers", ()))
+    try:
+        parsed = experiment.parse_schedulers(",".join(schedulers))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if tuple(parsed) != tuple(experiment.A_IMPLICIT_FORMAL_SCHEDULERS):
+        raise SystemExit("A-implicit campaign requires all nine canonical schedulers")
+    samples = int(config.get("samples_per_cell", 0))
+    expected_requests = len(cells) * samples * len(schedulers)
+    expected_tasksets = len({uc for uc, _ue in cells}) * samples
+    if config.get("expected_request_count") != expected_requests:
+        raise SystemExit("A-implicit expected_request_count is inconsistent")
+    if config.get("expected_taskset_count") != expected_tasksets:
+        raise SystemExit("A-implicit expected_taskset_count is inconsistent")
+    if config.get("run_identity") != experiment.run_identity(config):
+        raise SystemExit("A-implicit run_identity is invalid")
+    return config, cells, spec["scan_contract"], spec["figure_slices"], "RM"
+
+
+def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
+    validate_workers(analysis_workers, "analysis-workers")
+    config, cells, scan_contract, figure_slices, priority_policy = (
+        _a_implicit_validate_config(root)
+    )
+    _validate_harvest_model(
+        {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
+        "A-implicit run_config harvest model",
+    )
+    tasksets = read_jsonl(root / "tasksets.jsonl")
+    requests = read_jsonl(root / "requests.jsonl")
+    results = read_jsonl(root / "results.jsonl")
+    samples = int(config["samples_per_cell"])
+    schedulers = list(config["schedulers"])
+    if len(tasksets) != int(config["expected_taskset_count"]):
+        raise SystemExit("A-implicit taskset count does not match contract")
+    if len(requests) != int(config["expected_request_count"]):
+        raise SystemExit("A-implicit request count does not match contract")
+    if len(results) != len(requests):
+        raise SystemExit("A-implicit result count does not match contract")
+    taskset_by_id = {str(row["taskset_id"]): row for row in tasksets}
+    if len(taskset_by_id) != len(tasksets):
+        raise SystemExit("A-implicit tasksets contain duplicate identities")
+    for taskset in tasksets:
+        if taskset.get("deadline_mode") != "implicit":
+            raise SystemExit("A-implicit taskset deadline mode is not implicit")
+        try:
+            payload = json.loads(taskset["task_input_json"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise SystemExit("A-implicit taskset payload is invalid") from exc
+        if not isinstance(payload, list) or len(payload) != 10:
+            raise SystemExit("A-implicit taskset must contain ten tasks")
+        for item in payload:
+            c, d, t = int(item["C"]), int(item["D"]), int(item["T"])
+            if not (0 < c <= d <= t) or d != t:
+                raise SystemExit("A-implicit taskset violates 0 < C <= D <= T or D=T")
+    request_by_id: dict[str, dict[str, Any]] = {}
+    for request in requests:
+        request_id = str(request.get("request_id"))
+        if request_id in request_by_id:
+            raise SystemExit("A-implicit requests contain duplicate request IDs")
+        request_by_id[request_id] = request
+        if (
+            request.get("experiment") != experiment.A_IMPLICIT_EXPERIMENT
+            or request.get("domain") != experiment.A_IMPLICIT_DOMAIN
+            or request.get("campaign") != config["campaign"]
+            or request.get("energy_control") != config["energy_control"]
+            or request.get("priority_policy") != "RM"
+            or request.get("deadline_mode") != "implicit"
+        ):
+            raise SystemExit("A-implicit request identity does not match run_config")
+        taskset = taskset_by_id.get(str(request.get("taskset_id")))
+        if taskset is None or taskset.get("deadline_mode") != "implicit":
+            raise SystemExit("A-implicit request/taskset identity mismatch")
+    observed_ids = [str(row.get("request_id")) for row in results]
+    if len(observed_ids) != len(set(observed_ids)) or set(observed_ids) != set(request_by_id):
+        raise SystemExit("A-implicit results have duplicate, missing, or unexpected request IDs")
+    for row in results:
+        request = request_by_id[str(row["request_id"])]
+        for key in (
+            "taskset_id", "taskset_hash", "target_uc", "target_ue",
+            "generation_index", "scheduler", "scheduler_cli", "deadline_mode",
+        ):
+            if row.get(key) != request.get(key):
+                raise SystemExit(f"A-implicit result/request identity mismatch for {key}")
+        if row.get("technical_error") is not None or row.get("simulation_status") not in {
+            "SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS",
+        }:
+            raise SystemExit("A-implicit technical failure is not a scientific row")
+        if row.get("fast_mode") != "a_implicit_rm_hardrt_wholepass":
+            raise SystemExit("A-implicit result did not use the compact WholePass fast path")
+        if not isinstance(row.get("outcome"), dict) or set(row["outcome"]) - {"outcome_status", "wholepass", "taskset_pass"}:
+            raise SystemExit("A-implicit fast result contains an invalid DMR-like outcome")
+        taskset = taskset_by_id[str(row["taskset_id"])]
+        if row["taskset_hash"] != taskset["taskset_hash"]:
+            raise SystemExit("A-implicit scheduler changed taskset identity")
+        _v7_validate_energy(row, config, taskset, version="a-implicit")
+    expected_groups = {
+        (str(uc), str(ue), index)
+        for uc, ue in cells for index in range(samples)
+    }
+    groups: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+    for request in requests:
+        groups.setdefault(
+            (str(request["target_uc"]), str(request["target_ue"]), int(request["generation_index"])),
+            [],
+        ).append(request)
+    if set(groups) != expected_groups or any(
+        len(group) != len(schedulers) or {row["scheduler"] for row in group} != set(schedulers)
+        for group in groups.values()
+    ):
+        raise SystemExit("A-implicit scheduler/cell/sample coverage is incomplete")
+    summaries: list[dict[str, Any]] = []
+    for uc, ue in sorted(
+        {(str(row["target_uc"]), str(row["target_ue"])) for row in results},
+        key=lambda item: (Fraction(item[0]), Fraction(item[1])),
+    ):
+        selected_group = [row for row in results if str(row["target_uc"]) == uc and str(row["target_ue"]) == ue]
+        for scheduler in schedulers:
+            selected = [row for row in selected_group if row["scheduler"] == scheduler]
+            n_wholepass = sum(row["wholepass"] is True for row in selected)
+            low, high = wilson_ci(n_wholepass, len(selected))
+            summaries.append({
+                "priority_policy": "RM", "deadline_mode": "implicit",
+                "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
+                "n_total": len(selected), "n_valid_tasksets": len(selected),
+                "n_technical": 0, "n_wholepass": n_wholepass,
+                "wholepass_ratio": n_wholepass / len(selected),
+                "ci95_low": low, "ci95_high": high,
+                "n_schedulable": n_wholepass,
+                "n_deadline_miss": len(selected) - n_wholepass,
+                "acceptance_ratio": n_wholepass / len(selected),
+            })
+    write_csv(root / "summary.csv", summaries)
+    write_csv(root / "figure_scheduler_uc_slices.csv", [
+        row for slice_config in figure_slices["uc_scans"]
+        for row in _slice_csv_rows(slice_config, select_scan_rows(
+            summaries, slice_config["fixed_key"], slice_config["fixed_value"],
+        ))
+    ])
+    write_csv(root / "figure_scheduler_ue_slices.csv", [
+        row for slice_config in figure_slices["ue_scans"]
+        for row in _slice_csv_rows(slice_config, select_scan_rows(
+            summaries, slice_config["fixed_key"], slice_config["fixed_value"],
+        ))
+    ])
+    axis = _axis_plot_values(scan_contract)
+    plot_jobs = []
+    for key, xkey, xlabel, filename, label in (
+        ("uc_scans", "target_uc", "U_C", "figure_scheduler_uc_slices.png", "U_C"),
+        ("ue_scans", "target_ue", "U_E", "figure_scheduler_ue_slices.png", "U_E"),
+    ):
+        slices = figure_slices[key]
+        if slices:
+            plot_composite_scan(
+                [(item, select_scan_rows(summaries, item["fixed_key"], item["fixed_value"])) for item in slices],
+                root, filename, xkey, schedulers,
+                xlabel, f"Implicit deadlines (D=T; RM=DM; canonical RM run) — Whole-taskset pass ratio versus {label}",
+                axis_min=axis["axis_min"], axis_max=axis["axis_max"], axis_ticks=axis["axis_ticks"],
+                slice_display_labels=[
+                    (f"{item['label']}: fixed supply = "
+                     f"{float(experiment.V7_FIXED_SUPPLIES[item['label']] * 1000):.3f} mJ/tick"
+                     if config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
+                     else f"{item['label']}: U_C={experiment.decimal_text(item['fixed_value'])}")
+                    for item in slices
+                ],
+            )
+    (root / "dmr_unavailable.json").write_text(
+        json.dumps({"available": False, "reason": "formal A-implicit fast path publishes WholePass only; DMR requires full semantic trace"}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    report = {
+        "complete": True, "experiment": experiment.A_IMPLICIT_EXPERIMENT,
+        "domain": experiment.A_IMPLICIT_DOMAIN, "campaign": config["campaign"],
+        "priority_policy": priority_policy, "deadline_modes": ["implicit"],
+        "canonical_priority_source": "RM", "rm_equals_dm_for_implicit": True,
+        "tasksets": len(tasksets), "requests": len(requests), "results": len(results),
+        "summary_rows": len(summaries), "technical": 0,
+        "wholepass_only": True, "dmr_available": False,
+        "expected_request_count": config["expected_request_count"],
+        "harvest_model": experiment.HARVEST_MODEL,
+    }
+    (root / "analysis_report.json").write_text(
+        json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8",
+    )
+    return report
+
+
 def _v6_load_dataset(
     root: Path, *, expected_policy: str | None = None,
 ) -> dict[str, Any]:
@@ -1620,6 +1864,7 @@ def analyze(
             experiment.V5_EXPERIMENT,
             experiment.V7_EXPERIMENT,
             experiment.V8_EXPERIMENT,
+            experiment.A_IMPLICIT_EXPERIMENT,
         }
         or initial_config.get("domain") in {
             experiment.V3_DOMAIN,
@@ -1627,6 +1872,7 @@ def analyze(
             experiment.V5_DOMAIN,
             experiment.V7_DOMAIN,
             experiment.V8_DOMAIN,
+            experiment.A_IMPLICIT_DOMAIN,
         }
     ):
         raise SystemExit(
@@ -1642,6 +1888,8 @@ def analyze(
             analysis_workers=analysis_workers, uc_dmr_ymin=uc_dmr_ymin,
             ue_dmr_ymin=ue_dmr_ymin,
         )
+    if initial_config.get("experiment") == experiment.A_IMPLICIT_EXPERIMENT:
+        return _analyze_a_implicit(root, analysis_workers=analysis_workers)
     validate_workers(analysis_workers, "analysis-workers")
     uc_dmr_ymin = _validate_dmr_ymin(uc_dmr_ymin, "U_C DMR y-axis lower bound")
     ue_dmr_ymin = _validate_dmr_ymin(ue_dmr_ymin, "U_E DMR y-axis lower bound")

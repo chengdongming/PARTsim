@@ -27,6 +27,7 @@ V5_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v5"
 V6_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v6"
 V7_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v7"
 V8_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:v8"
+A_IMPLICIT_DOMAIN = "ASAP_BLOCK:SCHEDULER_LOAD_CROSS:A_IMPLICIT:v1"
 DOMAIN = V6_DOMAIN
 V4_EXPERIMENT = "scheduler-load-cross-v4"
 V3_EXPERIMENT = "scheduler-load-cross-v3"
@@ -34,6 +35,7 @@ V5_EXPERIMENT = "scheduler-load-cross-v5"
 V6_EXPERIMENT = "scheduler-load-cross-v6"
 V7_EXPERIMENT = "scheduler-load-cross-v7"
 V8_EXPERIMENT = "scheduler-load-cross-v8"
+A_IMPLICIT_EXPERIMENT = "scheduler-load-cross-a-implicit-v1"
 DEADLINE_MODES = ("constrained", "implicit")
 V6_CAMPAIGN_CONTRACT = (
     "ordinary-general-random-nine-scheduler-shared-implicit-deadline-panels-v1"
@@ -46,6 +48,10 @@ V7_UC_FIXED_SUPPLY_CONTRACT = "constrained-only-uc-fixed-absolute-supply-v1"
 V7_UE_SERVICE_SCALING_CONTRACT = "constrained-only-ue-service-only-scaling-v1"
 V8_UC_FIXED_SUPPLY_CONTRACT = "constrained-only-uc-fixed-absolute-supply-v2"
 V8_UE_SERVICE_SCALING_CONTRACT = "constrained-only-ue-service-only-scaling-v2"
+A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN = "a-implicit-uc-fixed-supply"
+A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN = "a-implicit-ue-service-scaling"
+A_IMPLICIT_UC_FIXED_SUPPLY_CONTRACT = "implicit-d-equals-t-uc-fixed-absolute-supply-v1"
+A_IMPLICIT_UE_SERVICE_SCALING_CONTRACT = "implicit-d-equals-t-ue-service-only-scaling-v1"
 V7_FIXED_SUPPLIES = {
     "low": Fraction(
         747629181917565545971345561061873455108915,
@@ -79,6 +85,16 @@ V8_UC_SCAN = tuple(Fraction(value) for value in (
 V8_UE_SCAN = V8_UC_SCAN
 V8_UE_FIXED_UCS = (Fraction(1, 5), Fraction(2, 5), Fraction(3, 5))
 V8_MODE_PLAN = {"RM": ("constrained",), "DM": ("constrained",)}
+A_IMPLICIT_MODE_PLAN = {"RM": ("implicit",)}
+A_IMPLICIT_UC_SCAN = tuple(Fraction(value) for value in (
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
+))
+A_IMPLICIT_UE_SCAN = tuple(Fraction(value) for value in (
+    "1/10", "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5",
+    "9/10", "1",
+))
+A_IMPLICIT_UE_FIXED_UCS = (Fraction(3, 10), Fraction(1, 2), Fraction(7, 10))
+A_IMPLICIT_FORMAL_SCHEDULERS = tuple(perf_g.FORMAL_SCHEDULERS)
 V6_IMPLICIT_PRIORITY_EQUIVALENCE = "RM_equals_DM_when_D_equals_T"
 V6_IMPLICIT_CANONICAL_PRIORITY_POLICY = "RM"
 V6_IMPLICIT_REUSE_POLICY = "shared_across_rm_and_dm_figures"
@@ -500,11 +516,85 @@ def v8_campaign_spec(campaign: str) -> dict[str, Any]:
     }
 
 
+def a_implicit_campaign_spec(campaign: str) -> dict[str, Any]:
+    """Return the frozen Experiment-A D=T extension contract."""
+    if campaign == A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN:
+        cells = tuple(
+            (uc, V7_REFERENCE_UES[level])
+            for level in ("low", "medium", "high")
+            for uc in A_IMPLICIT_UC_SCAN
+        )
+        figure_slices = {
+            "uc_scans": [
+                {
+                    "x_key": "target_uc", "fixed_key": "target_ue",
+                    "fixed_value": fraction_text(V7_REFERENCE_UES[level]),
+                    "label": level,
+                    "energy_level": level,
+                    "x_values": [fraction_text(value) for value in A_IMPLICIT_UC_SCAN],
+                }
+                for level in ("low", "medium", "high")
+            ],
+            "ue_scans": [],
+        }
+        contract_name = A_IMPLICIT_UC_FIXED_SUPPLY_CONTRACT
+        energy_control = "FIXED_ABSOLUTE_SUPPLY"
+        scan_values = A_IMPLICIT_UC_SCAN
+        fixed_values = tuple(V7_REFERENCE_UES[level] for level in ("low", "medium", "high"))
+    elif campaign == A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN:
+        cells = tuple(
+            (uc, ue) for uc in A_IMPLICIT_UE_FIXED_UCS for ue in A_IMPLICIT_UE_SCAN
+        )
+        figure_slices = {
+            "uc_scans": [],
+            "ue_scans": [
+                {
+                    "x_key": "target_ue", "fixed_key": "target_uc",
+                    "fixed_value": fraction_text(uc),
+                    "label": level,
+                    "x_values": [fraction_text(value) for value in A_IMPLICIT_UE_SCAN],
+                }
+                for uc, level in zip(A_IMPLICIT_UE_FIXED_UCS, ("low", "medium", "high"))
+            ],
+        }
+        contract_name = A_IMPLICIT_UE_SERVICE_SCALING_CONTRACT
+        energy_control = "SERVICE_ONLY_SCALING"
+        scan_values = A_IMPLICIT_UE_SCAN
+        fixed_values = A_IMPLICIT_UE_FIXED_UCS
+    else:
+        raise ValueError(f"unknown A-implicit campaign: {campaign}")
+    scan_contract = {
+        "campaign": campaign, "energy_control": energy_control,
+        "deadline_mode": "implicit", "canonical_priority_policy": "RM",
+        "uc_scan_values": [fraction_text(value) for value in (
+            A_IMPLICIT_UC_SCAN if campaign == A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN else fixed_values
+        )],
+        "ue_scan_values": [fraction_text(value) for value in (
+            fixed_values if campaign == A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN else A_IMPLICIT_UE_SCAN
+        )],
+        "ordered_cells": [[fraction_text(uc), fraction_text(ue)] for uc, ue in cells],
+        "unique_cell_count": len(cells),
+        "axis_display_min": "0", "axis_display_max": "1", "axis_tick_step": "1/10",
+        "axis_ticks": [fraction_text(value) for value in axis_ticks(
+            Fraction(0), Fraction(1), Fraction(1, 10),
+        )],
+        "zero_point_policy": "display_tick_only_outside_experiment_domain",
+        "scan_values": [fraction_text(value) for value in scan_values],
+    }
+    return {
+        "campaign": campaign, "energy_control": energy_control,
+        "campaign_contract": contract_name, "cells": cells,
+        "scan_contract": scan_contract, "figure_slices": figure_slices,
+    }
+
+
 def campaign_spec(version: str, campaign: str) -> dict[str, Any]:
     if version == "v7":
         return v7_campaign_spec(campaign)
     if version == "v8":
         return v8_campaign_spec(campaign)
+    if version == "a-implicit":
+        return a_implicit_campaign_spec(campaign)
     raise ValueError(f"unknown scheduler LOAD-CROSS version: {version}")
 
 
@@ -525,6 +615,15 @@ def deadline_modes_for_experiment(version: str, priority_policy: str) -> tuple[s
         except RuntimeError as exc:
             raise ValueError(str(exc)) from exc
         return V8_MODE_PLAN[policy]
+    if version == "a-implicit":
+        try:
+            policy = normalize_scheduler_priority_policy(priority_policy)
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
+        try:
+            return A_IMPLICIT_MODE_PLAN[policy]
+        except KeyError as exc:
+            raise ValueError("A-implicit campaign accepts canonical RM only") from exc
     return deadline_modes_for_priority_policy(priority_policy)
 
 
@@ -712,6 +811,10 @@ def run_identity(config: Mapping[str, Any]) -> str:
     if config.get("experiment") == V8_EXPERIMENT or config.get("domain") == V8_DOMAIN:
         return "scheduler-load-cross-v8-" + _hash(
             comparable, domain=V8_DOMAIN,
+        )[:32]
+    if config.get("experiment") == A_IMPLICIT_EXPERIMENT or config.get("domain") == A_IMPLICIT_DOMAIN:
+        return "scheduler-load-cross-a-implicit-" + _hash(
+            comparable, domain=A_IMPLICIT_DOMAIN,
         )[:32]
     if config.get("experiment") == V7_EXPERIMENT or config.get("domain") == V7_DOMAIN:
         return "scheduler-load-cross-v7-" + _hash(
@@ -912,8 +1015,11 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
     is_v6 = experiment_name == V6_EXPERIMENT
     is_v7 = experiment_name == V7_EXPERIMENT
     is_v8 = experiment_name == V8_EXPERIMENT
-    if (is_v7 or is_v8) and (campaign not in {
+    is_a_implicit = experiment_name == A_IMPLICIT_EXPERIMENT
+    if (is_v7 or is_v8 or is_a_implicit) and (campaign not in {
         V7_UC_FIXED_SUPPLY_CAMPAIGN, V7_UE_SERVICE_SCALING_CAMPAIGN,
+        A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
+        A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN,
     } or energy_control not in {"FIXED_ABSOLUTE_SUPPLY", "SERVICE_ONLY_SCALING"}):
         raise ValueError("versioned request rows require a recognized campaign and energy control")
     rows = []
@@ -932,6 +1038,18 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                 if is_v7:
                     identity.update({
                         "campaign": campaign, "energy_control": energy_control,
+                        "deadline_mode": deadline_mode,
+                    })
+                    if energy_control == "FIXED_ABSOLUTE_SUPPLY":
+                        identity["energy_level"] = v7_energy_level(ue)
+                if is_a_implicit:
+                    identity.update({
+                        "campaign": campaign, "campaign_contract": (
+                            A_IMPLICIT_UC_FIXED_SUPPLY_CONTRACT
+                            if campaign == A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN
+                            else A_IMPLICIT_UE_SERVICE_SCALING_CONTRACT
+                        ),
+                        "energy_control": energy_control,
                         "deadline_mode": deadline_mode,
                     })
                     if energy_control == "FIXED_ABSOLUTE_SUPPLY":
@@ -958,8 +1076,10 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                 if is_v5 or is_v6:
                     row["deadline_mode"] = deadline_mode
                     request_domain = V6_DOMAIN if is_v6 else V5_DOMAIN
-                elif is_v7 or is_v8:
+                elif is_v7 or is_v8 or is_a_implicit:
                     request_domain = V7_DOMAIN if is_v7 else V8_DOMAIN
+                    if is_a_implicit:
+                        request_domain = A_IMPLICIT_DOMAIN
                     row.update({
                         "domain": request_domain, "deadline_mode": deadline_mode,
                         "campaign": campaign, "energy_control": energy_control,
