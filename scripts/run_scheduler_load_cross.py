@@ -560,6 +560,10 @@ def make_parser() -> argparse.ArgumentParser:
         help="versioned formal campaign contract (default: v7)",
     )
     parser.add_argument(
+        "--initial-energy-rule", default="battery_capacity/2",
+        help="initial battery rule passed to energy materialization (default: battery_capacity/2)",
+    )
+    parser.add_argument(
         "--campaign", choices=(
             "v6", experiment.V7_UC_FIXED_SUPPLY_CAMPAIGN,
             experiment.V7_UE_SERVICE_SCALING_CAMPAIGN,
@@ -735,6 +739,13 @@ def _validate_implicit_streaming_scope(
 
 def main(argv: list[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
+    supplied_arguments = sys.argv[1:] if argv is None else argv
+    initial_energy_rule = args.initial_energy_rule
+    initial_energy_rule_was_supplied = any(
+        argument == "--initial-energy-rule"
+        or argument.startswith("--initial-energy-rule=")
+        for argument in supplied_arguments
+    )
     campaign = args.campaign
     if campaign in {
         experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
@@ -747,6 +758,14 @@ def main(argv: list[str] | None = None) -> int:
     ):
         raise SystemExit("--uc09-supplement requires canonical A-implicit UC fixed-supply")
     version = "v6" if campaign == "v6" else args.experiment_version
+    # V8 historically used zero initial energy without a CLI parameter. Keep
+    # that legacy default while allowing an explicit rule to override it.
+    if version == "v8" and not initial_energy_rule_was_supplied:
+        initial_energy_rule = "zero"
+    service_initial_energy_rule = (
+        initial_energy_rule
+        if initial_energy_rule_was_supplied else "battery_capacity/2"
+    )
     if args.implicit_streaming_parse and args.bounded_streaming_parse:
         raise SystemExit("streaming parser flags cannot be enabled together")
     if args.bounded_streaming_parse and version != "v8":
@@ -884,7 +903,7 @@ def main(argv: list[str] | None = None) -> int:
         "min_task_util": str(min_util), "max_task_util": str(max_util),
         "util_tolerance_total": str(tolerance), "rho": str(rho), "latency": str(latency),
         "kappa": str(kappa),
-        "initial_energy_rule": "zero" if version == "v8" else "battery_capacity/2",
+        "initial_energy_rule": initial_energy_rule,
         "normalization_horizon_ms": experiment.FORMAL_NORMALIZATION_HORIZON,
         "simulation_horizon_ms": args.simulation_horizon,
         "use_real_solar_data": False,
@@ -979,6 +998,7 @@ def main(argv: list[str] | None = None) -> int:
                 experiment.A_IMPLICIT_STANDARDIZED_SCAN
                 if args.uc09_supplement else None
             ),
+            initial_energy_rule=service_initial_energy_rule,
         )
         if service is not None and mode_service.identity != service.identity:
             raise SystemExit("deadline modes do not share service-curve identity")
@@ -1449,6 +1469,7 @@ def main(argv: list[str] | None = None) -> int:
         "total_seconds": time.perf_counter() - total_started,
     }
     write_json(run_config, config_document)
+    print(f"INITIAL_ENERGY_RULE={initial_energy_rule}")
     print(json.dumps(report, sort_keys=True))
     return 0 if report["complete"] else 2
 

@@ -971,7 +971,8 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
             min_task_util: Fraction, max_task_util: Fraction,
             tolerance: Fraction,
             deadline_mode: str = "constrained",
-            system_template: str = ORDINARY_SYSTEM_TEMPLATE) -> dict[str, Any]:
+            system_template: str = ORDINARY_SYSTEM_TEMPLATE,
+            initial_energy_rule: str = "battery_capacity/2") -> dict[str, Any]:
     deadline_mode = normalize_deadline_mode(deadline_mode)
     config = perf_g._task_generation_config(
         "FORMAL", utilizations, count, system_template=system_template,
@@ -990,6 +991,10 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
         "use_real_solar_data": False,
         "require_real_solar_data": False,
     })
+    # The existing PERF-G service projection remains unchanged for the
+    # default rule. An explicit zero rule must also reach its generated YAML.
+    if initial_energy_rule == "zero":
+        config["energy"]["simulation_initial_battery"] = "0"
     return config
 
 
@@ -1022,6 +1027,7 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
                          deadline_mode: str = "constrained",
                          system_template: str = ORDINARY_SYSTEM_TEMPLATE,
                          generation_utilizations: Sequence[Fraction] | None = None,
+                         initial_energy_rule: str = "battery_capacity/2",
                          ) -> tuple[list[Any], Any]:
     deadline_mode = normalize_deadline_mode(deadline_mode)
     generation_points = tuple(utilizations) if generation_utilizations is None else tuple(generation_utilizations)
@@ -1033,6 +1039,7 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
         min_task_util=min_task_util, max_task_util=max_task_util,
         tolerance=tolerance, deadline_mode=deadline_mode,
         system_template=system_template,
+        initial_energy_rule=initial_energy_rule,
     )
     if generation_utilizations is not None:
         selected = {fraction_text(value) for value in utilizations}
