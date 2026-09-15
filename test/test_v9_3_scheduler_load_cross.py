@@ -1975,6 +1975,7 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
     taskset = _FakeTaskset()
     service = SimpleNamespace(system_path=tmp_path / "system.yml", identity="test-service")
     service.system_path.write_text("system", encoding="utf-8")
+    materialize_calls = []
     request = {
         "request_id": "scheduler-load-cross-test-request",
         "taskset_id": taskset.taskset_id,
@@ -1986,9 +1987,13 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
         "horizon_ms": 20,
         **_harvest_model_fields(),
     }
+    def fake_materialize_tasksets(*args, **kwargs):
+        materialize_calls.append(kwargs)
+        return [taskset], service
+
     monkeypatch.setattr(
         scheduler_runner.experiment, "materialize_tasksets",
-        lambda *args, **kwargs: ([taskset], service),
+        fake_materialize_tasksets,
     )
 
     def fake_request_rows(*args, **kwargs):
@@ -2032,17 +2037,22 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
         scheduler_runner.experiment, "construct_paired_harvest_trace",
         lambda *args, **kwargs: (Fraction(1),) * 10,
     )
-    monkeypatch.setattr(
-        scheduler_runner.experiment, "energy_material",
-        lambda *args, **kwargs: {
+    def fake_energy_material(*args, **kwargs):
+        initial_energy = (
+            "0" if kwargs.get("initial_energy_rule") == "zero" else "1"
+        )
+        return {
             "target_ue": "2/5", "eta": "5/2",
-            "initial_energy_j": "1", "battery_capacity_j": "2",
+            "initial_energy_j": initial_energy, "battery_capacity_j": "2",
             "solar_scale": "1", "P_dem_j_per_tick": "1",
             "raw_reference_mean_j_per_tick": "1",
             "runtime_configured_average_supply_j_per_tick": "1",
             "actual_ue": "2/5", "actual_ue_abs_error": "0",
             "actual_ue_rel_error": "0", **_harvest_model_fields(),
-        },
+        }
+
+    monkeypatch.setattr(
+        scheduler_runner.experiment, "energy_material", fake_energy_material,
     )
     monkeypatch.setattr(
         scheduler_runner, "evaluate_outcome",
@@ -2074,6 +2084,7 @@ def _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation):
             return future
 
     monkeypatch.setattr(scheduler_runner, "ProcessPoolExecutor", _InlineExecutor)
+    return materialize_calls
 
 
 def _scheduler_runner_args(
@@ -4218,7 +4229,7 @@ def test_v8_runner_uses_explicit_bounded_streaming_parser_opt_in(
             retained_trace_path=None,
         )
 
-    _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
+    materialize_calls = _patch_scheduler_runner(monkeypatch, tmp_path, run_simulation)
     profile = experiment.normalize_scan_profile(
         uc_scan_values="1/10", ue_scan_values="1/5",
         uc_figure_fixed_ues="1/5", uc_figure_labels="selected",
@@ -4252,6 +4263,8 @@ def test_v8_runner_uses_explicit_bounded_streaming_parser_opt_in(
     assert all(call["implicit_streaming_parse"] is False for call in calls)
     config_path = output / "run_config.json"
     initial_config = json.loads(config_path.read_text(encoding="utf-8"))
+    assert initial_config["initial_energy_rule"] == "zero"
+    assert materialize_calls[0]["initial_energy_rule"] == "battery_capacity/2"
     assert "bounded_streaming_parse" not in config_path.read_text(encoding="utf-8")
 
     results_path = output / "results.jsonl"
@@ -4330,6 +4343,85 @@ def test_scheduler_runner_restores_legacy_v6_default_and_explicit_v8_selection(t
             "--output", str(tmp_path / "missing-campaign"), "--seed", "1",
             "--experiment-version", "v8",
         ])
+
+
+def test_scheduler_runner_initial_energy_rule_defaults_and_reaches_simulation(
+    tmp_path, monkeypatch, capsys,
+):
+    default = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path / "default"), "--seed", "1",
+    ])
+    explicit = scheduler_runner.make_parser().parse_args([
+        "--output", str(tmp_path / "zero"), "--seed", "1",
+        "--initial-energy-rule", "zero",
+    ])
+    assert default.initial_energy_rule == "battery_capacity/2"
+    assert explicit.initial_energy_rule == "zero"
+
+    simulation_configs = []
+
+    def run_simulation(**kwargs):
+        simulation_configs.append(kwargs["energy_config"])
+        return SimpleNamespace(
+            result=SimpleNamespace(
+                status=SimulationStatus.PASS_OBSERVED, reason="observed",
+                jobs=(), metrics={}, simulation_completed=True,
+            ),
+            runtime_seconds=0.1, stdout_tail="", stderr_tail="",
+            retained_trace_path=None,
+        )
+
+    default_materialize = _patch_scheduler_runner(
+        monkeypatch, tmp_path, run_simulation,
+    )
+    default_output = tmp_path / "runner-default"
+    assert scheduler_runner.main(_scheduler_runner_args(default_output)) == 0
+    default_config = json.loads(
+        (default_output / "run_config.json").read_text(encoding="utf-8")
+    )
+    assert default_config["initial_energy_rule"] == "battery_capacity/2"
+    assert default_materialize[0]["initial_energy_rule"] == "battery_capacity/2"
+    assert simulation_configs[-1]["simulation_initial_battery"] == "1"
+
+    simulation_configs.clear()
+    zero_materialize = _patch_scheduler_runner(
+        monkeypatch, tmp_path, run_simulation,
+    )
+    zero_output = tmp_path / "runner-zero"
+    assert scheduler_runner.main([
+        *_scheduler_runner_args(zero_output),
+        "--initial-energy-rule", "zero",
+    ]) == 0
+    zero_config = json.loads(
+        (zero_output / "run_config.json").read_text(encoding="utf-8")
+    )
+    assert zero_config["initial_energy_rule"] == "zero"
+    assert zero_materialize[0]["initial_energy_rule"] == "zero"
+    assert simulation_configs[-1]["simulation_initial_battery"] == "0"
+    assert "INITIAL_ENERGY_RULE=zero" in capsys.readouterr().out
+
+
+def test_zero_initial_energy_reaches_generated_service_system_config(
+    tmp_path, monkeypatch,
+):
+    config = experiment._config(
+        1, utilizations=(Fraction(1, 10),), count=1, processors=4, tasks=10,
+        period_min=perf_g.PERIOD_MIN_MS, period_max=perf_g.PERIOD_MAX_MS,
+        min_task_util=perf_g.MIN_TASK_UTILIZATION,
+        max_task_util=perf_g.MAX_TASK_UTILIZATION,
+        tolerance=perf_g.UTILIZATION_TOLERANCE,
+        initial_energy_rule="zero",
+    )
+    monkeypatch.setattr(
+        taskset_store, "construct_paired_harvest_trace",
+        lambda _path, horizon: (Fraction(1),) * horizon,
+    )
+    service = taskset_store.prepare_service_curve(config, tmp_path / "service")
+    system = taskset_store.yaml.safe_load(
+        service.system_path.read_text(encoding="utf-8")
+    )
+    assert config["energy"]["simulation_initial_battery"] == "0"
+    assert system["energy_management"]["initial_energy"] == 0.0
 
 
 @pytest.mark.parametrize("passed", [True, False])
