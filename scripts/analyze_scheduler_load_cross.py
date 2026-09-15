@@ -25,6 +25,7 @@ from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_wor
 
 DMR_BOOTSTRAP_REPLICATES = 10000
 ACTUAL_UE_RELATIVE_TOLERANCE = Fraction(1, 10**12)
+INITIAL_ENERGY_RULES = {"battery_capacity/2", "zero"}
 
 _PLOT_COLORS = {
     "ASAP": "tab:blue",
@@ -86,6 +87,20 @@ def _validate_harvest_model(value: Any, label: str) -> None:
         raise SystemExit(
             f"{label} does not identify {experiment.HARVEST_MODEL}"
         )
+
+
+def _configured_initial_energy_rule(
+    config: dict[str, Any], *, version: str | None = None,
+) -> str:
+    """Read the run's E0 rule, retaining historical defaults for old runs."""
+    default = "zero" if version == "v8" else "battery_capacity/2"
+    rule = config.get("initial_energy_rule", default)
+    if rule not in INITIAL_ENERGY_RULES:
+        raise SystemExit(
+            "unsupported initial_energy_rule: "
+            f"{rule!r}; expected battery_capacity/2 or zero"
+        )
+    return rule
 
 
 def wilson_ci(k: int, n: int, *, z: float = 1.959963984540054) -> tuple[float, float]:
@@ -915,6 +930,8 @@ def _slice_csv_rows(
             "pass_count": row["n_wholepass"],
             "sample_total": row["n_total"],
         }
+        if "initial_energy_rule" in row:
+            result_row["initial_energy_rule"] = row["initial_energy_rule"]
         if "deadline_mode" in row:
             result_row["deadline_mode"] = row["deadline_mode"]
         for key in (
@@ -950,6 +967,8 @@ def _dmr_slice_csv_rows(
             "deadline_miss_count": row["total_deadline_miss_jobs"],
             "adjudicable_job_total": row["total_adjudicable_jobs"],
         }
+        if "initial_energy_rule" in row:
+            result_row["initial_energy_rule"] = row["initial_energy_rule"]
         if "deadline_mode" in row:
             result_row["deadline_mode"] = row["deadline_mode"]
         for key in (
@@ -1097,7 +1116,6 @@ def _v7_validate_config(
 ) -> tuple[dict[str, Any], tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any], str]:
     expected_experiment = experiment.V8_EXPERIMENT if version == "v8" else experiment.V7_EXPERIMENT
     expected_domain = experiment.V8_DOMAIN if version == "v8" else experiment.V7_DOMAIN
-    expected_initial_rule = "zero" if version == "v8" else "battery_capacity/2"
     try:
         config = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
     except (OSError, TypeError, ValueError) as exc:
@@ -1157,8 +1175,7 @@ def _v7_validate_config(
         raise SystemExit("v7 expected_taskset_count is inconsistent")
     if config.get("run_identity") != experiment.run_identity(config):
         raise SystemExit("v7 run_identity is invalid")
-    if config.get("initial_energy_rule") != expected_initial_rule:
-        raise SystemExit(f"{version} initial energy rule is invalid")
+    _configured_initial_energy_rule(config, version=version)
     return config, cells, spec["scan_contract"], spec["figure_slices"], priority_policy
 
 
@@ -1215,7 +1232,12 @@ def _v7_validate_energy(
         if Fraction(energy["E_burst_j"]) != burst:
             raise SystemExit("v7 burst energy changed")
         kappa = Fraction(config["kappa"])
-        expected_initial = Fraction(0) if version == "v8" else kappa * burst / 2
+        initial_energy_rule = _configured_initial_energy_rule(
+            config, version=version,
+        )
+        expected_initial = (
+            Fraction(0) if initial_energy_rule == "zero" else kappa * burst / 2
+        )
         if (
             Fraction(energy["battery_capacity_j"]) != kappa * burst
             or Fraction(energy["initial_energy_j"]) != expected_initial
@@ -1291,8 +1313,7 @@ def _a_implicit_validate_config(
         raise SystemExit("A-implicit campaign freezes kappa=10")
     if config.get("simulation_horizon_ms") != 60000:
         raise SystemExit("A-implicit campaign freezes simulation horizon=60000 ms")
-    if config.get("initial_energy_rule") != "battery_capacity/2":
-        raise SystemExit("A-implicit campaign requires E0=Bmax/2")
+    _configured_initial_energy_rule(config, version="a-implicit")
     if config.get("scan_contract") != spec["scan_contract"]:
         raise SystemExit("A-implicit scan_contract is not canonical")
     if config.get("figure_slices") != spec["figure_slices"]:
@@ -1330,6 +1351,9 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
     validate_workers(analysis_workers, "analysis-workers")
     config, cells, scan_contract, figure_slices, priority_policy = (
         _a_implicit_validate_config(root)
+    )
+    initial_energy_rule = _configured_initial_energy_rule(
+        config, version="a-implicit",
     )
     _validate_harvest_model(
         {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
@@ -1445,6 +1469,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
             summaries.append({
                 "priority_policy": "RM", "deadline_mode": "implicit",
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
+                "initial_energy_rule": initial_energy_rule,
                 "n_total": len(selected), "n_valid_tasksets": len(selected),
                 "n_technical": 0, "n_wholepass": n_wholepass,
                 "wholepass_ratio": n_wholepass / len(selected),
@@ -1477,7 +1502,10 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
             plot_composite_scan(
                 [(item, select_scan_rows(summaries, item["fixed_key"], item["fixed_value"])) for item in slices],
                 root, filename, xkey, schedulers,
-                xlabel, f"Implicit deadlines (D=T; RM=DM; canonical RM run) — Whole-taskset pass ratio versus {label}",
+                xlabel,
+                f"Implicit deadlines (D=T; RM=DM; canonical RM run; "
+                f"initial_energy_rule={initial_energy_rule}) — "
+                f"Whole-taskset pass ratio versus {label}",
                 axis_min=axis["axis_min"], axis_max=axis["axis_max"], axis_ticks=axis["axis_ticks"],
                 slice_display_labels=[
                     (f"{item['label']}: fixed supply = "
@@ -1501,6 +1529,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         "wholepass_only": True, "dmr_available": False,
         "expected_request_count": config["expected_request_count"],
         "harvest_model": experiment.HARVEST_MODEL,
+        "initial_energy_rule": initial_energy_rule,
     }
     (root / "analysis_report.json").write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8",
@@ -1941,6 +1970,9 @@ def analyze(
         config, cells, scan_contract, figure_slices, priority_policy = _v7_validate_config(
             root, version=version,
         )
+    initial_energy_rule = _configured_initial_energy_rule(
+        config, version=version if is_v7 else None,
+    )
     _validate_harvest_model(
         {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
         "run_config harvest model",
@@ -2281,6 +2313,7 @@ def analyze(
             summary_row = {
                 "priority_policy": priority_policy,
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
+                "initial_energy_rule": initial_energy_rule,
                 "runtime_configured_average_supply_j_per_tick": selected[0][
                     "energy"
                 ]["runtime_configured_average_supply_j_per_tick"],
@@ -2301,7 +2334,7 @@ def analyze(
             if deadline_mode is not None:
                 summary_row["deadline_mode"] = deadline_mode
             summaries.append(summary_row)
-            dmr_summaries.append(summarize_dmr(
+            dmr_summary = summarize_dmr(
                 selected,
                 target_uc=uc,
                 target_ue=ue,
@@ -2309,7 +2342,9 @@ def analyze(
                 campaign_seed=campaign_seed,
                 priority_policy=priority_policy,
                 deadline_mode=deadline_mode,
-            ))
+            )
+            dmr_summary["initial_energy_rule"] = initial_energy_rule
+            dmr_summaries.append(dmr_summary)
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "summary_dmr.csv", dmr_summaries)
     plot_jobs: list[dict[str, Any]] = []
@@ -2552,6 +2587,7 @@ def analyze(
                   else bool(ue_errors) and max(ue_errors) <= ACTUAL_UE_RELATIVE_TOLERANCE
               ),
               "actual_ue_max_relative_error": str(max(ue_errors, default=Fraction(0))),
+              "initial_energy_rule": initial_energy_rule,
               "telemetry": {
                   "validation_summary_seconds": validation_summary_seconds,
                   "plot_seconds": plot_seconds,
