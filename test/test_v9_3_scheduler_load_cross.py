@@ -4981,6 +4981,43 @@ def test_a_implicit_legacy_v1_and_standardized_v2_grid_contracts():
     assert standardized_ue["scan_contract"]["axis_ticks"] == [str(value) for value in stitcher.STANDARDIZED_SCAN]
 
 
+def test_analyzer_accepts_a_implicit_zero_initial_energy_rule(tmp_path):
+    campaign = experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN
+    spec = experiment.a_implicit_standardized_campaign_spec(campaign)
+    cells = [[str(uc), str(ue)] for uc, ue in spec["cells"]]
+    config = {
+        "experiment": experiment.A_IMPLICIT_V2_EXPERIMENT,
+        "domain": experiment.A_IMPLICIT_V2_DOMAIN,
+        "campaign": campaign,
+        "campaign_contract": spec["campaign_contract"],
+        "energy_control": spec["energy_control"],
+        "deadline_modes": ["implicit"], "priority_policy": "RM",
+        "deadline_semantics": "D=T; RM=DM; canonical source=RM",
+        "wholepass_fast_path": True, "full_trace_default": False,
+        "dmr_available": False, "processors": 4, "tasks": 10,
+        "period_min": 40, "period_max": 200, "kappa": "10",
+        "simulation_horizon_ms": 60000, "initial_energy_rule": "zero",
+        "scan_contract": spec["scan_contract"],
+        "figure_slices": spec["figure_slices"], "cells": cells,
+        "schedulers": list(experiment.A_IMPLICIT_FORMAL_SCHEDULERS),
+        "samples_per_cell": 120,
+        "expected_request_count": len(cells) * 120 * 9,
+        "expected_taskset_count": len({uc for uc, _ue in spec["cells"]}) * 120,
+    }
+    config["run_identity"] = experiment.run_identity(config)
+    (tmp_path / "run_config.json").write_text(
+        json.dumps(config), encoding="utf-8",
+    )
+
+    validated, _cells, _scan, _slices, _policy = (
+        analyzer_module._a_implicit_validate_config(tmp_path)
+    )
+    assert validated["initial_energy_rule"] == "zero"
+    assert analyzer_module._configured_initial_energy_rule(
+        {}, version="a-implicit",
+    ) == "battery_capacity/2"
+
+
 def test_a_implicit_uc09_supplement_contract_and_request_count():
     spec = experiment.a_implicit_uc09_supplement_spec()
     assert spec["campaign_contract"] == experiment.A_IMPLICIT_UC09_SUPPLEMENT_CONTRACT
