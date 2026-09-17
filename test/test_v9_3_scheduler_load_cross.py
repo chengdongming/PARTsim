@@ -33,7 +33,8 @@ from experiments.v9_3.simulation_result import (
 from experiments.v9_3 import implicit_trace_stream
 from experiments.v9_3.implicit_wholepass_fast import (
     A_FAST_SCHEMA, FAST_MODE, FAST_SCHEMA, FastWholePassError,
-    validate_fast_document,
+    GENERIC_FAST_MODE, GENERIC_FAST_SCHEMA, validate_fast_document,
+    validate_generic_fast_document,
 )
 from experiments.v9_3.simulation_engine import simulation_result_to_dict
 from experiments.v9_3.performance_outcome import evaluate_outcome
@@ -4469,6 +4470,92 @@ def test_v6_implicit_wholepass_fast_result_rejects_duplicate_and_bad_pass(tmp_pa
             expected_task_ids=value["task_ids"],
             expected_horizon=60000,
         )
+
+
+def _generic_fast_result_fixture(*, deadline_mode="constrained", priority_policy="RM", passed=True):
+    value = _fast_result_fixture(passed=passed)
+    value.update({
+        "schema": GENERIC_FAST_SCHEMA,
+        "fast_mode": GENERIC_FAST_MODE,
+        "campaign": "deadline-profile-sensitivity-v1",
+        "deadline_mode": deadline_mode,
+        "priority_policy": priority_policy,
+    })
+    return value
+
+
+@pytest.mark.parametrize("deadline_mode", ["constrained", "implicit"])
+@pytest.mark.parametrize("priority_policy", ["RM", "DM"])
+def test_generic_wholepass_fast_contract_supports_deadline_and_priority_matrix(
+    deadline_mode, priority_policy,
+):
+    value = _generic_fast_result_fixture(
+        deadline_mode=deadline_mode, priority_policy=priority_policy,
+    )
+    assert validate_generic_fast_document(
+        value,
+        expected_run_id=value["run_id"],
+        expected_taskset_hash=value["taskset_semantic_hash"],
+        expected_scheduler=value["configured_scheduler"],
+        expected_processors=4,
+        expected_task_ids=value["task_ids"],
+        expected_horizon=60000,
+        expected_campaign="deadline-profile-sensitivity-v1",
+        expected_deadline_mode=deadline_mode,
+        expected_priority_policy=priority_policy,
+    ) == value
+
+
+@pytest.mark.parametrize(("field", "value"), [
+    ("deadline_mode", "invalid"),
+    ("priority_policy", "EDF"),
+    ("campaign", "other-campaign"),
+    ("configured_scheduler", "gpfp_not_a_scheduler"),
+    ("taskset_semantic_hash", "b" * 64),
+])
+def test_generic_wholepass_fast_contract_rejects_identity_or_mode_mismatch(field, value):
+    observed = _generic_fast_result_fixture()
+    observed[field] = value
+    with pytest.raises(FastWholePassError):
+        validate_generic_fast_document(
+            observed,
+            expected_run_id=observed["run_id"],
+            expected_taskset_hash="a" * 64,
+            expected_scheduler="gpfp_asap_block",
+            expected_processors=4,
+            expected_task_ids=observed["task_ids"],
+            expected_horizon=60000,
+            expected_campaign="deadline-profile-sensitivity-v1",
+            expected_deadline_mode="constrained",
+            expected_priority_policy="RM",
+        )
+
+
+def test_generic_wholepass_fast_python_path_never_calls_trace_parser(tmp_path, monkeypatch):
+    value = _generic_fast_result_fixture()
+
+    def fake_run(command, **kwargs):
+        output = Path(command[command.index("--wholepass-fast-output") + 1])
+        output.write_text(json.dumps(value), encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(simulation_engine_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        simulation_engine_module, "parse_simulation_trace",
+        lambda *args, **kwargs: pytest.fail("generic fast path parsed a semantic trace"),
+    )
+    execution = simulation_engine_module._run_wholepass_fast(
+        simulator=Path("simulator"), system_path=Path("system.yaml"),
+        taskset_path=Path("taskset.yaml"), run_root=tmp_path,
+        simulation_id_value="generic", run_id=value["run_id"],
+        taskset_hash=value["taskset_semantic_hash"],
+        task_payload=[{"task_id": f"{index}"} for index in range(10)],
+        scheduler_id=value["configured_scheduler"], processors=4,
+        horizon=60000, timeout_seconds=5, environment={},
+        campaign=value["campaign"], deadline_mode=value["deadline_mode"],
+        priority_policy=value["priority_policy"],
+    )
+    assert execution.result["taskset_pass"] is True
 
 
 def test_v6_implicit_wholepass_fast_rejects_constrained_scope(tmp_path):

@@ -44,7 +44,8 @@ from .simulation_result import (
     parse_simulation_trace,
 )
 from .implicit_wholepass_fast import (
-    A_FAST_CAMPAIGNS, validate_fast_result,
+    A_FAST_CAMPAIGNS, GENERIC_FAST_MODE, validate_fast_result,
+    validate_generic_fast_result,
 )
 from .task_identity import runtime_task_name_for_source_id
 
@@ -541,6 +542,78 @@ def _run_implicit_wholepass_fast(
     return WholePassFastExecution(result, runtime, output_path)
 
 
+def _run_wholepass_fast(
+    *,
+    simulator: Path,
+    system_path: Path,
+    taskset_path: Path,
+    run_root: Path,
+    simulation_id_value: str,
+    run_id: str,
+    taskset_hash: str,
+    task_payload: Sequence[Mapping[str, Any]],
+    scheduler_id: str,
+    processors: int,
+    horizon: int,
+    timeout_seconds: float,
+    environment: Mapping[str, str],
+    campaign: str,
+    deadline_mode: str,
+    priority_policy: str,
+) -> WholePassFastExecution:
+    """Run the generic compact observer without constructing a semantic trace."""
+
+    output_path = run_root / f"{simulation_id_value}.wholepass_fast.json"
+    if output_path.exists():
+        raise SimulationConfigurationError(
+            f"fast output already exists: {output_path}"
+        )
+    command = [
+        str(simulator), str(system_path), str(taskset_path), str(horizon),
+        "--run-id", run_id,
+        "--taskset-semantic-hash", taskset_hash,
+        "--wholepass-fast-output", str(output_path),
+        "--wholepass-fast-campaign", campaign,
+        "--wholepass-fast-priority-policy", priority_policy,
+        "--wholepass-fast-deadline-mode", deadline_mode,
+        "--wholepass-fast-mode", GENERIC_FAST_MODE,
+    ]
+    child_environment = dict(environment)
+    child_environment["PARTSIM_QUIET_STDOUT"] = "1"
+    started = time.perf_counter()
+    completed = subprocess.run(
+        command, cwd=str(PROJECT_ROOT), env=child_environment,
+        capture_output=True, text=True, timeout=timeout_seconds, check=False,
+    )
+    runtime = time.perf_counter() - started
+    if completed.returncode:
+        raise SimulationTraceError(
+            "generic fast simulator failed: "
+            f"returncode={completed.returncode}; "
+            f"stderr={(completed.stderr or '')[-2000:]}"
+        )
+    expected_task_ids = [
+        runtime_task_name_for_source_id(row["task_id"])
+        for row in task_payload
+    ]
+    try:
+        result = validate_generic_fast_result(
+            output_path,
+            expected_run_id=run_id,
+            expected_taskset_hash=taskset_hash,
+            expected_scheduler=scheduler_id,
+            expected_processors=processors,
+            expected_task_ids=expected_task_ids,
+            expected_horizon=horizon,
+            expected_campaign=campaign,
+            expected_deadline_mode=deadline_mode,
+            expected_priority_policy=priority_policy,
+        )
+    except Exception as exc:
+        raise SimulationTraceError(f"generic fast compact result rejected: {exc}") from exc
+    return WholePassFastExecution(result, runtime, output_path)
+
+
 def simulation_identity(
     cell_id: str,
     taskset_hash: str,
@@ -861,6 +934,10 @@ def render_system_projection(
         solar_path = Path(raw_solar_path)
         if not solar_path.is_absolute():
             solar_path = (base_system_path.parent / solar_path).resolve()
+            if not solar_path.is_file():
+                project_solar_path = (PROJECT_ROOT / raw_solar_path).resolve()
+                if project_solar_path.is_file():
+                    solar_path = project_solar_path
         if not solar_path.is_file():
             raise SimulationConfigurationError(
                 f"solar data file not found: {solar_path}"
@@ -1469,6 +1546,7 @@ def run_paired_simulation(
     implicit_streaming_parse: bool = False,
     bounded_streaming_parse: bool = False,
     implicit_wholepass_fast: bool = False,
+    generic_wholepass_fast: bool = False,
 ) -> SimulationExecution | WholePassFastExecution:
     priority_policy = normalize_scheduler_priority_policy(
         simulation_config.get("priority_policy", "RM")
@@ -1488,6 +1566,21 @@ def run_paired_simulation(
     ):
         raise SimulationConfigurationError(
             "implicit WholePass fast path requires v6 RM implicit hard-RT or a supported A-implicit campaign"
+        )
+    if implicit_wholepass_fast and generic_wholepass_fast:
+        raise SimulationConfigurationError(
+            "legacy and generic WholePass fast paths cannot both be enabled"
+        )
+    if generic_wholepass_fast and (
+        not isinstance(simulation_config.get("campaign"), str)
+        or not simulation_config["campaign"]
+        or simulation_config.get("deadline_mode") not in {"constrained", "implicit"}
+        or priority_policy not in {"RM", "DM"}
+        or simulation_config.get("wholepass_mode") != "hard-rt"
+    ):
+        raise SimulationConfigurationError(
+            "generic WholePass fast path requires a non-empty campaign, "
+            "RM/DM constrained or implicit deadline mode, and hard-RT mode"
         )
     try:
         initial = exact_energy.exact_e0_lower_bound(
@@ -1547,6 +1640,27 @@ def run_paired_simulation(
             timeout_seconds=float(simulation_config["timeout_seconds"]),
             environment=environment,
             campaign=str(simulation_config.get("campaign", "v6")),
+        )
+        return fast  # type: ignore[return-value]
+    if generic_wholepass_fast:
+        fast_run_id = f"v93-{simulation_id_value[:16]}-h{simulation_config['horizon']}"
+        fast = _run_wholepass_fast(
+            simulator=simulator,
+            system_path=system_path,
+            taskset_path=taskset_path,
+            run_root=run_root,
+            simulation_id_value=simulation_id_value,
+            run_id=fast_run_id,
+            taskset_hash=taskset_hash,
+            task_payload=task_payload,
+            scheduler_id=scheduler_id,
+            processors=processors,
+            horizon=int(simulation_config["horizon"]),
+            timeout_seconds=float(simulation_config["timeout_seconds"]),
+            environment=environment,
+            campaign=str(simulation_config["campaign"]),
+            deadline_mode=str(simulation_config["deadline_mode"]),
+            priority_policy=priority_policy,
         )
         return fast  # type: ignore[return-value]
     trace_work = run_root / "simulation_trace_work"

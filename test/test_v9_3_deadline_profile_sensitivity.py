@@ -1,8 +1,10 @@
 from fractions import Fraction
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from experiments.v9_3 import perf_g
 from experiments.v9_3.deadline_profile_sensitivity import (
     DeadlineProfileError,
     PROFILE_ORDER,
@@ -17,11 +19,16 @@ from experiments.v9_3.deadline_profile_sensitivity import (
 )
 from scripts.run_deadline_profile_sensitivity import (
     _build_energy_material,
+    _make_job,
+    _result_row,
     build_requests,
+    deadline_mode_for_payload,
     parse_alphas,
     parse_priority_policies,
+    SENSITIVITY_CAMPAIGN,
     validate_implicit_outcomes,
 )
+from experiments.v9_3.simulation_engine import WholePassFastExecution
 
 
 def _base_taskset():
@@ -400,3 +407,79 @@ def test_request_identity_changes_for_every_scientific_dimension():
 def test_implicit_outcome_comparison_is_not_applicable_for_single_policy():
     rows = [row for row in _implicit_outcome_rows() if row["priority_policy"] == "RM"]
     assert validate_implicit_outcomes(rows, policies=("RM",)) == "NOT_APPLICABLE_POLICY_SUBSET"
+
+
+def test_sensitivity_jobs_bind_actual_deadline_mode_and_generic_fast(tmp_path):
+    base = _relax_base_taskset()
+    profiles = project_profiles_from_original_deadline(
+        base, (Fraction(0), Fraction(1, 3), Fraction(1)),
+    )
+    requests = build_requests(
+        {Fraction(3, 10): profiles},
+        ((Fraction(3, 10), Fraction(7, 10)),),
+        policies=("RM", "DM"), schedulers=("ASAP-BLOCK",),
+    )
+    energy = {"material": {
+        "initial_energy_j": "1", "battery_capacity_j": "2",
+        "solar_scale": "1",
+    }}
+    modes = []
+    for index, request in enumerate(requests):
+        profile = next(item for item in profiles
+                       if item.deadline_profile == request["deadline_profile"])
+        job = _make_job(
+            tmp_path, request, profile, energy, Path("service.yaml"),
+            Path("simulator"), 5, False,
+        )
+        modes.append((job["simulation_config"]["deadline_mode"],
+                      job["simulation_config"]["priority_policy"],
+                      job["generic_wholepass_fast"],
+                      job["simulation_config"]["campaign"]))
+    assert [mode[0] for mode in modes[::2]] == ["constrained", "constrained", "implicit"]
+    assert {mode[1] for mode in modes} == {"RM", "DM"}
+    assert all(mode[2] for mode in modes)
+    assert {mode[3] for mode in modes} == {SENSITIVITY_CAMPAIGN}
+
+
+def test_sensitivity_plans_all_formal_schedulers_for_generic_fast():
+    profiles = project_profiles_from_original_deadline(
+        _relax_base_taskset(), (Fraction(1),),
+    )
+    requests = build_requests(
+        {Fraction(3, 10): profiles},
+        ((Fraction(3, 10), Fraction(7, 10)),),
+        policies=("RM", "DM"), schedulers=perf_g.FORMAL_SCHEDULERS,
+    )
+    assert len(requests) == 18
+    assert {row["scheduler"] for row in requests} == set(perf_g.FORMAL_SCHEDULERS)
+    assert {row["deadline_mode"] for row in requests} == {"implicit"}
+
+
+def test_deadline_mode_for_payload_uses_deadline_values_not_profile_name():
+    payload = ({"C": 1, "D": 10, "T": 10},)
+    assert deadline_mode_for_payload(payload) == "implicit"
+    payload = ({"C": 1, "D": 9, "T": 10},)
+    assert deadline_mode_for_payload(payload) == "constrained"
+
+
+def test_sensitivity_result_row_maps_generic_fast_without_trace_metrics():
+    request = build_requests(
+        {Fraction(3, 10): project_profiles_from_original_deadline(
+            _relax_base_taskset(), (Fraction(1),),
+        )},
+        ((Fraction(3, 10), Fraction(7, 10)),),
+        policies=("DM",), schedulers=("ASAP-BLOCK",),
+    )[0]
+    value = {
+        "schema": "PARTSIM_GENERIC_HARDRT_WHOLEPASS_FAST_V1",
+        "fast_mode": "generic_hardrt_wholepass", "taskset_pass": True,
+        "completion_reason": "reached_horizon",
+    }
+    job = {"request": request, "task_payload": (), "energy": {}}
+    row = _result_row(
+        job, WholePassFastExecution(value, 0.25, Path("compact.json")), None,
+    )
+    assert row["simulation_status"] == "SIM_PASS_OBSERVED"
+    assert row["wholepass"] is True
+    assert row["metrics"] == {}
+    assert row["fast_mode"] == "generic_hardrt_wholepass"
