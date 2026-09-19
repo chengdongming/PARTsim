@@ -23,6 +23,7 @@ from scripts.run_deadline_profile_sensitivity import (
     _result_row,
     build_requests,
     deadline_mode_for_payload,
+    main,
     parse_alphas,
     parse_priority_policies,
     SENSITIVITY_CAMPAIGN,
@@ -460,6 +461,11 @@ def test_deadline_mode_for_payload_uses_deadline_values_not_profile_name():
     assert deadline_mode_for_payload(payload) == "implicit"
     payload = ({"C": 1, "D": 9, "T": 10},)
     assert deadline_mode_for_payload(payload) == "constrained"
+
+
+def test_sensitivity_keep_traces_fails_closed_for_generic_fast(tmp_path):
+    with pytest.raises(SystemExit, match="--keep-traces is incompatible"):
+        main(["--output", str(tmp_path / "run"), "--keep-traces"])
 
 
 def test_sensitivity_result_row_maps_generic_fast_without_trace_metrics():

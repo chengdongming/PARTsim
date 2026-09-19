@@ -423,12 +423,13 @@ public:
         const auto release = tickValue(MetaSim::SIMUL.getTime());
         if (release >= horizon_) return;
         auto &task = *event.getTask();
-        const auto deadline = release + tickValue(task.getRelDline());
+        const auto deadline = release + tickValue(task.getConfiguredRelDline());
         const auto key = jobKey(task.getName(), release);
         if (!jobs_.emplace(key, Job{release, deadline}).second) {
             fail("duplicate observed job release");
             return;
         }
+        all_jobs_.emplace(key, Job{release, deadline});
         ++released_jobs_;
         if (deadline < horizon_)
             ++adjudicable_jobs_;
@@ -450,6 +451,7 @@ public:
                            "completion_after_absolute_deadline");
                 return;
             }
+            completed_jobs_.insert(key);
             ++completed_adjudicable_jobs_;
         }
         jobs_.erase(found);
@@ -459,7 +461,7 @@ public:
         auto &task = *event.getTask();
         const auto miss_time = tickValue(MetaSim::SIMUL.getTime());
         const auto release = tickValue(task.getLastArrival());
-        const auto deadline = release + tickValue(task.getRelDline());
+        const auto deadline = release + tickValue(task.getConfiguredRelDline());
         if (deadline >= horizon_ || miss_time < deadline) return;
         const auto key = jobKey(task.getName(), release);
         auto found = jobs_.find(key);
@@ -475,7 +477,7 @@ public:
         auto &task = *event.getTask();
         const auto kill_time = tickValue(MetaSim::SIMUL.getTime());
         const auto release = tickValue(task.getLastArrival());
-        const auto deadline = release + tickValue(task.getRelDline());
+        const auto deadline = release + tickValue(task.getConfiguredRelDline());
         const auto key = jobKey(task.getName(), release);
         auto found = jobs_.find(key);
         if (found == jobs_.end()) return;
@@ -500,6 +502,22 @@ public:
         }
         if (!reached_horizon || actual_end < horizon_)
             throw std::runtime_error("fast simulation did not reach horizon");
+        if (generic_) {
+            for (const auto &entry : all_jobs_) {
+                if (entry.second.deadline >= horizon_)
+                    continue;
+                if (completed_jobs_.count(entry.first) != 0)
+                    continue;
+                const auto separator = entry.first.rfind('@');
+                const auto task_name = separator == std::string::npos
+                    ? entry.first : entry.first.substr(0, separator);
+                recordMiss(task_name, entry.second, actual_end,
+                           "incomplete_adjudicable_job_at_horizon");
+                writeResult(false, actual_end, "first_hardrt_deadline_miss",
+                            generation);
+                return;
+            }
+        }
         for (const auto &entry : jobs_) {
             if (entry.second.deadline < horizon_)
                 throw std::runtime_error(
@@ -652,6 +670,8 @@ private:
     bool generic_{false};
     std::vector<std::string> task_ids_;
     std::map<std::string, Job> jobs_;
+    std::map<std::string, Job> all_jobs_;
+    std::set<std::string> completed_jobs_;
     std::uint64_t released_jobs_{0};
     std::uint64_t adjudicable_jobs_{0};
     std::uint64_t completed_adjudicable_jobs_{0};

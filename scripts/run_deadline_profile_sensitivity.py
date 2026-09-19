@@ -487,6 +487,11 @@ def _profile_names_for_mode(mode: str, values: Sequence[Fraction]) -> tuple[str,
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
+    if args.keep_traces:
+        raise SystemExit(
+            "--keep-traces is incompatible with the generic WholePass fast "
+            "sensitivity path; omit it because semantic traces are not generated"
+        )
     try:
         cells = load_cross.parse_cells(args.cells)
         alphas = parse_alphas(args.alphas)

@@ -934,10 +934,6 @@ def render_system_projection(
         solar_path = Path(raw_solar_path)
         if not solar_path.is_absolute():
             solar_path = (base_system_path.parent / solar_path).resolve()
-            if not solar_path.is_file():
-                project_solar_path = (PROJECT_ROOT / raw_solar_path).resolve()
-                if project_solar_path.is_file():
-                    solar_path = project_solar_path
         if not solar_path.is_file():
             raise SimulationConfigurationError(
                 f"solar data file not found: {solar_path}"

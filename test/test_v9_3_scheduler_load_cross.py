@@ -4558,6 +4558,172 @@ def test_generic_wholepass_fast_python_path_never_calls_trace_parser(tmp_path, m
     assert execution.result["taskset_pass"] is True
 
 
+def _real_wholepass_observation(
+    root, *, task_payload, scheduler, priority_policy, deadline_mode,
+    mode="generic", label="case", processors=1,
+):
+    horizon = 40
+    simulation_config = {
+        "simulator_bin": str(Path("build/rtsim/rtsim").resolve()),
+        "horizon": horizon, "maximum_horizon": horizon,
+        "horizon_extension_policy": "none",
+        "priority_policy": priority_policy, "deadline_mode": deadline_mode,
+        "campaign": "deadline-profile-sensitivity-v1",
+        "wholepass_mode": "hard-rt", "warmup": 0,
+        "minimum_jobs_per_task": 1, "trace_mode": "semantic",
+        "trace_on_failure": False, "retain_trace": False,
+        "timeout_seconds": 30, "cleanup_transient_artifacts": True,
+    }
+    kwargs = {}
+    if mode == "generic":
+        kwargs["generic_wholepass_fast"] = True
+        simulation_config["trace_mode"] = "none"
+    elif mode == "legacy":
+        simulation_config["campaign"] = "v6"
+        kwargs["implicit_wholepass_fast"] = True
+    elif mode != "full":
+        raise AssertionError(f"unknown observation mode: {mode}")
+    return simulation_engine_module.run_paired_simulation(
+        simulation_id_value=f"{label}-{mode}-{scheduler}-{priority_policy}",
+        base_system_path=Path("system_config_unified_template.yml"),
+        run_root=root / f"{label}-{mode}-{scheduler}-{priority_policy}",
+        task_payload=task_payload, taskset_hash="a" * 64,
+        processors=processors,
+        exact_e0=Fraction(100),
+        energy_config={
+            "simulation_initial_battery": "100",
+            "battery_capacity": "1000",
+            "allow_harvest_clipping": True,
+            "service_curve": {
+                "solar_scale": "1", "use_real_solar_data": False,
+            },
+        }, simulation_config=simulation_config,
+        scheduler_id=perf_g.SCHEDULER_CLI[scheduler], **kwargs,
+    )
+
+
+def _assert_real_equivalence(full, compact):
+    assert isinstance(compact, simulation_engine_module.WholePassFastExecution)
+    full_result = full.result
+    fast_result = compact.result
+    assert full_result.status.value in {
+        SimulationStatus.PASS_OBSERVED.value,
+        SimulationStatus.DEADLINE_MISS.value,
+    }
+    assert fast_result["taskset_pass"] == (
+        full_result.status is SimulationStatus.PASS_OBSERVED
+    )
+    assert (
+        full_result.status.value
+        == (SimulationStatus.PASS_OBSERVED.value
+            if fast_result["taskset_pass"]
+            else SimulationStatus.DEADLINE_MISS.value)
+    )
+    if full_result.status is SimulationStatus.DEADLINE_MISS:
+        missed = next(job for job in full_result.jobs if job.deadline_miss)
+        compact_miss = fast_result["first_deadline_miss"]
+        assert compact_miss["task_id"] == (missed.task_name or missed.task_id)
+        assert compact_miss["release"] == missed.release
+        assert compact_miss["absolute_deadline"] == missed.absolute_deadline
+
+
+@pytest.mark.parametrize("deadline_mode, priority_policy, task_payload", [
+    (
+        "constrained", "RM",
+        ({"task_id": "0", "priority_rank": 0, "C": 1, "D": 10,
+          "T": 20, "P": "93/250000", "workload": "hash", "arrival_offset": 0},),
+    ),
+    (
+        "constrained", "DM",
+        (
+            {"task_id": "0", "priority_rank": 0, "C": 5, "D": 5,
+             "T": 1000, "P": "93/250000", "workload": "hash", "arrival_offset": 0},
+            {"task_id": "1", "priority_rank": 1, "C": 5, "D": 5,
+             "T": 1000, "P": "93/250000", "workload": "hash", "arrival_offset": 0},
+        ),
+    ),
+    (
+        "implicit", "RM",
+        ({"task_id": "0", "priority_rank": 0, "C": 1, "D": 20,
+          "T": 20, "P": "93/250000", "workload": "hash", "arrival_offset": 0},),
+    ),
+])
+def test_generic_wholepass_real_equivalence_against_full_trace(
+    tmp_path, deadline_mode, priority_policy, task_payload,
+):
+    full = _real_wholepass_observation(
+        tmp_path, task_payload=task_payload, scheduler="ASAP-BLOCK",
+        priority_policy=priority_policy, deadline_mode=deadline_mode,
+        mode="full", label="equivalence",
+    )
+    compact = _real_wholepass_observation(
+        tmp_path, task_payload=task_payload, scheduler="ASAP-BLOCK",
+        priority_policy=priority_policy, deadline_mode=deadline_mode,
+        mode="generic", label="equivalence",
+    )
+    _assert_real_equivalence(full, compact)
+    assert not list((compact.output_path.parent).glob("*trace*.json"))
+    assert compact.output_path.is_file()
+
+
+@pytest.mark.parametrize("scheduler", perf_g.FORMAL_SCHEDULERS)
+def test_generic_wholepass_real_equivalence_pass_covers_all_formal_schedulers(
+    tmp_path, scheduler,
+):
+    payload = ({
+        "task_id": "0", "priority_rank": 0, "C": 1, "D": 10,
+        "T": 20, "P": "93/250000", "workload": "hash", "arrival_offset": 0,
+    },)
+    full = _real_wholepass_observation(
+        tmp_path, task_payload=payload, scheduler=scheduler,
+        priority_policy="DM", deadline_mode="constrained",
+        mode="full", label="all-schedulers-equivalence",
+    )
+    compact = _real_wholepass_observation(
+        tmp_path, task_payload=payload, scheduler=scheduler,
+        priority_policy="DM", deadline_mode="constrained",
+        mode="generic", label="all-schedulers-equivalence",
+    )
+    _assert_real_equivalence(full, compact)
+    assert not list(compact.output_path.parent.glob("*trace*.json"))
+
+
+@pytest.mark.parametrize("scheduler", perf_g.FORMAL_SCHEDULERS)
+def test_generic_wholepass_real_smoke_covers_all_formal_schedulers(tmp_path, scheduler):
+    payload = ({
+        "task_id": "0", "priority_rank": 0, "C": 1, "D": 10,
+        "T": 20, "P": "93/250000", "workload": "hash", "arrival_offset": 0,
+    },)
+    compact = _real_wholepass_observation(
+        tmp_path, task_payload=payload, scheduler=scheduler,
+        priority_policy="DM", deadline_mode="constrained",
+        mode="generic", label="all-schedulers",
+    )
+    assert compact.result["taskset_pass"] is True
+    assert compact.output_path.is_file()
+    assert list(compact.output_path.parent.glob("*.json")) == [
+        compact.output_path
+    ]
+
+
+def test_generic_implicit_matches_legacy_implicit_compact_observation(tmp_path):
+    payload = tuple({
+        "task_id": str(index), "priority_rank": index, "C": 1, "D": 20,
+        "T": 20, "P": "93/250000", "workload": "hash", "arrival_offset": 0,
+    } for index in range(10))
+    legacy = _real_wholepass_observation(
+        tmp_path, task_payload=payload, scheduler="ASAP-BLOCK",
+        priority_policy="RM", deadline_mode="implicit",
+        mode="legacy", label="implicit-equivalence", processors=4,
+    )
+    generic = _real_wholepass_observation(
+        tmp_path, task_payload=payload, scheduler="ASAP-BLOCK",
+        priority_policy="RM", deadline_mode="implicit",
+        mode="generic", label="implicit-equivalence", processors=4,
+    )
+    assert legacy.result["taskset_pass"] == generic.result["taskset_pass"]
+
+
 def test_v6_implicit_wholepass_fast_rejects_constrained_scope(tmp_path):
     command = [
         str(Path("build/rtsim/rtsim")),
