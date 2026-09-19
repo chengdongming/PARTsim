@@ -37,7 +37,7 @@ from experiments.v9_3.deadline_profile_sensitivity import (
 )
 from experiments.v9_3.parallel_prepare import validate_workers
 from experiments.v9_3.simulation_engine import (
-    SimulationStatus,
+    SimulationStatus, WholePassFastExecution,
     normalize_scheduler_priority_policy,
 )
 from experiments.v9_3.performance_outcome import evaluate_outcome
@@ -60,6 +60,7 @@ DEFAULT_KAPPA = Fraction(10)
 DEFAULT_HORIZON = 60000
 DEFAULT_SCHEDULERS = ("ASAP-BLOCK", "ASAP-NONBLOCK", "ST-NONBLOCK")
 DEFAULT_POLICIES = ("RM", "DM")
+SENSITIVITY_CAMPAIGN = "deadline-profile-sensitivity-v1"
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -140,6 +141,23 @@ def _projected_row(projected: ProjectedTaskset) -> dict[str, Any]:
     return projected.row()
 
 
+def deadline_mode_for_payload(task_payload: Sequence[Mapping[str, Any]]) -> str:
+    """Derive the compact observer mode from the actual projected deadlines."""
+    if not task_payload:
+        raise ValueError("projected task payload must be non-empty")
+    for row in task_payload:
+        try:
+            c_value, d_value, t_value = row["C"], row["D"], row["T"]
+        except KeyError as exc:
+            raise ValueError("projected task payload lacks C/D/T") from exc
+        if (isinstance(c_value, bool) or isinstance(d_value, bool)
+                or isinstance(t_value, bool)
+                or not all(isinstance(value, int) for value in (c_value, d_value, t_value))
+                or not 0 < c_value <= d_value <= t_value):
+            raise ValueError("projected task payload violates 0 < C <= D <= T")
+    return "implicit" if all(row["D"] == row["T"] for row in task_payload) else "constrained"
+
+
 def _as_projected_by_uc(
     projected: Mapping[Fraction, Sequence[ProjectedTaskset]]
     | Sequence[ProjectedTaskset],
@@ -185,7 +203,10 @@ def build_requests(
                         ),
                         "priority_policy": normalized_policy,
                         "scheduler": scheduler,
+                        "campaign": SENSITIVITY_CAMPAIGN,
+                        "deadline_mode": deadline_mode_for_payload(item.task_payload),
                     }
+                    deadline_mode = identity["deadline_mode"]
                     rows.append({
                         "request_id": "deadline-sensitivity-" + domain_hash(
                             "ASAP_BLOCK:V9.3:DEADLINE_REQUEST:v2", identity,
@@ -215,6 +236,9 @@ def build_requests(
                         "scheduler": scheduler,
                         "scheduler_cli": perf_g.SCHEDULER_CLI[scheduler],
                         "priority_policy": normalized_policy,
+                        "campaign": SENSITIVITY_CAMPAIGN,
+                        "deadline_mode": deadline_mode,
+                        "wholepass_mode": "hard-rt",
                         "horizon": int(horizon_ms),
                         "horizon_ms": int(horizon_ms),
                     })
@@ -284,12 +308,16 @@ def _make_job(
             "simulator_bin": str(simulator), "horizon": horizon,
             "maximum_horizon": horizon, "horizon_extension_policy": "none",
             "priority_policy": str(request["priority_policy"]), "warmup": 0,
-            "minimum_jobs_per_task": 1, "trace_mode": "semantic",
-            "trace_on_failure": keep_traces, "retain_trace": keep_traces,
+            "minimum_jobs_per_task": 1, "trace_mode": "none",
+            "trace_on_failure": False, "retain_trace": False,
+            "campaign": SENSITIVITY_CAMPAIGN,
+            "deadline_mode": str(request["deadline_mode"]),
+            "wholepass_mode": "hard-rt",
             "timeout_seconds": timeout_seconds,
             "cleanup_transient_artifacts": True,
         },
         "scheduler_id": request["scheduler_cli"],
+        "generic_wholepass_fast": True,
     }
 
 
@@ -309,6 +337,27 @@ def _result_row(job: Mapping[str, Any], execution: Any, technical: str | None) -
             "technical_error": technical, "wholepass": outcome.get("wholepass"),
             "taskset_pass": outcome.get("taskset_pass"), "deadline_miss": False,
             "outcome": outcome,
+        }
+    if isinstance(execution, WholePassFastExecution):
+        fast_result = dict(execution.result)
+        taskset_pass = bool(fast_result["taskset_pass"])
+        status = (
+            SimulationStatus.PASS_OBSERVED.value
+            if taskset_pass else SimulationStatus.DEADLINE_MISS.value
+        )
+        outcome = {
+            "outcome_status": "AVAILABLE",
+            "wholepass": taskset_pass,
+            "taskset_pass": taskset_pass,
+        }
+        return {
+            **request, "energy": job["energy"], "simulation_status": status,
+            "simulation_reason": fast_result["completion_reason"],
+            "technical_error": None, "runtime_seconds": execution.runtime_seconds,
+            "fast_mode": fast_result["fast_mode"], "fast_result": fast_result,
+            "metrics": {}, "outcome": outcome,
+            "wholepass": taskset_pass, "taskset_pass": taskset_pass,
+            "deadline_miss": status == SimulationStatus.DEADLINE_MISS.value,
         }
     status = execution.result.status.value
     technical_error = (
@@ -438,6 +487,11 @@ def _profile_names_for_mode(mode: str, values: Sequence[Fraction]) -> tuple[str,
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
+    if args.keep_traces:
+        raise SystemExit(
+            "--keep-traces is incompatible with the generic WholePass fast "
+            "sensitivity path; omit it because semantic traces are not generated"
+        )
     try:
         cells = load_cross.parse_cells(args.cells)
         alphas = parse_alphas(args.alphas)
@@ -488,6 +542,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "util_tolerance_total": fraction_text(tolerance), "kappa": fraction_text(kappa),
         "simulation_horizon": args.simulation_horizon,
         "schedulers": list(schedulers), "priority_policies": list(policies),
+        "campaign": SENSITIVITY_CAMPAIGN,
+        "wholepass_mode": "hard-rt", "generic_wholepass_fast": True,
         "workers": args.workers, "prepare_workers": prepare_workers,
         "parse_concurrency": args.parse_concurrency, "timeout_seconds": args.timeout_seconds,
         "simulator": str(args.simulator), "simulator_sha256": _sha256(args.simulator),

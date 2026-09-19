@@ -107,6 +107,7 @@ def _run_simulation_job(job: dict[str, Any]) -> tuple[Any, str | None]:
             implicit_streaming_parse=bool(job.get("implicit_streaming_parse", False)),
             bounded_streaming_parse=bool(job.get("bounded_streaming_parse", False)),
             implicit_wholepass_fast=bool(job.get("implicit_wholepass_fast", False)),
+            generic_wholepass_fast=bool(job.get("generic_wholepass_fast", False)),
         )
     except Exception as exc:
         return None, f"{type(exc).__name__}: {exc}"
