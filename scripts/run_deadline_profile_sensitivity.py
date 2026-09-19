@@ -310,7 +310,9 @@ def _make_job(
             "allow_harvest_clipping": True,
             "service_curve": {
                 "solar_scale": material["solar_scale"],
-                "use_real_solar_data": True,
+                "use_real_solar_data": False,
+                "require_real_solar_data": False,
+                **load_cross.HARVEST_MODEL_IDENTITY,
             },
         },
         "simulation_config": {
