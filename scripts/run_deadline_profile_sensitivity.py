@@ -28,14 +28,14 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3 import perf_g, scheduler_load_cross as load_cross
-from experiments.v9_3.config import canonical_json, domain_hash, fraction_text
+from experiments.v9_3.config import domain_hash, fraction_text
 from experiments.v9_3.deadline_profile_sensitivity import (
     ProjectedTaskset,
     project_profiles_from_original_deadline,
     project_profiles_with_fixed_lambdas,
     fixed_profile_name_for_lambda,
 )
-from experiments.v9_3.parallel_prepare import validate_workers
+from experiments.v9_3.parallel_prepare import run_prepare_jobs, validate_workers
 from experiments.v9_3.simulation_engine import (
     SimulationStatus, WholePassFastExecution,
     normalize_scheduler_priority_policy,
@@ -258,25 +258,61 @@ def build_requests(
     return rows
 
 
-def _build_energy_material(
-    profiles: Sequence[ProjectedTaskset],
-    target_ue: Fraction,
+def _build_energy_prepare_jobs(
+    tasksets_by_uc: Mapping[Fraction, Sequence[Any]],
+    cells: Sequence[tuple[Fraction, Fraction]],
+    kappa: Fraction,
+    raw_trace_id: str,
+    initial_energy_rule: str,
+) -> list[dict[str, Any]]:
+    """Build one canonical energy job per (base taskset, U_E) pair."""
+    jobs: list[dict[str, Any]] = []
+    for target_uc, tasksets in tasksets_by_uc.items():
+        for taskset in tasksets:
+            for cell_uc, target_ue in cells:
+                if cell_uc != target_uc:
+                    continue
+                jobs.append({
+                    "taskset_id": taskset.taskset_id,
+                    "target_ue": fraction_text(target_ue),
+                    "task_payload": tuple(taskset.task_payload),
+                    "processors": taskset.processors,
+                    "task_count": taskset.task_count,
+                    "kappa": kappa,
+                    "raw_trace_id": raw_trace_id,
+                    "initial_energy_rule": initial_energy_rule,
+                })
+    return jobs
+
+
+def _prepare_energy_materials(
+    tasksets_by_uc: Mapping[Fraction, Sequence[Any]],
+    cells: Sequence[tuple[Fraction, Fraction]],
     kappa: Fraction,
     raw_trace: Sequence[Fraction],
     raw_trace_id: str,
-    initial_energy_rule: str = DEFAULT_INITIAL_ENERGY_RULE,
-) -> dict[str, Any]:
-    first = profiles[0]
-    materials = [
-        load_cross.energy_material(
-            profile, target_ue, raw_trace, kappa=kappa, raw_trace_id=raw_trace_id,
-            initial_energy_rule=initial_energy_rule,
-        )
-        for profile in profiles
-    ]
-    if any(canonical_json(material) != canonical_json(materials[0]) for material in materials[1:]):
-        raise RuntimeError("deadline projection changed energy material")
-    return {"base_taskset_id": first.base_taskset_id, "material": materials[0]}
+    initial_energy_rule: str,
+    prepare_workers: int,
+) -> dict[tuple[Fraction, str, str], dict[str, Any]]:
+    """Prepare and index energy materials independently of projected profiles."""
+    load_cross.set_prepare_raw_trace(raw_trace)
+    energy_jobs = _build_energy_prepare_jobs(
+        tasksets_by_uc, cells, kappa, raw_trace_id, initial_energy_rule,
+    )
+    prepared = run_prepare_jobs(
+        energy_jobs, load_cross.prepare_energy_material,
+        workers=prepare_workers, phase="deadline-sensitivity prepare-energy",
+        key=lambda row: (row["taskset_id"], row["target_ue"]),
+    )
+    energy_by_key: dict[tuple[Fraction, str, str], dict[str, Any]] = {}
+    for target_uc, tasksets in tasksets_by_uc.items():
+        for taskset in tasksets:
+            for cell_uc, target_ue in cells:
+                if cell_uc == target_uc:
+                    energy_by_key[
+                        (target_uc, taskset.taskset_id, fraction_text(target_ue))
+                    ] = prepared[(taskset.taskset_id, fraction_text(target_ue))]
+    return energy_by_key
 
 
 def _make_job(
@@ -618,19 +654,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         service.system_path, load_cross.FORMAL_NORMALIZATION_HORIZON,
     )
     raw_trace_id = load_cross.harvest_trace_identity(raw_trace)
-    energy_by_key: dict[tuple[Fraction, str, str], dict[str, Any]] = {}
-    for uc in unique_ucs:
-        for taskset in tasksets_by_uc[uc]:
-            family = [
-                profile for profile in projected_by_uc[uc]
-                if profile.base_taskset_id == taskset.taskset_id
-            ]
-            for cell_uc, target_ue in cells:
-                if cell_uc == uc:
-                    energy_by_key[(uc, taskset.taskset_id, fraction_text(target_ue))] = _build_energy_material(
-                        family, target_ue, kappa, raw_trace, raw_trace_id,
-                        initial_energy_rule=initial_energy_rule,
-                    )
+    energy_by_key = _prepare_energy_materials(
+        tasksets_by_uc, cells, kappa, raw_trace, raw_trace_id,
+        initial_energy_rule, prepare_workers,
+    )
 
     jobs = []
     for request in requests:

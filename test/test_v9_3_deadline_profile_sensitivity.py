@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from experiments.v9_3 import perf_g, scheduler_load_cross as load_cross
+from experiments.v9_3.config import canonical_json
 from experiments.v9_3.deadline_profile_sensitivity import (
     DeadlineProfileError,
     PROFILE_ORDER,
@@ -19,8 +20,9 @@ from experiments.v9_3.deadline_profile_sensitivity import (
     validate_same_projected_material,
 )
 from scripts.run_deadline_profile_sensitivity import (
-    _build_energy_material,
+    _build_energy_prepare_jobs,
     _make_job,
+    _prepare_energy_materials,
     _result_row,
     build_requests,
     deadline_mode_for_payload,
@@ -329,22 +331,25 @@ def test_request_identity_and_rows_bind_initial_energy_rule():
 
 
 def test_energy_material_initial_energy_rules_are_exact():
-    profile = project_profiles_from_original_deadline(
-        _relax_base_taskset(), (Fraction(1, 3),),
-    )
+    base = _relax_base_taskset()
     raw_trace = (Fraction(1),) * load_cross.FORMAL_NORMALIZATION_HORIZON
-    zero = _build_energy_material(
-        profile, Fraction(7, 10), Fraction(10), raw_trace, "trace-id",
-        initial_energy_rule="zero",
-    )["material"]
-    half = _build_energy_material(
-        profile, Fraction(7, 10), Fraction(10), raw_trace, "trace-id",
-        initial_energy_rule="battery_capacity/2",
-    )["material"]
-    assert zero["initial_energy_j"] == "0"
-    assert Fraction(half["initial_energy_j"]) == (
-        Fraction(half["battery_capacity_j"]) / 2
-    )
+    cells = ((Fraction(3, 10), Fraction(7, 10)),)
+    for rule in ("zero", "battery_capacity/2"):
+        prepared = _prepare_energy_materials(
+            {Fraction(3, 10): [base]}, cells, Fraction(10), raw_trace,
+            "trace-id", rule, prepare_workers=1,
+        )[(Fraction(3, 10), base.taskset_id, "7/10")]["material"]
+        direct = load_cross.energy_material(
+            base, Fraction(7, 10), raw_trace, kappa=Fraction(10),
+            raw_trace_id="trace-id", initial_energy_rule=rule,
+        )
+        assert canonical_json(prepared) == canonical_json(direct)
+        if rule == "zero":
+            assert prepared["initial_energy_j"] == "0"
+        else:
+            assert Fraction(prepared["initial_energy_j"]) == (
+                Fraction(prepared["battery_capacity_j"]) / 2
+            )
 
 
 def test_main_materialization_and_run_config_receive_initial_energy_rule(
@@ -372,29 +377,65 @@ def test_main_materialization_and_run_config_receive_initial_energy_rule(
     assert config["initial_energy_rule"] == "zero"
 
 
-def test_energy_material_is_identical_across_deadline_profiles(monkeypatch):
-    profiles = project_profiles_from_original_deadline(
-        _relax_base_taskset(), (Fraction(0), Fraction(1, 3), Fraction(1)),
+def test_energy_prepare_job_cardinality_does_not_multiply_by_alpha_or_scheduler():
+    bases = []
+    for index in range(120):
+        base = _relax_base_taskset()
+        base.taskset_id = f"formal-base-{index}"
+        bases.append(base)
+    cells = tuple(
+        (Fraction(3, 10), ue)
+        for ue in (
+            Fraction(1, 5), Fraction(3, 10), Fraction(2, 5),
+            Fraction(1, 2), Fraction(3, 5), Fraction(7, 10),
+            Fraction(4, 5), Fraction(9, 10), Fraction(1),
+        )
     )
+    jobs = _build_energy_prepare_jobs(
+        {Fraction(3, 10): bases}, cells, Fraction(10), "trace-id", "zero",
+    )
+    assert len(jobs) == 1080
+    assert {job["target_ue"] for job in jobs} == {
+        "1/5", "3/10", "2/5", "1/2", "3/5", "7/10", "4/5", "9/10", "1",
+    }
+    assert all("alpha" not in job and "scheduler" not in job for job in jobs)
 
-    def fake_energy(
-        profile, target_ue, raw_trace, *, kappa, raw_trace_id,
-        initial_energy_rule,
-    ):
-        return {
-            "target_ue": str(target_ue), "kappa": str(kappa),
-            "raw_trace_id": raw_trace_id, "payload": profile.task_payload[0]["P"],
-            "initial_energy_rule": initial_energy_rule,
-        }
+
+def test_parallel_energy_prepare_publishes_trace_and_forwards_worker_count(monkeypatch):
+    base = _relax_base_taskset()
+    cells = ((Fraction(3, 10), Fraction(1, 2)), (Fraction(3, 10), Fraction(7, 10)))
+    events = []
 
     monkeypatch.setattr(
-        "scripts.run_deadline_profile_sensitivity.load_cross.energy_material",
-        fake_energy,
+        sensitivity.load_cross, "set_prepare_raw_trace",
+        lambda trace: events.append(("trace", len(trace))),
     )
-    result = _build_energy_material(
-        profiles, Fraction(7, 10), Fraction(10), (Fraction(1),), "trace-id",
+
+    def fake_run(jobs, worker, *, workers, phase, key):
+        events.append(("run", workers, phase, len(jobs), worker))
+        prepared = {}
+        for job in jobs:
+            row = {
+                "taskset_id": job["taskset_id"],
+                "target_ue": job["target_ue"],
+                "material": {"initial_energy_j": "0"},
+            }
+            prepared[key(row)] = row
+        return prepared
+
+    monkeypatch.setattr(sensitivity, "run_prepare_jobs", fake_run)
+    result = _prepare_energy_materials(
+        {Fraction(3, 10): [base]}, cells, Fraction(10), (Fraction(1),),
+        "trace-id", "zero", prepare_workers=30,
     )
-    assert result["material"]["payload"] == "5"
+    assert events[0] == ("trace", 1)
+    assert events[1][:4] == (
+        "run", 30, "deadline-sensitivity prepare-energy", 2,
+    )
+    assert set(result) == {
+        (Fraction(3, 10), base.taskset_id, "1/2"),
+        (Fraction(3, 10), base.taskset_id, "7/10"),
+    }
 
 
 def test_implicit_outcome_status_is_not_requested_without_alpha_one():
