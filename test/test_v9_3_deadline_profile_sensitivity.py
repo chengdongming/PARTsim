@@ -511,14 +511,29 @@ def test_sensitivity_jobs_bind_actual_deadline_mode_and_generic_fast(tmp_path):
             tmp_path, request, profile, energy, Path("service.yaml"),
             Path("simulator"), 5, False,
         )
+        assert job["task_payload"] == profile.task_payload
         modes.append((job["simulation_config"]["deadline_mode"],
                       job["simulation_config"]["priority_policy"],
                       job["generic_wholepass_fast"],
-                      job["simulation_config"]["campaign"]))
+                      job["simulation_config"]["campaign"],
+                      job["energy_config"]["service_curve"]))
     assert [mode[0] for mode in modes[::2]] == ["constrained", "constrained", "implicit"]
     assert {mode[1] for mode in modes} == {"RM", "DM"}
     assert all(mode[2] for mode in modes)
     assert {mode[3] for mode in modes} == {SENSITIVITY_CAMPAIGN}
+    for _deadline_mode, _policy, _fast, _campaign, service_curve in modes:
+        assert service_curve["use_real_solar_data"] is False
+        assert service_curve["require_real_solar_data"] is False
+        assert service_curve["solar_scale"] == "1"
+        assert {
+            key: service_curve[key]
+            for key in load_cross.HARVEST_MODEL_IDENTITY
+        } == load_cross.HARVEST_MODEL_IDENTITY
+    assert all(mode[4]["use_real_solar_data"] is False for mode in modes)
+    assert all(mode[4]["require_real_solar_data"] is False for mode in modes)
+    assert {request["initial_energy_rule"] for request in requests} == {
+        "battery_capacity/2"
+    }
 
 
 def test_sensitivity_plans_all_formal_schedulers_for_generic_fast():
