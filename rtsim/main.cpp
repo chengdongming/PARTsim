@@ -393,14 +393,20 @@ public:
         std::string scheduler,
         std::size_t processors,
         const std::string &output,
-        std::string campaign)
+        std::string campaign,
+        std::string deadline_mode,
+        std::string priority_policy,
+        bool generic)
         : horizon_(horizon),
           run_id_(std::move(run_id)),
           taskset_hash_(std::move(taskset_hash)),
           scheduler_(std::move(scheduler)),
           processors_(processors),
           output_(output),
-          campaign_(std::move(campaign)) {}
+          campaign_(std::move(campaign)),
+          deadline_mode_(std::move(deadline_mode)),
+          priority_policy_(std::move(priority_policy)),
+          generic_(generic) {}
 
     void attachToTask(RTSim::AbsRTTask &task) {
         auto *concrete = dynamic_cast<RTSim::Task *>(&task);
@@ -417,12 +423,13 @@ public:
         const auto release = tickValue(MetaSim::SIMUL.getTime());
         if (release >= horizon_) return;
         auto &task = *event.getTask();
-        const auto deadline = release + tickValue(task.getRelDline());
+        const auto deadline = release + tickValue(task.getConfiguredRelDline());
         const auto key = jobKey(task.getName(), release);
         if (!jobs_.emplace(key, Job{release, deadline}).second) {
             fail("duplicate observed job release");
             return;
         }
+        all_jobs_.emplace(key, Job{release, deadline});
         ++released_jobs_;
         if (deadline < horizon_)
             ++adjudicable_jobs_;
@@ -444,6 +451,7 @@ public:
                            "completion_after_absolute_deadline");
                 return;
             }
+            completed_jobs_.insert(key);
             ++completed_adjudicable_jobs_;
         }
         jobs_.erase(found);
@@ -453,7 +461,7 @@ public:
         auto &task = *event.getTask();
         const auto miss_time = tickValue(MetaSim::SIMUL.getTime());
         const auto release = tickValue(task.getLastArrival());
-        const auto deadline = release + tickValue(task.getRelDline());
+        const auto deadline = release + tickValue(task.getConfiguredRelDline());
         if (deadline >= horizon_ || miss_time < deadline) return;
         const auto key = jobKey(task.getName(), release);
         auto found = jobs_.find(key);
@@ -469,7 +477,7 @@ public:
         auto &task = *event.getTask();
         const auto kill_time = tickValue(MetaSim::SIMUL.getTime());
         const auto release = tickValue(task.getLastArrival());
-        const auto deadline = release + tickValue(task.getRelDline());
+        const auto deadline = release + tickValue(task.getConfiguredRelDline());
         const auto key = jobKey(task.getName(), release);
         auto found = jobs_.find(key);
         if (found == jobs_.end()) return;
@@ -494,6 +502,22 @@ public:
         }
         if (!reached_horizon || actual_end < horizon_)
             throw std::runtime_error("fast simulation did not reach horizon");
+        if (generic_) {
+            for (const auto &entry : all_jobs_) {
+                if (entry.second.deadline >= horizon_)
+                    continue;
+                if (completed_jobs_.count(entry.first) != 0)
+                    continue;
+                const auto separator = entry.first.rfind('@');
+                const auto task_name = separator == std::string::npos
+                    ? entry.first : entry.first.substr(0, separator);
+                recordMiss(task_name, entry.second, actual_end,
+                           "incomplete_adjudicable_job_at_horizon");
+                writeResult(false, actual_end, "first_hardrt_deadline_miss",
+                            generation);
+                return;
+            }
+        }
         for (const auto &entry : jobs_) {
             if (entry.second.deadline < horizon_)
                 throw std::runtime_error(
@@ -568,13 +592,21 @@ private:
         const bool a_implicit = campaign_ == "a-implicit-uc-fixed-supply" ||
             campaign_ == "a-implicit-ue-service-scaling";
         file << "{\"schema\":\""
-             << (a_implicit ? "PARTSIM_A_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1"
-                            : "PARTSIM_V6_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1")
+             << (generic_ ? "PARTSIM_GENERIC_HARDRT_WHOLEPASS_FAST_V1"
+                          : (a_implicit ? "PARTSIM_A_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1"
+                                        : "PARTSIM_V6_IMPLICIT_HARDRT_WHOLEPASS_FAST_V1"))
              << "\",\"fast_mode\":\""
-             << (a_implicit ? "a_implicit_rm_hardrt_wholepass"
-                            : "v6_rm_implicit_hardrt_wholepass")
+             << (generic_ ? "generic_hardrt_wholepass"
+                          : (a_implicit ? "a_implicit_rm_hardrt_wholepass"
+                                        : "v6_rm_implicit_hardrt_wholepass"))
              << "\",";
-        if (a_implicit)
+        if (generic_)
+            file << "\"campaign\":\"" << escapeJson(campaign_)
+                 << "\",\"deadline_mode\":\""
+                 << escapeJson(deadline_mode_)
+                 << "\",\"priority_policy\":\""
+                 << escapeJson(priority_policy_) << "\",";
+        else if (a_implicit)
             file << "\"campaign\":\"" << escapeJson(campaign_) << "\",";
         file
              << "\"run_id\":\"" << escapeJson(run_id_) << "\","
@@ -587,8 +619,12 @@ private:
             if (index) file << ',';
             file << "\"" << escapeJson(task_ids_[index]) << "\"";
         }
-        file << "],\"deadline_mode\":\"implicit\",\"horizon\":"
-             << horizon_ << ",\"simulation_generation\":" << generation
+        if (!generic_)
+            file << "],\"deadline_mode\":\"implicit\",";
+        else
+            file << "],";
+        file << "\"horizon\":" << horizon_
+             << ",\"simulation_generation\":" << generation
              << ",\"simulation_completed\":"
              << (pass ? "true" : "false")
              << ",\"completion_reason\":\"" << reason
@@ -629,8 +665,13 @@ private:
     std::size_t processors_;
     std::string output_;
     std::string campaign_;
+    std::string deadline_mode_;
+    std::string priority_policy_;
+    bool generic_{false};
     std::vector<std::string> task_ids_;
     std::map<std::string, Job> jobs_;
+    std::map<std::string, Job> all_jobs_;
+    std::set<std::string> completed_jobs_;
     std::uint64_t released_jobs_{0};
     std::uint64_t adjudicable_jobs_{0};
     std::uint64_t completed_adjudicable_jobs_{0};
@@ -1409,20 +1450,38 @@ int main(int argc, char *argv[]) {
     const bool b4_contract_version_supplied =
         !opts["b4-observability-contract-version"].empty();
     const bool wholepass_fast = !opts["wholepass-fast-output"].empty();
+    const bool generic_wholepass_fast =
+        opts["wholepass-fast-mode"] == "generic_hardrt_wholepass";
     if (wholepass_fast) {
+        const bool legacy_wholepass_fast =
+            opts["wholepass-fast-mode"] == "hard-rt-wholepass";
+        const bool valid_legacy =
+            opts["wholepass-fast-campaign"] == "v6" ||
+            opts["wholepass-fast-campaign"] == "a-implicit-uc-fixed-supply" ||
+            opts["wholepass-fast-campaign"] == "a-implicit-ue-service-scaling";
+        const bool valid_generic =
+            !opts["wholepass-fast-campaign"].empty() &&
+            (opts["wholepass-fast-deadline-mode"] == "implicit" ||
+             opts["wholepass-fast-deadline-mode"] == "constrained") &&
+            (opts["wholepass-fast-priority-policy"] == "RM" ||
+             opts["wholepass-fast-priority-policy"] == "DM");
+        if (!legacy_wholepass_fast && !generic_wholepass_fast) {
+            std::cerr
+                << "PRE-FLIGHT ERROR: WholePass fast path requires an "
+                   "explicit generic hard-RT WholePass mode"
+                << std::endl;
+            return EXIT_FAILURE;
+        }
         if (!opts["trace"].empty() || semantic_traces ||
             b4_observability_summary ||
-            (opts["wholepass-fast-campaign"] != "v6" &&
-             opts["wholepass-fast-campaign"] != "a-implicit-uc-fixed-supply" &&
-             opts["wholepass-fast-campaign"] != "a-implicit-ue-service-scaling") ||
-            opts["wholepass-fast-priority-policy"] != "RM" ||
-            opts["wholepass-fast-deadline-mode"] != "implicit" ||
-            opts["wholepass-fast-mode"] != "hard-rt-wholepass") {
+            (legacy_wholepass_fast && (!valid_legacy ||
+                opts["wholepass-fast-priority-policy"] != "RM" ||
+                opts["wholepass-fast-deadline-mode"] != "implicit")) ||
+            (generic_wholepass_fast && !valid_generic)) {
             std::cerr
                 << "PRE-FLIGHT ERROR: WholePass fast path requires an "
                    "explicit v6/RM/implicit/hard-rt-wholepass or "
-                   "A-implicit/RM/implicit/hard-rt-wholepass invocation "
-                   "without a legacy trace"
+                   "generic hard-RT WholePass invocation without a legacy trace"
                 << std::endl;
             return EXIT_FAILURE;
         }
@@ -1547,24 +1606,40 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
     if (wholepass_fast) {
-        if (taskset.size() != 10 || sys->cpus.size() != 4) {
+        const bool legacy_wholepass_fast =
+            opts["wholepass-fast-mode"] == "hard-rt-wholepass";
+        if (legacy_wholepass_fast &&
+            (taskset.size() != 10 || sys->cpus.size() != 4)) {
             std::cerr
                    << "PRE-FLIGHT ERROR: WholePass fast path requires "
                    "exactly ten tasks and four processors"
                 << std::endl;
             return EXIT_FAILURE;
         }
+        bool all_implicit = true;
         for (auto &[tasksrv, cpu, params] : taskset) {
             (void)cpu;
             (void)params;
             auto *task = dynamic_cast<RTSim::Task *>(&tasksrv.getTask());
-            if (!task || task->getConfiguredRelDline() != task->getPeriod()) {
+            if (!task) {
                 std::cerr
                     << "PRE-FLIGHT ERROR: WholePass fast path requires "
-                       "implicit D=T task definitions"
+                       "Task task definitions"
                     << std::endl;
                 return EXIT_FAILURE;
             }
+            all_implicit = all_implicit &&
+                task->getConfiguredRelDline() == task->getPeriod();
+        }
+        if ((legacy_wholepass_fast && !all_implicit) ||
+            (!legacy_wholepass_fast &&
+             ((opts["wholepass-fast-deadline-mode"] == "implicit" && !all_implicit) ||
+              (opts["wholepass-fast-deadline-mode"] == "constrained" && all_implicit)))) {
+            std::cerr
+                << "PRE-FLIGHT ERROR: WholePass fast path deadline mode "
+                   "does not match task definitions"
+                << std::endl;
+            return EXIT_FAILURE;
         }
         if (sys->scheduler_identities.empty()) {
             std::cerr
@@ -1586,7 +1661,10 @@ int main(int argc, char *argv[]) {
             static_cast<std::int64_t>(duration), opts["run-id"],
             opts["taskset-semantic-hash"], identity.configured_scheduler,
             sys->cpus.size(), opts["wholepass-fast-output"],
-            opts["wholepass-fast-campaign"]);
+            opts["wholepass-fast-campaign"],
+            opts["wholepass-fast-deadline-mode"],
+            opts["wholepass-fast-priority-policy"],
+            !legacy_wholepass_fast);
         for (auto &[tasksrv, cpu, params] : taskset) {
             (void)cpu;
             (void)params;
