@@ -60,6 +60,8 @@ DEFAULT_KAPPA = Fraction(10)
 DEFAULT_HORIZON = 60000
 DEFAULT_SCHEDULERS = ("ASAP-BLOCK", "ASAP-NONBLOCK", "ST-NONBLOCK")
 DEFAULT_POLICIES = ("RM", "DM")
+INITIAL_ENERGY_RULES = ("zero", "battery_capacity/2")
+DEFAULT_INITIAL_ENERGY_RULE = "battery_capacity/2"
 SENSITIVITY_CAMPAIGN = "deadline-profile-sensitivity-v1"
 
 
@@ -177,7 +179,10 @@ def build_requests(
     schedulers: Sequence[str] = DEFAULT_SCHEDULERS,
     horizon_ms: int = DEFAULT_HORIZON,
     kappa: Fraction = DEFAULT_KAPPA,
+    initial_energy_rule: str = DEFAULT_INITIAL_ENERGY_RULE,
 ) -> list[dict[str, Any]]:
+    if initial_energy_rule not in INITIAL_ENERGY_RULES:
+        raise ValueError(f"unknown initial energy rule: {initial_energy_rule}")
     projected_by_uc = _as_projected_by_uc(projected)
     if cells is None:
         cells = ((Fraction(3, 10), Fraction(7, 10)),)
@@ -205,6 +210,7 @@ def build_requests(
                         "scheduler": scheduler,
                         "campaign": SENSITIVITY_CAMPAIGN,
                         "deadline_mode": deadline_mode_for_payload(item.task_payload),
+                        "initial_energy_rule": initial_energy_rule,
                     }
                     deadline_mode = identity["deadline_mode"]
                     rows.append({
@@ -238,6 +244,7 @@ def build_requests(
                         "priority_policy": normalized_policy,
                         "campaign": SENSITIVITY_CAMPAIGN,
                         "deadline_mode": deadline_mode,
+                        "initial_energy_rule": initial_energy_rule,
                         "wholepass_mode": "hard-rt",
                         "horizon": int(horizon_ms),
                         "horizon_ms": int(horizon_ms),
@@ -257,11 +264,13 @@ def _build_energy_material(
     kappa: Fraction,
     raw_trace: Sequence[Fraction],
     raw_trace_id: str,
+    initial_energy_rule: str = DEFAULT_INITIAL_ENERGY_RULE,
 ) -> dict[str, Any]:
     first = profiles[0]
     materials = [
         load_cross.energy_material(
             profile, target_ue, raw_trace, kappa=kappa, raw_trace_id=raw_trace_id,
+            initial_energy_rule=initial_energy_rule,
         )
         for profile in profiles
     ]
@@ -461,6 +470,10 @@ def make_parser() -> ArgumentParser:
     parser.add_argument("--max-task-util", default=str(perf_g.MAX_TASK_UTILIZATION))
     parser.add_argument("--util-tolerance-total", default=str(perf_g.UTILIZATION_TOLERANCE))
     parser.add_argument("--kappa", default=str(DEFAULT_KAPPA))
+    parser.add_argument(
+        "--initial-energy-rule", choices=INITIAL_ENERGY_RULES,
+        default=DEFAULT_INITIAL_ENERGY_RULE,
+    )
     parser.add_argument("--simulation-horizon", type=int, default=DEFAULT_HORIZON)
     parser.add_argument("--schedulers", default=",".join(DEFAULT_SCHEDULERS))
     parser.add_argument("--priority-policies", default=",".join(DEFAULT_POLICIES))
@@ -487,6 +500,7 @@ def _profile_names_for_mode(mode: str, values: Sequence[Fraction]) -> tuple[str,
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = make_parser().parse_args(argv)
+    initial_energy_rule = args.initial_energy_rule
     if args.keep_traces:
         raise SystemExit(
             "--keep-traces is incompatible with the generic WholePass fast "
@@ -541,6 +555,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "min_task_util": fraction_text(min_util), "max_task_util": fraction_text(max_util),
         "util_tolerance_total": fraction_text(tolerance), "kappa": fraction_text(kappa),
         "simulation_horizon": args.simulation_horizon,
+        "initial_energy_rule": initial_energy_rule,
         "schedulers": list(schedulers), "priority_policies": list(policies),
         "campaign": SENSITIVITY_CAMPAIGN,
         "wholepass_mode": "hard-rt", "generic_wholepass_fast": True,
@@ -559,6 +574,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         processors=args.processors, tasks=args.tasks, period_min=args.period_min,
         period_max=args.period_max, min_task_util=min_util, max_task_util=max_util,
         tolerance=tolerance, prepare_workers=prepare_workers,
+        initial_energy_rule=initial_energy_rule,
     )
     tasksets_by_uc: dict[Fraction, list[Any]] = {uc: [] for uc in unique_ucs}
     for taskset in tasksets:
@@ -590,6 +606,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     requests = build_requests(
         projected_by_uc, cells, policies=policies, schedulers=schedulers,
         horizon_ms=args.simulation_horizon, kappa=kappa,
+        initial_energy_rule=initial_energy_rule,
     )
     if len(requests) != expected_count:
         raise RuntimeError("request count does not match experiment contract")
@@ -610,6 +627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if cell_uc == uc:
                     energy_by_key[(uc, taskset.taskset_id, fraction_text(target_ue))] = _build_energy_material(
                         family, target_ue, kappa, raw_trace, raw_trace_id,
+                        initial_energy_rule=initial_energy_rule,
                     )
 
     jobs = []

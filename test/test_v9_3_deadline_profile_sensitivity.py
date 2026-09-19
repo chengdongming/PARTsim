@@ -1,10 +1,11 @@
+import json
 from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from experiments.v9_3 import perf_g
+from experiments.v9_3 import perf_g, scheduler_load_cross as load_cross
 from experiments.v9_3.deadline_profile_sensitivity import (
     DeadlineProfileError,
     PROFILE_ORDER,
@@ -24,11 +25,13 @@ from scripts.run_deadline_profile_sensitivity import (
     build_requests,
     deadline_mode_for_payload,
     main,
+    make_parser,
     parse_alphas,
     parse_priority_policies,
     SENSITIVITY_CAMPAIGN,
     validate_implicit_outcomes,
 )
+import scripts.run_deadline_profile_sensitivity as sensitivity
 from experiments.v9_3.simulation_engine import WholePassFastExecution
 
 
@@ -297,15 +300,91 @@ def test_request_identity_binds_energy_horizon_and_is_stable():
     )
 
 
+def test_initial_energy_rule_cli_defaults_and_parses_zero():
+    assert make_parser().parse_args(["--output", "run"]).initial_energy_rule == (
+        "battery_capacity/2"
+    )
+    assert make_parser().parse_args([
+        "--output", "run", "--initial-energy-rule", "zero",
+    ]).initial_energy_rule == "zero"
+
+
+def test_request_identity_and_rows_bind_initial_energy_rule():
+    projected = project_profiles_from_original_deadline(
+        _relax_base_taskset(), (Fraction(1, 3),),
+    )
+    cells = ((Fraction(3, 10), Fraction(7, 10)),)
+    common = {"policies": ("RM",), "schedulers": ("ASAP-BLOCK",)}
+    half = build_requests(
+        {Fraction(3, 10): projected}, cells,
+        initial_energy_rule="battery_capacity/2", **common,
+    )
+    zero = build_requests(
+        {Fraction(3, 10): projected}, cells,
+        initial_energy_rule="zero", **common,
+    )
+    assert half[0]["initial_energy_rule"] == "battery_capacity/2"
+    assert zero[0]["initial_energy_rule"] == "zero"
+    assert half[0]["request_id"] != zero[0]["request_id"]
+
+
+def test_energy_material_initial_energy_rules_are_exact():
+    profile = project_profiles_from_original_deadline(
+        _relax_base_taskset(), (Fraction(1, 3),),
+    )
+    raw_trace = (Fraction(1),) * load_cross.FORMAL_NORMALIZATION_HORIZON
+    zero = _build_energy_material(
+        profile, Fraction(7, 10), Fraction(10), raw_trace, "trace-id",
+        initial_energy_rule="zero",
+    )["material"]
+    half = _build_energy_material(
+        profile, Fraction(7, 10), Fraction(10), raw_trace, "trace-id",
+        initial_energy_rule="battery_capacity/2",
+    )["material"]
+    assert zero["initial_energy_j"] == "0"
+    assert Fraction(half["initial_energy_j"]) == (
+        Fraction(half["battery_capacity_j"]) / 2
+    )
+
+
+def test_main_materialization_and_run_config_receive_initial_energy_rule(
+    tmp_path, monkeypatch,
+):
+    captured = {}
+
+    def fake_materialize(*args, **kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("stop after materialization probe")
+
+    monkeypatch.setattr(sensitivity, "_worktree_clean", lambda: True)
+    monkeypatch.setattr(
+        sensitivity.load_cross, "materialize_tasksets", fake_materialize,
+    )
+    output = tmp_path / "run"
+    with pytest.raises(RuntimeError, match="stop after materialization probe"):
+        sensitivity.main([
+            "--output", str(output), "--cells", "1/5:1/5",
+            "--alphas", "0", "--samples-per-cell", "1", "--tasks", "1",
+            "--processors", "1", "--initial-energy-rule", "zero",
+        ])
+    assert captured["initial_energy_rule"] == "zero"
+    config = json.loads((output / "run_config.json").read_text())
+    assert config["initial_energy_rule"] == "zero"
+
+
 def test_energy_material_is_identical_across_deadline_profiles(monkeypatch):
     profiles = project_profiles_from_original_deadline(
         _relax_base_taskset(), (Fraction(0), Fraction(1, 3), Fraction(1)),
     )
 
-    def fake_energy(profile, target_ue, raw_trace, *, kappa, raw_trace_id):
+    def fake_energy(
+        profile, target_ue, raw_trace, *, kappa, raw_trace_id,
+        initial_energy_rule,
+    ):
         return {
             "target_ue": str(target_ue), "kappa": str(kappa),
             "raw_trace_id": raw_trace_id, "payload": profile.task_payload[0]["P"],
+            "initial_energy_rule": initial_energy_rule,
         }
 
     monkeypatch.setattr(
