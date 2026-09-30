@@ -97,8 +97,17 @@ class AuditEngine(sr.StructuralEngine):
 
 
 def audit_run(rows, m, beta, capacity, mode='full', background_power=0,
-              return_details=False):
+              return_details=False, *, e0=0, check_production=True):
+    """Run one ablation; optionally omit the separate production rerun.
+
+    Batch timing must set check_production=False for EVERY mode. Agreement
+    with production is a separate validation operation, not ablation time.
+    e0 is an every-release energy floor, not merely initial battery energy.
+    """
     tasks = [sr.model.Task(str(i+1), *row) for i, row in enumerate(rows)]
+    tasks, beta = sr.model.normalize(tasks, m, beta, e0)
+    sr.model.require(type(check_production) is bool, 'invalid production check')
+    sr.model.require(capacity is None or e0 <= capacity, 'release floor exceeds capacity')
     opts = dict(capacity=capacity, background_power=background_power,
                 bound='analytic', legacy_v4=False)
     profile = tuple((t.wcet if mode == 'completion_only' else 1, t.wcet) for t in tasks)
@@ -106,7 +115,7 @@ def audit_run(rows, m, beta, capacity, mode='full', background_power=0,
     counts, history = Counter(), []
     started = time.process_time()
     for iteration in range(natural):
-        engine = AuditEngine(tasks, m, beta, 0, profile, mode=mode, **opts)
+        engine = AuditEngine(tasks, m, beta, e0, profile, mode=mode, **opts)
         output, details = [], []
         try:
             for k, task in enumerate(tasks):
@@ -144,8 +153,8 @@ def audit_run(rows, m, beta, capacity, mode='full', background_power=0,
     if return_details:
         result['details'] = details
         result['history'] = history
-    if mode == 'full':
-        production = sr.least_certificate(tasks, m, beta, capacity=capacity,
+    if mode == 'full' and check_production:
+        production = sr.least_certificate(tasks, m, beta, e0, capacity=capacity,
             background_power=background_power, bound='analytic', legacy_v4=False)
         expected = (production.get('certificate') or {}).get('profile')
         normalized = [list(p) for p in result['profile']] if result['profile'] else None
