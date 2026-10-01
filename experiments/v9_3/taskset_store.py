@@ -721,6 +721,7 @@ class TasksetStore:
                         max_task_util=Fraction(generation["max_task_util"]),
                         target=target, tolerance=Fraction(generation["utilization_tolerance"]),
                         parameters=parameters, taskset_index=taskset_index,
+                        priority_policy=priority_aligned.construction_policy(generation),
                     )
                 except priority_aligned.IneligibleTaskset as exc:
                     rejected.append(str(exc))
@@ -742,10 +743,11 @@ class TasksetStore:
                     max_task_util=Fraction(generation["max_task_util"]),
                     target=target, tolerance=Fraction(generation["utilization_tolerance"]),
                     parameters=parameters, source_wcets=source_wcets,
+                    priority_policy=priority_aligned.construction_policy(generation),
                 )
                 details = {"candidate_seed": candidate_seed, "accepted_attempt": attempt,
                            "rejected_material_reasons": rejected, "source_wcets": source_wcets,
-                           "anchor_rank": anchor + 1, "features": features}
+                           "anchor_rank": features["anchor_rank"], "features": features}
                 break
             else:
                 raise TasksetStoreError(
@@ -848,6 +850,8 @@ class TasksetStore:
             raise TasksetStoreError("stored taskset profile differs from requested generation")
         if profile is not None:
             generation = self.config["generation"]
+            if document["generation_parameters"].get("taskset_profile_priority_policy", "RM") != priority_aligned.construction_policy(generation):
+                raise TasksetStoreError("stored taskset construction policy differs from requested profile")
             details = document["generation_parameters"].get("priority_aligned_material")
             if not isinstance(details, dict) or "source_wcets" not in details:
                 raise TasksetStoreError("priority-aligned taskset lacks source material")
@@ -860,6 +864,7 @@ class TasksetStore:
                     target=Fraction(document["target_total_utilization"]),
                     tolerance=Fraction(generation["utilization_tolerance"]),
                     parameters=profile["parameters"], source_wcets=details["source_wcets"],
+                    priority_policy=priority_aligned.construction_policy(generation),
                 )
             except (KeyError, ValueError, TypeError) as exc:
                 raise TasksetStoreError(f"invalid priority-aligned taskset: {exc}") from exc

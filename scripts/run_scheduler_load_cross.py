@@ -598,7 +598,7 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-task-util", default=str(perf_g.MAX_TASK_UTILIZATION))
     parser.add_argument(
         "--taskset-profile", choices=("ordinary", "priority-aligned"), default="ordinary",
-        help="ordinary preserves historical generation; priority-aligned selects structured RM/D=T tasksets",
+        help="ordinary preserves historical generation; priority-aligned structures tasks for the selected RM/DM policy",
     )
     parser.add_argument(
         "--taskset-profile-config", type=Path,
@@ -822,8 +822,6 @@ def main(argv: list[str] | None = None) -> int:
         else ",".join(perf_g.FORMAL_SCHEDULERS)
     )
     priority_policy = args.priority_policy
-    if is_a_implicit and priority_policy != "RM":
-        raise SystemExit("A-implicit campaigns accept canonical RM only")
     profile_options = None
     if args.taskset_profile_config is not None:
         try:
@@ -838,8 +836,11 @@ def main(argv: list[str] | None = None) -> int:
         taskset_profile = profile_material(args.taskset_profile, profile_options)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
-    if taskset_profile is not None and version != "a-implicit":
-        raise SystemExit("priority-aligned V2 requires canonical A-implicit V2 (RM / D=T)")
+    if taskset_profile is not None and version not in {"v7", "v8", "a-implicit"}:
+        raise SystemExit("priority-aligned requires v7/v8 constrained or canonical A-implicit V2")
+    if is_a_implicit and priority_policy != "RM" and taskset_profile is None:
+        raise SystemExit("A-implicit ordinary campaigns accept canonical RM only")
+    profile_compact = taskset_profile is not None and (not is_a_implicit or priority_policy == "DM")
     _validate_implicit_streaming_scope(
         enabled=args.implicit_streaming_parse, campaign=campaign,
         priority_policy=priority_policy, resume=args.resume,
@@ -896,7 +897,8 @@ def main(argv: list[str] | None = None) -> int:
         figure_slices = spec["figure_slices"]
         scan_contract = spec["scan_contract"]
     deadline_modes = (
-        experiment.deadline_modes_for_experiment(version, priority_policy)
+        (("implicit",) if is_a_implicit and taskset_profile is not None else
+         experiment.deadline_modes_for_experiment(version, priority_policy))
         if is_versioned else experiment.deadline_modes_for_priority_policy(priority_policy)
     )
     expected_request_count = len(cells) * args.samples_per_cell * len(schedulers) * len(deadline_modes)
@@ -985,6 +987,9 @@ def main(argv: list[str] | None = None) -> int:
     if taskset_profile is not None:
         config["taskset_profile"] = taskset_profile
         config["taskset_population"] = "structured priority-aligned; material selection before outcomes"
+        if profile_compact:
+            config.update({"wholepass_fast_path": True, "full_trace_default": False,
+                           "dmr_available": False, "wholepass_backend": "generic"})
     config["run_identity"] = experiment.run_identity(config)
     run_config = root / "run_config.json"
     if args.resume:
@@ -1029,7 +1034,8 @@ def main(argv: list[str] | None = None) -> int:
             ),
             initial_energy_rule=service_initial_energy_rule,
             **({"taskset_profile": "priority-aligned",
-                "taskset_profile_options": taskset_profile["parameters"]}
+                "taskset_profile_options": taskset_profile["parameters"],
+                "priority_policy": priority_policy}
                if taskset_profile is not None else {}),
         )
         if service is not None and mode_service.identity != service.identity:
@@ -1162,7 +1168,7 @@ def main(argv: list[str] | None = None) -> int:
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
             "priority_policy": priority_policy,
             "warmup": 0, "minimum_jobs_per_task": 1,
-            "trace_mode": "none" if is_a_implicit else "semantic",
+            "trace_mode": "none" if is_a_implicit or profile_compact else "semantic",
             "trace_on_failure": args.keep_traces,
             "retain_trace": args.keep_traces,
             "timeout_seconds": args.timeout_seconds,
@@ -1173,7 +1179,7 @@ def main(argv: list[str] | None = None) -> int:
             "trace_parse_slot_dir": "/tmp/partsim_trace_parse_slots",
             "deadline_mode": request["deadline_mode"],
             "campaign": campaign,
-            "wholepass_mode": "hard-rt" if is_a_implicit else None,
+            "wholepass_mode": "hard-rt" if is_a_implicit or profile_compact else None,
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
         }
         pending_jobs.append({
@@ -1195,7 +1201,8 @@ def main(argv: list[str] | None = None) -> int:
             "scheduler_id": request["scheduler_cli"],
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
             "bounded_streaming_parse": bool(args.bounded_streaming_parse),
-            "implicit_wholepass_fast": is_a_implicit,
+            "implicit_wholepass_fast": is_a_implicit and not profile_compact,
+            "generic_wholepass_fast": profile_compact,
         })
 
     prepare_energy_started = time.perf_counter()

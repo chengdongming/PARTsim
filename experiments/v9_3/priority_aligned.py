@@ -80,9 +80,28 @@ def configured_profile(generation: Mapping[str, Any]) -> dict | None:
     expected = profile_material(value["name"], value["parameters"])
     if expected != value:
         raise ValueError("taskset_profile is not canonical or has an unsupported version")
-    if expected and (generation["deadline_mode"] != "implicit" or generation["priority_policy"] != "RM"):
-        raise ValueError("priority-aligned tasksets currently support RM with D=T only")
+    if generation["deadline_mode"] not in {"implicit", "constrained"}:
+        raise ValueError("priority-aligned tasksets require constrained or implicit deadlines")
+    construction_policy(generation)
     return expected
+
+
+def construction_policy(generation: Mapping[str, Any]) -> str:
+    policy = generation.get("taskset_profile_priority_policy", "RM")
+    if policy not in {"RM", "DM"}:
+        raise ValueError("taskset profile priority policy must be RM or DM")
+    if generation["deadline_mode"] == "implicit" and policy != "RM":
+        raise ValueError("implicit task material uses shared canonical RM ordering")
+    return policy
+
+
+def priority_order(tasks: Sequence[Mapping[str, Any]], policy: str) -> list[int]:
+    """Use the exact runtime tie rules while retaining canonical RM storage."""
+    from .simulation_engine import derive_fixed_priority_ranks
+    ranks = derive_fixed_priority_ranks(tasks, policy)
+    if ranks is None:
+        return list(range(len(tasks)))
+    return sorted(range(len(tasks)), key=lambda i: ranks[str(tasks[i]["task_id"])])
 
 
 def _ceil(value: Fraction) -> int:
@@ -119,52 +138,56 @@ def _allocate(weights: list[Fraction], periods: list[int], lower: list[int], upp
 def transform(tasks: Sequence[Mapping[str, Any]], power_tiers: Sequence[Fraction], *,
               processors: int, min_task_util: Fraction, max_task_util: Fraction,
               target: Fraction, tolerance: Fraction, parameters: Mapping[str, Any],
-              taskset_index: int) -> tuple[list[int], int]:
+              taskset_index: int, priority_policy: str = "RM") -> tuple[list[int], int]:
     """Redistribute WCETs, preserving periods/workloads and approximate total U."""
     if processors != 4 or len(tasks) != 10:
         raise ValueError("priority-aligned V2 currently requires 4 processors and 10 tasks")
-    if any(t["D"] != t["T"] or int(t.get("arrival_offset", 0)) != 0 for t in tasks):
-        raise ValueError("priority-aligned V2 requires synchronous D=T tasks")
+    if any(not 0 < t["C"] <= t["D"] <= t["T"] or int(t.get("arrival_offset", 0)) != 0 for t in tasks):
+        raise ValueError("priority-aligned requires synchronous 0 < C <= D <= T tasks")
     periods = [int(t["T"]) for t in tasks]
     if periods != sorted(periods) or len(power_tiers) != len(tasks):
         raise ValueError("task order/power tiers do not match canonical RM tasks")
     p = {k: Fraction(v) for k, v in parameters.items()}
     util = [Fraction(t["C"], t["T"]) for t in tasks]
     total = sum(util)
-    candidates = [i for i in range(processors) if power_tiers[i] == max(power_tiers)]
+    order = priority_order(tasks, priority_policy)
+    high, low = order[:processors], order[processors:]
+    candidates = [i for i in high if power_tiers[i] == max(power_tiers)]
     if not candidates:
         raise IneligibleTaskset("no highest-power-tier task among first four")
-    anchor = max(candidates)
-    if not any(power_tiers[i] < power_tiers[anchor] for i in range(processors, len(tasks))):
+    anchor = candidates[-1]
+    if not any(power_tiers[i] < power_tiers[anchor] for i in low):
         raise IneligibleTaskset("no cheaper lower-priority task")
     lower = [_ceil(min_task_util * t) for t in periods]
-    upper = [int(max_task_util * t) for t in periods]
+    upper = [min(int(max_task_util * t), tasks[i]["D"]) for i, t in enumerate(periods)]
     anchor_u = min(max_task_util, p["anchor_total_share"] * total)
-    anchor_c = int(anchor_u * periods[anchor])
+    anchor_c = min(int(anchor_u * periods[anchor]), upper[anchor])
     if anchor_c < lower[anchor]:
         raise IneligibleTaskset("scaled anchor is below minimum task utilization")
     lower[anchor] = upper[anchor] = anchor_c
-    for i in range(processors, len(tasks)):
+    anchor_laxity = tasks[anchor]["D"] - anchor_c
+    for i in low:
         lower[i] = max(lower[i], int(p["min_low_wcet"]))
-        upper[i] = min(upper[i], int(p["low_task_util_max"] * periods[i]), anchor_c - 1)
+        upper[i] = min(upper[i], int(p["low_task_util_max"] * periods[i]), anchor_c - 1,
+                       tasks[i]["D"] - anchor_laxity - 1)
     if any(lo > hi for lo, hi in zip(lower, upper)):
         raise IneligibleTaskset("lower-priority WCET/laxity bounds are infeasible")
-    high_min = sum(Fraction(lower[i], periods[i]) for i in range(processors))
-    high_max = sum(Fraction(upper[i], periods[i]) for i in range(processors))
+    high_min = sum(Fraction(lower[i], periods[i]) for i in high)
+    high_max = sum(Fraction(upper[i], periods[i]) for i in high)
     low_min = max(p["low_group_share_min"] * total,
-                  sum(Fraction(lower[i], periods[i]) for i in range(processors, len(tasks))))
+                  sum(Fraction(lower[i], periods[i]) for i in low))
     low_max = min(p["low_group_util_max"],
-                  sum(Fraction(upper[i], periods[i]) for i in range(processors, len(tasks))))
+                  sum(Fraction(upper[i], periods[i]) for i in low))
     feasible_min = max(high_min, total - low_max)
     feasible_max = min(high_max, total - low_min)
     if feasible_min > feasible_max:
         raise IneligibleTaskset("group shares cannot conserve computation demand")
-    high_target = min(max(p["high_group_multiplier"] * sum(util[:processors]), feasible_min), feasible_max)
+    high_target = min(max(p["high_group_multiplier"] * sum(util[i] for i in high), feasible_min), feasible_max)
     desired = [Fraction()] * len(tasks)
     desired[anchor] = Fraction(anchor_c, periods[anchor])
     for indices, group_target in (
-        ([i for i in range(processors) if i != anchor], high_target - desired[anchor]),
-        (list(range(processors, len(tasks))), total - high_target),
+        ([i for i in high if i != anchor], high_target - desired[anchor]),
+        (low, total - high_target),
     ):
         allocation = _allocate([util[i] for i in indices], [periods[i] for i in indices],
                                [lower[i] for i in indices], [upper[i] for i in indices], group_target)
@@ -179,7 +202,7 @@ def transform(tasks: Sequence[Mapping[str, Any]], power_tiers: Sequence[Fraction
     best = None
     for vector in product(*options):
         actual = sum(Fraction(c, t) for c, t in zip(vector, periods))
-        low_actual = sum(Fraction(vector[i], periods[i]) for i in range(processors, len(tasks)))
+        low_actual = sum(Fraction(vector[i], periods[i]) for i in low)
         if low_actual < p["low_group_share_min"] * actual or low_actual > p["low_group_util_max"]:
             continue
         gap = actual - total
@@ -198,29 +221,32 @@ def transform(tasks: Sequence[Mapping[str, Any]], power_tiers: Sequence[Fraction
 def audit(tasks: Sequence[Mapping[str, Any]], power_tiers: Sequence[Fraction], *,
           processors: int, min_task_util: Fraction, max_task_util: Fraction,
           target: Fraction, tolerance: Fraction, parameters: Mapping[str, Any],
-          source_wcets: Sequence[int] | None = None) -> dict:
+          source_wcets: Sequence[int] | None = None, priority_policy: str = "RM") -> dict:
     """Check actual integer material, not only the continuous allocation target."""
     if processors != 4 or len(tasks) != 10 or len(power_tiers) != len(tasks):
         raise ValueError("priority-aligned V2 requires 4 cores / 10 tasks")
     periods = [t["T"] for t in tasks]
-    if periods != sorted(periods) or any(t["D"] != t["T"] for t in tasks):
-        raise ValueError("priority-aligned material is not RM/D=T")
+    if periods != sorted(periods):
+        raise ValueError("priority-aligned payload must retain canonical RM storage")
     if any(type(t[k]) is not int for t in tasks for k in ("C", "D", "T")):
         raise ValueError("priority-aligned timing fields must be integers")
-    if any(not 0 < t["C"] <= t["D"] or int(t.get("arrival_offset", 0)) != 0 for t in tasks):
+    if any(not 0 < t["C"] <= t["D"] <= t["T"] or int(t.get("arrival_offset", 0)) != 0 for t in tasks):
         raise ValueError("invalid WCET/deadline/release offset")
     p = {k: Fraction(v) for k, v in parameters.items()}
-    candidates = [i for i in range(processors) if power_tiers[i] == max(power_tiers)]
+    order = priority_order(tasks, priority_policy)
+    high, low_indices = order[:processors], order[processors:]
+    candidates = [i for i in high if power_tiers[i] == max(power_tiers)]
     if not candidates:
         raise ValueError("missing high-power anchor")
-    anchor = max(candidates)
+    anchor = candidates[-1]
     util = [Fraction(t["C"], t["T"]) for t in tasks]
-    total, low = sum(util), sum(util[processors:])
+    total, low = sum(util), sum(util[i] for i in low_indices)
     if source_wcets is not None and (len(source_wcets) != len(tasks)
                                    or any(type(c) is not int or c < 1 for c in source_wcets)):
         raise ValueError("source WCET vector is invalid")
     source_total = total if source_wcets is None else sum(Fraction(c, t) for c, t in zip(source_wcets, periods))
-    expected_c = int(min(max_task_util, p["anchor_total_share"] * source_total) * periods[anchor])
+    expected_c = min(int(min(max_task_util, p["anchor_total_share"] * source_total) * periods[anchor]),
+                     tasks[anchor]["D"])
     if tasks[anchor]["C"] != expected_c:
         raise ValueError("anchor WCET does not match scaled policy")
     if any(not min_task_util <= u <= max_task_util for u in util):
@@ -228,15 +254,15 @@ def audit(tasks: Sequence[Mapping[str, Any]], power_tiers: Sequence[Fraction], *
     laxity = tasks[anchor]["D"] - tasks[anchor]["C"]
     if any(t["C"] < p["min_low_wcet"] or t["C"] >= tasks[anchor]["C"]
            or t["D"] - t["C"] <= laxity or u > p["low_task_util_max"]
-           for t, u in zip(tasks[processors:], util[processors:])):
+           for t, u in ((tasks[i], util[i]) for i in low_indices)):
         raise ValueError("lower-priority execution/laxity/utilization relation failed")
     if not p["low_group_share_min"] * total <= low <= p["low_group_util_max"]:
         raise ValueError("actual low-priority group outside declared share/budget")
-    if not any(tier < power_tiers[anchor] for tier in power_tiers[processors:]):
+    if not any(power_tiers[i] < power_tiers[anchor] for i in low_indices):
         raise ValueError("no cheaper low-priority task")
     if abs(total - target) > tolerance or abs(total - source_total) > p["pair_total_util_tolerance"]:
         raise ValueError("actual target/pair utilization drift exceeds tolerance")
-    return {"anchor_rank": anchor + 1, "anchor_wcet": tasks[anchor]["C"],
+    return {"anchor_rank": order.index(anchor) + 1, "anchor_wcet": tasks[anchor]["C"],
             "actual_uc": _text(total / processors), "low_group_share": _text(low / total),
-            "min_low_wcet": min(t["C"] for t in tasks[processors:]),
+            "min_low_wcet": min(tasks[i]["C"] for i in low_indices),
             "source_total_utilization": _text(source_total), "actual_total_utilization": _text(total)}

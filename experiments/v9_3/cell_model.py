@@ -99,6 +99,8 @@ def generation_dimensions(
     profile = configured_profile(generation)
     if profile is not None:
         dimensions["taskset_profile"] = profile
+        if "taskset_profile_priority_policy" in generation:
+            dimensions["taskset_profile_priority_policy"] = generation["taskset_profile_priority_policy"]
     return dimensions
 
 

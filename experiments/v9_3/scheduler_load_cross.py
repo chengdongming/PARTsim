@@ -974,7 +974,8 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
             system_template: str = ORDINARY_SYSTEM_TEMPLATE,
             initial_energy_rule: str = "battery_capacity/2",
             taskset_profile: str = "ordinary",
-            taskset_profile_options: Mapping[str, Any] | None = None) -> dict[str, Any]:
+            taskset_profile_options: Mapping[str, Any] | None = None,
+            priority_policy: str = "RM") -> dict[str, Any]:
     deadline_mode = normalize_deadline_mode(deadline_mode)
     config = perf_g._task_generation_config(
         "FORMAL", utilizations, count, system_template=system_template,
@@ -994,6 +995,9 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
         if processors != 4 or tasks != 10:
             raise ValueError("priority-aligned V2 currently requires 4 processors and 10 tasks")
         config["generation"]["taskset_profile"] = profile
+        policy = normalize_scheduler_priority_policy(priority_policy)
+        if deadline_mode == "constrained":
+            config["generation"]["taskset_profile_priority_policy"] = policy
         configured_profile(config["generation"])
     config["energy"]["service_curve"].update(HARVEST_MODEL_IDENTITY)
     config["energy"]["service_curve"].update({
@@ -1039,6 +1043,7 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
                          initial_energy_rule: str = "battery_capacity/2",
                          taskset_profile: str = "ordinary",
                          taskset_profile_options: Mapping[str, Any] | None = None,
+                         priority_policy: str = "RM",
                          ) -> tuple[list[Any], Any]:
     deadline_mode = normalize_deadline_mode(deadline_mode)
     generation_points = tuple(utilizations) if generation_utilizations is None else tuple(generation_utilizations)
@@ -1053,6 +1058,7 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
         initial_energy_rule=initial_energy_rule,
         taskset_profile=taskset_profile,
         taskset_profile_options=taskset_profile_options,
+        priority_policy=priority_policy,
     )
     if generation_utilizations is not None:
         selected = {fraction_text(value) for value in utilizations}

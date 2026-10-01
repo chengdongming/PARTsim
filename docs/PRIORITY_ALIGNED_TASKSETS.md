@@ -7,19 +7,22 @@ remain available.
 
 Select `--taskset-profile priority-aligned` for a separate experimental
 population. The current version is `PRIORITY_ALIGNED_TASKSETS_V2`, scoped to
-4 processors, 10 synchronous tasks, implicit deadlines (`D=T`), and canonical
-RM. DM has the same ordering for these tasks. Initial energy is still selected
-with the existing `--initial-energy-rule` option.
+4 processors and 10 synchronous tasks. Both constrained (`C<=D<=T`) and
+implicit (`D=T`) deadlines support RM and DM. Initial energy is selected with
+the existing `--initial-energy-rule` option: zero or half battery.
 
 ## Material definition
 
-Each candidate starts from the existing task/workload generator. In RM order:
+Each candidate starts from the existing task/workload generator. Grouping uses
+the selected runtime priority order: RM sorts by period; DM sorts by deadline,
+then period, then the original canonical rank. In that order:
 
 1. Choose an anchor among the first four tasks whose workload has the highest
    energy-per-tick tier in this taskset. If several qualify, use the last one.
    Require at least one cheaper task among ranks 5–10.
 2. Set the anchor's utilization to 30% of the source's total `sum(C/T)`, capped
-   by the existing per-task maximum 0.8. Its WCET is rounded down to an integer.
+   by the existing per-task maximum 0.8 and its unchanged deadline. Its WCET
+   is rounded down to an integer.
 3. Redistribute computation within the first four tasks and the remaining six.
    The desired high-group utilization is twice its source value, clamped to
    feasible bounds. This changes multiple WCETs, not only the anchor.
@@ -27,6 +30,8 @@ Each candidate starts from the existing task/workload generator. In RM order:
    utilization 0.01. Together they carry at least 20% of actual total `sum(C/T)`,
    with at most one CPU's utilization. Each is capped at utilization 0.35, has a
    shorter WCET than the anchor, and has greater release-time laxity `D-C`.
+   All allocations obey `C<=D`; constrained deadlines are never stretched
+   to make a candidate feasible.
 5. Search floor/ceiling WCET choices that satisfy the **actual integer** group
    bounds and conserve total utilization within 0.0001. The original total
    target tolerance 0.01 also applies. With four processors, these quantities
@@ -34,7 +39,9 @@ Each candidate starts from the existing task/workload generator. In RM order:
    `U_C` error at most 0.0025.
 
 Periods, deadlines, task identities within the payload, arrival offsets,
-workloads and priority order are retained from the accepted source candidate.
+workloads and canonical storage order are retained from the accepted source
+candidate. Storage remains in RM order; the simulator applies the requested
+RM/DM ranking, using the same tie rules as construction.
 Power is recomputed using the existing C++ workload contract after changing
 WCET. Relative changes above `1e-12` fail; floating-point rounding can produce
 much smaller serialization differences. Workloads are not reassigned, and
@@ -55,8 +62,8 @@ parameter file. Defaults are defined in
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
-| `high_group_multiplier` | `"2"` | Desired first-four utilization multiplier, clamped to feasibility |
-| `anchor_total_share` | `"3/10"` | Anchor share of source total utilization before per-task cap |
+| `high_group_multiplier` | `"2"` | Desired top-four utilization multiplier under the selected policy, clamped to feasibility |
+| `anchor_total_share` | `"3/10"` | Anchor share before per-task and deadline caps |
 | `low_group_share_min` | `"1/5"` | Minimum actual low-group computation share |
 | `low_task_util_max` | `"7/20"` | Maximum individual low-task utilization |
 | `low_group_util_max` | `"1"` | Maximum low-group `sum(C/T)` |
@@ -81,26 +88,36 @@ requirement in this mode.
 ## Full UC and UE experiments
 
 Build the simulator using the existing README instructions. From the repository
-root, these commands select all nine schedulers and 120 samples per cell:
+root, select the deadline family and initial energy once. This loop runs both
+policies and both scans, then produces the four RM/DM × UC/UE figures:
 
 ```bash
 set -o pipefail
-python3 -u scripts/run_scheduler_load_cross.py \
-  --output /root/autodl-tmp/priority_aligned_v2_uc_e0zero \
-  --seed 20261003 --samples-per-cell 120 --workers 30 \
-  --experiment-version a-implicit --campaign a-implicit-uc-fixed-supply \
-  --initial-energy-rule zero --taskset-profile priority-aligned
-
-python3 -u scripts/run_scheduler_load_cross.py \
-  --output /root/autodl-tmp/priority_aligned_v2_ue_e0zero \
-  --seed 20261003 --samples-per-cell 120 --workers 30 \
-  --experiment-version a-implicit --campaign a-implicit-ue-service-scaling \
-  --initial-energy-rule zero --taskset-profile priority-aligned
-
-python3 scripts/analyze_scheduler_load_cross.py \
-  --input /root/autodl-tmp/priority_aligned_v2_uc_e0zero
-python3 scripts/analyze_scheduler_load_cross.py \
-  --input /root/autodl-tmp/priority_aligned_v2_ue_e0zero
+set -e
+deadline_family=constrained    # constrained or implicit
+energy_rule=zero              # zero or battery_capacity/2
+energy_tag=zero               # use half when energy_rule=battery_capacity/2
+case "$deadline_family" in
+  constrained) version=v8; campaign_prefix= ;;
+  implicit) version=a-implicit; campaign_prefix=a-implicit- ;;
+  *) echo "Unknown deadline family" >&2; exit 1 ;;
+esac
+for policy in RM DM; do
+  for scan in uc ue; do
+    case "$scan" in
+      uc) campaign="${campaign_prefix}uc-fixed-supply" ;;
+      ue) campaign="${campaign_prefix}ue-service-scaling" ;;
+    esac
+    run_output="/root/autodl-tmp/priority_aligned_v2_${deadline_family}_${energy_tag}_${policy}_${scan}_s20261003"
+    python3 -u scripts/run_scheduler_load_cross.py \
+      --output "$run_output" --seed 20261003 \
+      --samples-per-cell 120 --workers 30 \
+      --experiment-version "$version" --campaign "$campaign" \
+      --priority-policy "$policy" --initial-energy-rule "$energy_rule" \
+      --taskset-profile priority-aligned
+    python3 scripts/analyze_scheduler_load_cross.py --input "$run_output"
+  done
+done
 ```
 
 Use a fresh output directory or the existing `--resume` option with the same
@@ -112,15 +129,22 @@ scientific configuration. Choose a worker count supported by the machine.
 | UE | 3 `U_C` slices × 9 `U_E` points | Service-only scaling at each target `U_E` | `figure_scheduler_ue_slices.png` |
 
 Each campaign has 27 cells × 120 tasksets × 9 schedulers = 29,160 requests,
-so the two campaigns total 58,320. The existing harvest curve, battery rule,
+so both policies and scans total 116,640. The existing harvest curve, battery rule,
 60,000 ms horizon, nine schedulers and figure styles are unchanged. WholePass
 uses the compact simulator path: it does not generate or parse full traces.
 The analyzer writes `summary.csv`, figure CSVs, and the relevant PNG, with the
-population identified in the figure title and report.
+population, deadline mode, policy and initial energy identified in the figure
+title and report. This mode reports WholePass; DMR is unavailable. Ordinary
+constrained campaigns retain their existing full-analysis path.
 
-The two canonical RM figures also describe DM because `D=T` makes RM and DM
-identical. If presenting four RM/DM × UC/UE panels, explicitly label the DM
-panels as sharing the canonical RM results; they are not independent runs.
+For constrained deadlines, RM and DM construct different structured task
+populations under their respective rankings. Their figures compare these
+policy-specific populations, not a priority-only change on identical tasks.
+For implicit deadlines, RM and DM use exactly the same canonical tasksets and
+have identical ordering. The loop can rerun both policies explicitly; their
+figures are equivalent-policy results on shared material, not independent
+task populations. Changing zero to half initial energy also preserves the
+tasksets when seed and other generation parameters are unchanged.
 The legacy three-root stitcher is for its historical population and is not
 needed for these complete V2 campaigns.
 

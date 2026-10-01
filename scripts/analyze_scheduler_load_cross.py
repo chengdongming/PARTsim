@@ -1297,8 +1297,11 @@ def _a_implicit_validate_config(
             raise SystemExit("A-implicit fixed supply level map is not exact")
     if config.get("deadline_modes") != ["implicit"]:
         raise SystemExit("A-implicit campaign requires implicit deadline mode only")
-    if config.get("priority_policy") != "RM":
+    profile_dm = config.get("taskset_profile") is not None and config.get("priority_policy") == "DM"
+    if config.get("priority_policy") != "RM" and not profile_dm:
         raise SystemExit("A-implicit campaign requires canonical RM")
+    if profile_dm and config.get("wholepass_backend") != "generic":
+        raise SystemExit("A-implicit profile DM requires generic WholePass backend")
     if config.get("deadline_semantics") != "D=T; RM=DM; canonical source=RM":
         raise SystemExit("A-implicit deadline semantics metadata is invalid")
     if config.get("wholepass_fast_path") is not True or config.get("full_trace_default") is not False:
@@ -1344,7 +1347,7 @@ def _a_implicit_validate_config(
             str(value) for value in experiment.A_IMPLICIT_STANDARDIZED_SCAN
         ] or config.get("queued_grid_utilizations") != ["9/10"]:
             raise SystemExit("A-implicit UC09 supplement generation provenance is invalid")
-    return config, cells, spec["scan_contract"], spec["figure_slices"], "RM"
+    return config, cells, spec["scan_contract"], spec["figure_slices"], config["priority_policy"]
 
 
 def _validate_taskset_profile(config: dict, taskset: dict) -> None:
@@ -1366,6 +1369,9 @@ def _validate_taskset_profile(config: dict, taskset: dict) -> None:
         payload = json.loads(taskset["task_input_json"])
         if dimensions["taskset_profile"] != profile or payload != document["tasks"]:
             raise ValueError("profile/payload differs from canonical taskset")
+        expected_policy = "RM" if document["deadline_mode"] == "implicit" else config.get("priority_policy", "RM")
+        if dimensions.get("taskset_profile_priority_policy", "RM") != expected_policy:
+            raise ValueError("construction priority policy differs from run_config")
         keys = ("schema", "generation_id", "taskset_index", "seed", "generation_parameters",
                 "target_total_utilization", "actual_total_utilization", "priority_policy", "power_mode",
                 "deadline_mode", "service_curve_reference", "tasks", "task_workload_contract", "numeric_contract")
@@ -1380,6 +1386,7 @@ def _validate_taskset_profile(config: dict, taskset: dict) -> None:
             target=Fraction(document["target_total_utilization"]),
             tolerance=Fraction(config["util_tolerance_total"]), parameters=profile["parameters"],
             source_wcets=details["source_wcets"],
+            priority_policy=expected_policy,
         )
         if features != details["features"]:
             raise ValueError("stored profile features disagree with tasks")
@@ -1388,12 +1395,27 @@ def _validate_taskset_profile(config: dict, taskset: dict) -> None:
 
 
 def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
+    return _analyze_compact_campaign(root, analysis_workers=analysis_workers)
+
+
+def _analyze_compact_campaign(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     validate_workers(analysis_workers, "analysis-workers")
-    config, cells, scan_contract, figure_slices, priority_policy = (
-        _a_implicit_validate_config(root)
-    )
+    initial = json.loads((root / "run_config.json").read_text(encoding="utf-8"))
+    constrained = initial.get("experiment") in {experiment.V7_EXPERIMENT, experiment.V8_EXPERIMENT}
+    if constrained:
+        version = "v8" if initial["experiment"] == experiment.V8_EXPERIMENT else "v7"
+        config, cells, scan_contract, figure_slices, priority_policy = _v7_validate_config(root, version=version)
+        if (config.get("taskset_profile") is None or config.get("wholepass_backend") != "generic"
+                or config.get("wholepass_fast_path") is not True or config.get("full_trace_default") is not False
+                or config.get("dmr_available") is not False):
+            raise SystemExit("priority-aligned constrained campaign requires compact WholePass metadata")
+    else:
+        version = "a-implicit"
+        config, cells, scan_contract, figure_slices, priority_policy = _a_implicit_validate_config(root)
+    mode = "constrained" if constrained else "implicit"
+    fast_mode = "generic_hardrt_wholepass" if config.get("wholepass_backend") == "generic" else "a_implicit_rm_hardrt_wholepass"
     initial_energy_rule = _configured_initial_energy_rule(
-        config, version="a-implicit",
+        config, version=version,
     )
     _validate_harvest_model(
         {key: config.get(key) for key in experiment.HARVEST_MODEL_IDENTITY},
@@ -1415,8 +1437,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         raise SystemExit("A-implicit tasksets contain duplicate identities")
     for taskset in tasksets:
         _validate_taskset_profile(config, taskset)
-        if taskset.get("deadline_mode") != "implicit":
-            raise SystemExit("A-implicit taskset deadline mode is not implicit")
+        if taskset.get("deadline_mode") != mode:
+            raise SystemExit("compact campaign taskset deadline mode differs from run_config")
         try:
             payload = json.loads(taskset["task_input_json"])
         except (KeyError, TypeError, ValueError) as exc:
@@ -1425,8 +1447,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
             raise SystemExit("A-implicit taskset must contain ten tasks")
         for item in payload:
             c, d, t = int(item["C"]), int(item["D"]), int(item["T"])
-            if not (0 < c <= d <= t) or d != t:
-                raise SystemExit("A-implicit taskset violates 0 < C <= D <= T or D=T")
+            if not (0 < c <= d <= t) or (mode == "implicit" and d != t):
+                raise SystemExit("compact campaign taskset violates deadline constraints")
     request_by_id: dict[str, dict[str, Any]] = {}
     for request in requests:
         request_id = str(request.get("request_id"))
@@ -1442,12 +1464,12 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
                 and request.get("campaign_contract") != config["campaign_contract"]
             )
             or request.get("energy_control") != config["energy_control"]
-            or request.get("priority_policy") != "RM"
-            or request.get("deadline_mode") != "implicit"
+            or request.get("priority_policy") != priority_policy
+            or request.get("deadline_mode") != mode
         ):
             raise SystemExit("A-implicit request identity does not match run_config")
         taskset = taskset_by_id.get(str(request.get("taskset_id")))
-        if taskset is None or taskset.get("deadline_mode") != "implicit":
+        if taskset is None or taskset.get("deadline_mode") != mode:
             raise SystemExit("A-implicit request/taskset identity mismatch")
     observed_ids = [str(row.get("request_id")) for row in results]
     if len(observed_ids) != len(set(observed_ids)) or set(observed_ids) != set(request_by_id):
@@ -1457,6 +1479,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         for key in (
             "taskset_id", "taskset_hash", "target_uc", "target_ue",
             "generation_index", "scheduler", "scheduler_cli", "deadline_mode",
+            "priority_policy", "experiment", "domain", "campaign", "energy_control",
         ):
             if row.get(key) != request.get(key):
                 raise SystemExit(f"A-implicit result/request identity mismatch for {key}")
@@ -1469,14 +1492,14 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
             "SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS",
         }:
             raise SystemExit("A-implicit technical failure is not a scientific row")
-        if row.get("fast_mode") != "a_implicit_rm_hardrt_wholepass":
+        if row.get("fast_mode") != fast_mode:
             raise SystemExit("A-implicit result did not use the compact WholePass fast path")
         if not isinstance(row.get("outcome"), dict) or set(row["outcome"]) - {"outcome_status", "wholepass", "taskset_pass"}:
             raise SystemExit("A-implicit fast result contains an invalid DMR-like outcome")
         taskset = taskset_by_id[str(row["taskset_id"])]
         if row["taskset_hash"] != taskset["taskset_hash"]:
             raise SystemExit("A-implicit scheduler changed taskset identity")
-        _v7_validate_energy(row, config, taskset, version="a-implicit")
+        _v7_validate_energy(row, config, taskset, version=version)
     if any(
         path.name == "simulation_trace_work"
         for path in root.rglob("simulation_trace_work")
@@ -1508,7 +1531,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
             n_wholepass = sum(row["wholepass"] is True for row in selected)
             low, high = wilson_ci(n_wholepass, len(selected))
             summaries.append({
-                "priority_policy": "RM", "deadline_mode": "implicit",
+                "priority_policy": priority_policy, "deadline_mode": mode,
                 "target_uc": uc, "target_ue": ue, "scheduler": scheduler,
                 "initial_energy_rule": initial_energy_rule,
                 "n_total": len(selected), "n_valid_tasksets": len(selected),
@@ -1537,6 +1560,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
     ])
     axis = _axis_plot_values(scan_contract)
     plot_jobs = []
+    priority_caption = "canonical RM run" if priority_policy == "RM" else "DM run; canonical RM material"
     for key, xkey, xlabel, filename, label in (
         ("uc_scans", "target_uc", "U_C", "figure_scheduler_uc_slices.png", "U_C"),
         ("ue_scans", "target_ue", "U_E", "figure_scheduler_ue_slices.png", "U_E"),
@@ -1547,7 +1571,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
                 [(item, select_scan_rows(summaries, item["fixed_key"], item["fixed_value"])) for item in slices],
                 root, filename, xkey, schedulers,
                 xlabel,
-                f"Implicit deadlines (D=T; RM=DM; canonical RM run; "
+                (f"Constrained deadlines (D<=T; {priority_policy}; " if constrained else
+                 f"Implicit deadlines (D=T; RM=DM; {priority_caption}; ") +
                 f"initial_energy_rule={initial_energy_rule}) — "
                 f"Whole-taskset pass ratio versus {label}"
                 + (" — priority-aligned tasksets" if config.get("taskset_profile") else ""),
@@ -1567,8 +1592,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
     report = {
         "complete": True, "experiment": config["experiment"],
         "domain": config["domain"], "campaign": config["campaign"],
-        "priority_policy": priority_policy, "deadline_modes": ["implicit"],
-        "canonical_priority_source": "RM", "rm_equals_dm_for_implicit": True,
+        "priority_policy": priority_policy, "deadline_modes": [mode],
         "tasksets": len(tasksets), "requests": len(requests), "results": len(results),
         "summary_rows": len(summaries), "technical": 0,
         "wholepass_only": True, "dmr_available": False,
@@ -1576,6 +1600,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         "harvest_model": experiment.HARVEST_MODEL,
         "initial_energy_rule": initial_energy_rule,
     }
+    if not constrained:
+        report.update({"canonical_priority_source": "RM", "rm_equals_dm_for_implicit": True})
     if config.get("taskset_profile") is not None:
         report["taskset_profile"] = config["taskset_profile"]
     (root / "analysis_report.json").write_text(
@@ -2003,6 +2029,10 @@ def analyze(
         experiment.A_IMPLICIT_V2_EXPERIMENT,
     }:
         return _analyze_a_implicit(root, analysis_workers=analysis_workers)
+    if initial_config.get("taskset_profile") is not None and initial_config.get("experiment") in {
+        experiment.V7_EXPERIMENT, experiment.V8_EXPERIMENT,
+    }:
+        return _analyze_compact_campaign(root, analysis_workers=analysis_workers)
     validate_workers(analysis_workers, "analysis-workers")
     uc_dmr_ymin = _validate_dmr_ymin(uc_dmr_ymin, "U_C DMR y-axis lower bound")
     ue_dmr_ymin = _validate_dmr_ymin(ue_dmr_ymin, "U_E DMR y-axis lower bound")

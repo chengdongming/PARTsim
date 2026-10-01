@@ -89,8 +89,9 @@ WCETs toward a high-power, high-priority anchor while retaining meaningful
 low-priority work. Ordinary generation remains the default. Profile parameters
 can be overridden with one JSON file via `--taskset-profile-config`; see
 [the population definition and full UC/UE commands](docs/PRIORITY_ALIGNED_TASKSETS.md).
-This mode supports the A-implicit RM campaigns, with either initial-energy
-rule, and retains the existing compact WholePass execution and figure style.
+This mode supports constrained V7/V8 and A-implicit V2 campaigns under RM
+or DM, with either initial-energy rule. It retains compact WholePass execution
+and the existing UC/UE figure style; ordinary experiments remain available.
 
 ## Tests
 
