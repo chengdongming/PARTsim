@@ -1,0 +1,71 @@
+{
+  "schema": "AB_V7_2_CAMPAIGN_1",
+  "seed": 20261008,
+  "intent": "Predeclared 60-second budget coverage at 8 and 16 modeled processors; includes all three declared task densities without outcome-based selection. Separate feasibility population, not a publication curve.",
+  "defaults": {
+    "processors": [
+      8,
+      16
+    ],
+    "task_multipliers": [
+      2,
+      4,
+      8
+    ],
+    "uc": [
+      "0.5"
+    ],
+    "ue": [
+      "0.4"
+    ],
+    "deadline_modes": [
+      "implicit"
+    ],
+    "power_models": [
+      "workload"
+    ],
+    "priorities": [
+      "RM"
+    ],
+    "supply_models": [
+      {
+        "kind": "periodic",
+        "gap": 1
+      }
+    ],
+    "capacity_factors": [
+      null
+    ],
+    "time_factors": [
+      1
+    ],
+    "samples": 1,
+    "batch_size": 1,
+    "methods": [
+      "seq",
+      "v72_analytic"
+    ],
+    "repetitions": 1,
+    "timeout_seconds": 60,
+    "generator": {
+      "period_min": 100,
+      "period_max": 200,
+      "period_distribution": "uniform",
+      "min_task_util": "0",
+      "max_task_util": "1",
+      "tolerance_total": "0.01",
+      "utilization_trials": 100000,
+      "rounding_trials": 1000
+    }
+  },
+  "stages": {
+    "large_budget_check": {
+      "seed_offset": 160
+    }
+  },
+  "statistics": {
+    "unit": "generator draw",
+    "certification_repetition": 0,
+    "qualification_ci": "not reported: two draws per CPU cell are for feasibility, not population inference"
+  }
+}
