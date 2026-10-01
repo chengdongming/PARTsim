@@ -1,0 +1,31 @@
+{
+  "schema": "AB_V7_2_CAMPAIGN_1",
+  "seed": 20261005,
+  "intent": "Publication target; qualification results do not complete this plan. Each stage is a separate population. No certification-dependent sample selection.",
+  "defaults": {
+    "processors": [4], "task_multipliers": [4], "uc": ["0.3", "0.6", "0.9"], "ue": ["0.7"],
+    "deadline_modes": ["implicit", "ratio_0.7_1"], "power_models": ["workload"],
+    "priorities": ["RM"], "supply_models": [{"kind": "periodic", "gap": 1}],
+    "capacity_factors": [null], "time_factors": [1], "samples": 1000, "batch_size": 10,
+    "methods": ["seq", "v72_analytic"], "repetitions": 1, "timeout_seconds": 60,
+    "generator": {"period_min": 100, "period_max": 200, "period_distribution": "uniform", "min_task_util": "0", "max_task_util": "1", "tolerance_total": "0.01", "utilization_trials": 100000, "rounding_trials": 1000}
+  },
+  "stages": {
+    "main_cpu": {"seed_offset": 100, "processors": [2, 4, 8, 16], "uc": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"]},
+    "main_energy": {"seed_offset": 200, "uc": ["0.3", "0.5", "0.7"], "ue": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9", "1"]},
+    "density": {"seed_offset": 300, "task_multipliers": [2, 4, 8]},
+    "flow_precision": {"seed_offset": 400, "processors": [2, 4], "task_multipliers": [2, 4], "uc": ["0.3", "0.6", "0.9"], "ue": ["0.4", "0.7", "1"], "methods": ["seq", "v72_analytic", "v72_flow"], "samples": 100},
+    "time_scale": {"seed_offset": 500, "uc": ["0.3", "0.6"], "time_factors": [1, 2, 4, 8], "samples": 30},
+    "deadline": {"seed_offset": 600, "deadline_modes": ["implicit", "ratio_0.7_1", "uniform_C_T"], "samples": 100},
+    "supply": {"seed_offset": 700, "supply_models": [{"kind": "periodic", "gap": 1}, {"kind": "periodic", "gap": 10}, {"kind": "periodic", "gap": 50}, {"kind": "rate_latency", "latency": 10}, {"kind": "rate_latency", "latency": 50}], "samples": 100},
+    "power": {"seed_offset": 800, "power_models": ["workload", "homogeneous", "heterogeneous_8"], "samples": 100},
+    "priority": {"seed_offset": 900, "priorities": ["RM", "DM"], "samples": 100},
+    "period": {"seed_offset": 1000, "generator": {"period_min": 100, "period_max": 1000, "period_distribution": "log_uniform"}, "samples": 100},
+    "finite": {"seed_offset": 1100, "uc": ["0.3", "0.6"], "ue": ["0.6", "0.9"], "capacity_factors": ["0.5", "1", "2", "4", "8"], "methods": ["v72_analytic", "v72_flow"], "samples": 100},
+    "ablation": {"seed_offset": 1200, "processors": [2, 4, 8], "ue": ["0.4", "0.7", "1"], "samples": 100, "methods": ["v72_analytic", "ablation_full", "ablation_completion_only", "ablation_no_first_work", "ablation_no_first_cuts", "ablation_no_shared_budget", "ablation_progress_only", "ablation_last_block_only"]},
+    "timing": {"seed_offset": 1300, "processors": [2, 4, 8, 16], "task_multipliers": [2, 4, 8], "samples": 10, "repetitions": 5},
+    "negative_control": {"seed_offset": 1400, "ue": ["1.2"], "samples": 100}
+  },
+  "statistics": {"unit": "generator draw identified by cluster_id; keep all paired variants", "bootstrap_resamples": 5000, "bootstrap_seed": 20261006, "interval": "95% paired cluster percentile; per configuration; unadjusted", "certification_repetition": 0, "timing": "per input median of repetitions; completed and censored records reported separately; no pooling audit and production paths"},
+  "limits": ["1000 is a precision target, not an acceptance requirement or a power analysis", "No finite-time simulation is an exact sporadic WCRT oracle", "Other schedulers, gang tasks, and uniprocessor PFPasap papers are not automatically valid numeric baselines for this model", "Shared host timings require later replication on an exclusive machine"]
+}
