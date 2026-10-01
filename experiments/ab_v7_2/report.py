@@ -24,6 +24,7 @@ def cell(case):
         capacity=None if model['capacity'] is None else str(Fraction(model['capacity'],scale)),
         background_power=str(Fraction(model['background_power'],scale)),
         release_floor=str(Fraction(model['release_floor'],scale)),
+        energy_mode=meta.get('energy_mode','target_ue'),power_scale=meta.get('power_scale'),
         **{key:meta.get(key) for key in ('target_uc','target_ue','harvest_gap','power_model')})
 
 
@@ -156,7 +157,7 @@ def plot(output):
     grouped = defaultdict(list)
     for row in result['summaries']:
         keys = ('cohort','processors','tasks','capacity','background_power','release_floor',
-                'target_uc','target_ue','harvest_gap','power_model','timing_family')
+                'target_uc','target_ue','energy_mode','power_scale','harvest_gap','power_model','timing_family')
         grouped[canonical({k:row[k] for k in keys})].append(row)
     for index,(label,group) in enumerate(sorted(grouped.items())):
         group = [r for r in group if r['applicable_primary_cases']]

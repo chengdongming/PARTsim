@@ -3,6 +3,7 @@
   "seed": 20261005,
   "intent": "Publication target; qualification results do not complete this plan. Each stage is a separate population. No certification-dependent sample selection.",
   "defaults": {
+    "energy_mode": "target_ue",
     "processors": [4], "task_multipliers": [4], "uc": ["0.3", "0.6", "0.9"], "ue": ["0.7"],
     "deadline_modes": ["implicit", "ratio_0.7_1"], "power_models": ["workload"],
     "priorities": ["RM"], "supply_models": [{"kind": "periodic", "gap": 1}],
@@ -24,8 +25,9 @@
     "finite": {"seed_offset": 1100, "uc": ["0.3", "0.6"], "ue": ["0.6", "0.9"], "capacity_factors": ["0.5", "1", "2", "4", "8"], "methods": ["v72_analytic", "v72_flow"], "samples": 100},
     "ablation": {"seed_offset": 1200, "processors": [2, 4, 8], "ue": ["0.4", "0.7", "1"], "samples": 100, "methods": ["v72_analytic", "ablation_full", "ablation_completion_only", "ablation_no_first_work", "ablation_no_first_cuts", "ablation_no_shared_budget", "ablation_progress_only", "ablation_last_block_only"]},
     "timing": {"seed_offset": 1300, "processors": [2, 4, 8, 16], "task_multipliers": [2, 4, 8], "samples": 10, "repetitions": 5},
-    "negative_control": {"seed_offset": 1400, "ue": ["1.2"], "samples": 100}
+    "negative_control": {"seed_offset": 1400, "ue": ["1.2"], "samples": 100},
+    "fixed_power_cpu": {"seed_offset": 1500, "uc": ["0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8", "0.9"], "energy_mode": "fixed_scale", "power_scales": ["0.5", "1"]}
   },
   "statistics": {"unit": "generator draw identified by cluster_id; keep all paired variants", "bootstrap_resamples": 5000, "bootstrap_seed": 20261006, "interval": "95% paired cluster percentile; per configuration; unadjusted", "certification_repetition": 0, "timing": "per input median of repetitions; completed and censored records reported separately; no pooling audit and production paths"},
-  "limits": ["1000 is a precision target, not an acceptance requirement or a power analysis", "No finite-time simulation is an exact sporadic WCRT oracle", "Other schedulers, gang tasks, and uniprocessor PFPasap papers are not automatically valid numeric baselines for this model", "Shared host timings require later replication on an exclusive machine"]
+  "limits": ["1000 is a precision target, not an acceptance requirement or a power analysis", "No finite-time simulation is an exact sporadic WCRT oracle", "Other schedulers, gang tasks, and uniprocessor PFPasap papers are not automatically valid numeric baselines for this model", "Shared host timings require later replication on an exclusive machine", "main_cpu fixes normalized U_E by changing task coefficients; fixed_power_cpu holds workload coefficients fixed and reports observed U_E"]
 }

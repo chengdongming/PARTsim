@@ -12,6 +12,9 @@ For formal data use a new directory for each fixed sample range. Example:
 Repeat with start=10,20,...,990; never pool qualification/old pilot data.
 run --resume keeps saved requests under identical frozen code/config/environment.
 Do not edit the code or output files while a writer is active.
+main_cpu holds normalized U_E fixed by rescaling powers. fixed_power_cpu instead
+holds workload coefficients fixed, varies CPU load, and reports actual U_E.
+fixed_power_qualification.json checks that second interpretation separately.
 """
 import argparse
 import json

@@ -44,6 +44,26 @@ class CampaignTests(unittest.TestCase):
         for start,count in ((-1,1),(39,2),(0,0)):
             with self.assertRaises(ValueError):generate(cfg,'qualification',start,count)
 
+    def test_fixed_power_keeps_workload_coefficients_and_observes_energy_load(self):
+        from experiments.v9_3.rta_load_cross import _load_exact_energy_model
+        weights=_load_exact_energy_model(ROOT/'system_config_unified_template.yml')
+        cfg=self.small();cfg['stages']['qualification'].update(energy_mode='fixed_scale',
+            power_scales=['0.5','1'],ue=['0.7'],uc=['0.2','0.8'],deadline_modes=['implicit'])
+        cases=generate(cfg,'qualification',0,2)
+        self.assertEqual(len(cases),8)
+        self.assertEqual(counts(cfg,'qualification',2)['inputs'],8)
+        actuals=set()
+        for c in cases:
+            meta,m=c['metadata'],c['model'];self.assertIsNone(meta['target_ue'])
+            powers=[Fraction(t['power'],m['energy_scale']) for t in m['tasks']]
+            self.assertEqual(powers,[weights[w]*Fraction(meta['power_scale']) for w in meta['workloads']])
+            actual=sum(Fraction(t['C'],t['T'])*p for t,p in zip(m['tasks'],powers))
+            self.assertEqual(actual,Fraction(meta['actual_ue']))
+            self.assertEqual(meta['mean_energy_overload'],actual>1);actuals.add(actual)
+        self.assertGreater(len(actuals),2)
+        cfg['stages']['qualification']['ue']=['0.4','0.8']
+        with self.assertRaises(ValueError):settings(cfg,'qualification')
+
     def test_temporal_scaling_preserves_normalized_demands(self):
         cfg=self.small();cfg['stages']['qualification'].update(deadline_modes=['implicit'],ue=['0.4'],time_factors=[1,4])
         a,b=generate(cfg,'qualification',0,1)
