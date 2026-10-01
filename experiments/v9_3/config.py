@@ -397,6 +397,11 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         generation[label] = fraction_text(value)
     if Fraction(generation["min_task_util"]) > Fraction(generation["max_task_util"]):
         raise ConfigError("generation.min_task_util must not exceed max_task_util")
+    from .priority_aligned import configured_profile
+    try:
+        configured_profile(generation)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
     candidates = generation.get("workload_candidates")
     if candidates is None:
         raise ConfigError(

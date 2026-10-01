@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.v9_3 import perf_g, scheduler_load_cross as experiment
+from experiments.v9_3.priority_aligned import profile_material
 from experiments.v9_3.parallel_prepare import run_prepare_jobs, validate_workers
 from experiments.v9_3 import simulation_engine
 from experiments.v9_3.performance_outcome import evaluate_outcome
@@ -595,6 +596,14 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--period-max", type=int, default=perf_g.PERIOD_MAX_MS)
     parser.add_argument("--min-task-util", default=str(perf_g.MIN_TASK_UTILIZATION))
     parser.add_argument("--max-task-util", default=str(perf_g.MAX_TASK_UTILIZATION))
+    parser.add_argument(
+        "--taskset-profile", choices=("ordinary", "priority-aligned"), default="ordinary",
+        help="ordinary preserves historical generation; priority-aligned selects structured RM/D=T tasksets",
+    )
+    parser.add_argument(
+        "--taskset-profile-config", type=Path,
+        help="optional JSON parameter overrides for priority-aligned tasksets",
+    )
     parser.add_argument("--util-tolerance-total", default=str(perf_g.UTILIZATION_TOLERANCE))
     parser.add_argument("--rho", default="11/2")
     parser.add_argument("--latency", default="2/5")
@@ -815,6 +824,22 @@ def main(argv: list[str] | None = None) -> int:
     priority_policy = args.priority_policy
     if is_a_implicit and priority_policy != "RM":
         raise SystemExit("A-implicit campaigns accept canonical RM only")
+    profile_options = None
+    if args.taskset_profile_config is not None:
+        try:
+            profile_options = json.loads(args.taskset_profile_config.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"cannot read taskset profile parameters: {exc}") from exc
+        if not isinstance(profile_options, dict):
+            raise SystemExit("taskset profile parameters must be a JSON object")
+        if args.taskset_profile == "ordinary":
+            raise SystemExit("--taskset-profile-config requires --taskset-profile priority-aligned")
+    try:
+        taskset_profile = profile_material(args.taskset_profile, profile_options)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if taskset_profile is not None and version != "a-implicit":
+        raise SystemExit("priority-aligned V2 requires canonical A-implicit V2 (RM / D=T)")
     _validate_implicit_streaming_scope(
         enabled=args.implicit_streaming_parse, campaign=campaign,
         priority_policy=priority_policy, resume=args.resume,
@@ -957,6 +982,9 @@ def main(argv: list[str] | None = None) -> int:
         })
     if scan_contract is not None:
         config["scan_contract"] = scan_contract
+    if taskset_profile is not None:
+        config["taskset_profile"] = taskset_profile
+        config["taskset_population"] = "structured priority-aligned; material selection before outcomes"
     config["run_identity"] = experiment.run_identity(config)
     run_config = root / "run_config.json"
     if args.resume:
@@ -1000,6 +1028,9 @@ def main(argv: list[str] | None = None) -> int:
                 if args.uc09_supplement else None
             ),
             initial_energy_rule=service_initial_energy_rule,
+            **({"taskset_profile": "priority-aligned",
+                "taskset_profile_options": taskset_profile["parameters"]}
+               if taskset_profile is not None else {}),
         )
         if service is not None and mode_service.identity != service.identity:
             raise SystemExit("deadline modes do not share service-curve identity")

@@ -94,6 +94,11 @@ def generation_dimensions(
     if not isinstance(contract, Mapping):
         raise ValueError("normalized v9.3 config lacks mandatory workload contract")
     dimensions["task_workload_contract"] = dict(contract)
+    # Omit the ordinary default to preserve every historical identity/seed.
+    from .priority_aligned import configured_profile
+    profile = configured_profile(generation)
+    if profile is not None:
+        dimensions["taskset_profile"] = profile
     return dimensions
 
 

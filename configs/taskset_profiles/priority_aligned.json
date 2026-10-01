@@ -1,0 +1,10 @@
+{
+  "high_group_multiplier": "2",
+  "anchor_total_share": "3/10",
+  "low_group_share_min": "1/5",
+  "low_task_util_max": "7/20",
+  "low_group_util_max": "1",
+  "min_low_wcet": 2,
+  "pair_total_util_tolerance": "1/10000",
+  "max_attempts": 64
+}

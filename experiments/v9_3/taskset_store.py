@@ -36,6 +36,7 @@ from .ext1b_capacity_contract import (
     capacity_contract_material,
 )
 from . import exact_energy
+from . import priority_aligned
 from .ext1b_b3_target_trace import (
     B3_V2_STORE_CONTRACT_DOMAIN,
     is_b3_target_trace_v2,
@@ -82,10 +83,11 @@ class StoredTaskset:
     generation_seconds: float
     service_curve_reference: str
     canonical_path: Path
+    taskset_profile: Mapping[str, Any] | None = None
 
     def generated_row(self) -> Dict[str, Any]:
         ratios = [Fraction(item["D"], item["T"]) for item in self.task_payload]
-        return {
+        row = {
             "generation_id": self.generation_id,
             "taskset_id": self.taskset_id,
             "taskset_index": self.taskset_index,
@@ -108,6 +110,9 @@ class StoredTaskset:
             "canonical_taskset_json": str(self.canonical_path),
             "task_input_json": canonical_json(self.task_payload),
         }
+        if self.taskset_profile is not None:
+            row["taskset_profile"] = dict(self.taskset_profile)
+        return row
 
 
 @dataclass(frozen=True)
@@ -586,13 +591,8 @@ class TasksetStore:
         self._register_pairing_entry(stored)
         return stored
 
-    def _generate(self, path: Path, cell: Cell, taskset_index: int) -> StoredTaskset:
+    def _generate_payload(self, cell: Cell, seed: int) -> tuple[float, list[dict]]:
         generation = self.config["generation"]
-        seed = derive_seed(
-            self.config["grid"]["base_seed"], cell.generation_id, taskset_index,
-            seed_mode=self.config["grid"].get("seed_mode", "generation_dimensions"),
-            utilization_index=cell.utilization_index,
-        )
         target = cell.utilization * cell.processors
         with tempfile.TemporaryDirectory(prefix="v9_3_formal_generation_") as directory:
             generated_path = Path(directory) / "tasks.yaml"
@@ -686,9 +686,78 @@ class TasksetStore:
         tolerance = Fraction(generation["utilization_tolerance"])
         if abs(actual - target) > tolerance:
             raise TasksetStoreError("generated utilization lies outside configured tolerance")
+        return elapsed, payload
+
+    def _generate(self, path: Path, cell: Cell, taskset_index: int) -> StoredTaskset:
+        generation = self.config["generation"]
+        seed = derive_seed(
+            self.config["grid"]["base_seed"], cell.generation_id, taskset_index,
+            seed_mode=self.config["grid"].get("seed_mode", "generation_dimensions"),
+            utilization_index=cell.utilization_index,
+        )
+        target = cell.utilization * cell.processors
+        profile = priority_aligned.configured_profile(generation)
+        details = None
+        if profile is None:
+            elapsed, payload = self._generate_payload(cell, seed)
+        else:
+            parameters = profile["parameters"]
+            system = legacy_rta.load_system_config(str(self.service.system_path))
+            power_model = dict(self.task_workload_contract.power_model)
+            elapsed = 0.0
+            rejected = []
+            for attempt in range(parameters["max_attempts"]):
+                candidate_seed = seed if attempt == 0 else int(domain_hash(
+                    "ASAP_BLOCK:PRIORITY_ALIGNED:CANDIDATE_SEED:v2",
+                    {"taskset_seed": seed, "attempt": attempt},
+                )[:16], 16) % 2147483647
+                duration, source = self._generate_payload(cell, candidate_seed)
+                elapsed += duration
+                tiers = [power_model[t["workload"]] for t in source]
+                try:
+                    wcets, anchor = priority_aligned.transform(
+                        source, tiers, processors=cell.processors,
+                        min_task_util=Fraction(generation["min_task_util"]),
+                        max_task_util=Fraction(generation["max_task_util"]),
+                        target=target, tolerance=Fraction(generation["utilization_tolerance"]),
+                        parameters=parameters, taskset_index=taskset_index,
+                    )
+                except priority_aligned.IneligibleTaskset as exc:
+                    rejected.append(str(exc))
+                    continue
+                payload = []
+                for task, wcet in zip(source, wcets):
+                    updated = dict(task)
+                    updated["C"] = wcet
+                    updated["P"] = fraction_text(task_demand_for_wcet(
+                        system, updated["workload"], wcet, label="priority-aligned task demand",
+                    ))
+                    if abs(Fraction(updated["P"]) / Fraction(task["P"]) - 1) > Fraction(1, 10**12):
+                        raise TasksetStoreError("priority-aligned workload power changed beyond rounding")
+                    payload.append(updated)
+                source_wcets = [t["C"] for t in source]
+                features = priority_aligned.audit(
+                    payload, tiers, processors=cell.processors,
+                    min_task_util=Fraction(generation["min_task_util"]),
+                    max_task_util=Fraction(generation["max_task_util"]),
+                    target=target, tolerance=Fraction(generation["utilization_tolerance"]),
+                    parameters=parameters, source_wcets=source_wcets,
+                )
+                details = {"candidate_seed": candidate_seed, "accepted_attempt": attempt,
+                           "rejected_material_reasons": rejected, "source_wcets": source_wcets,
+                           "anchor_rank": anchor + 1, "features": features}
+                break
+            else:
+                raise TasksetStoreError(
+                    f"priority-aligned material exhausted {parameters['max_attempts']} candidates "
+                    f"at U_C={cell.utilization}; no fallback to ordinary: {rejected[-1]}"
+                )
+        actual = sum(Fraction(t["C"], t["T"]) for t in payload)
         dimensions = generation_dimensions(
             self.config, cell.processors, cell.task_count, cell.utilization
         )
+        if details is not None:
+            dimensions["priority_aligned_material"] = details
         canonical_payload = {
             "schema": FROZEN_TASKSET_SCHEMA,
             "generation_id": cell.generation_id,
@@ -773,6 +842,29 @@ class TasksetStore:
     def _from_document(self, document: Mapping[str, Any], path: Path) -> StoredTaskset:
         payload = tuple(document["tasks"])
         energy_by_workload = dict(self.task_workload_contract.power_model)
+        profile = priority_aligned.configured_profile(self.config["generation"])
+        stored_profile = document["generation_parameters"].get("taskset_profile")
+        if stored_profile != profile:
+            raise TasksetStoreError("stored taskset profile differs from requested generation")
+        if profile is not None:
+            generation = self.config["generation"]
+            details = document["generation_parameters"].get("priority_aligned_material")
+            if not isinstance(details, dict) or "source_wcets" not in details:
+                raise TasksetStoreError("priority-aligned taskset lacks source material")
+            try:
+                features = priority_aligned.audit(
+                    payload, [energy_by_workload[t["workload"]] for t in payload],
+                    processors=int(document["generation_parameters"]["M"]),
+                    min_task_util=Fraction(generation["min_task_util"]),
+                    max_task_util=Fraction(generation["max_task_util"]),
+                    target=Fraction(document["target_total_utilization"]),
+                    tolerance=Fraction(generation["utilization_tolerance"]),
+                    parameters=profile["parameters"], source_wcets=details["source_wcets"],
+                )
+            except (KeyError, ValueError, TypeError) as exc:
+                raise TasksetStoreError(f"invalid priority-aligned taskset: {exc}") from exc
+            if features != details.get("features"):
+                raise TasksetStoreError("stored priority-aligned features disagree with tasks")
         system = legacy_rta.load_system_config(str(self.service.system_path))
         for item in payload:
             workload = item.get("workload")
@@ -846,4 +938,5 @@ class TasksetStore:
             str(document["deadline_mode"]), tasks, payload,
             float(document.get("generation_seconds", 0)),
             str(document["service_curve_reference"]), path,
+            profile,
         )

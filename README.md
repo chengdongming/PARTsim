@@ -84,6 +84,14 @@ writing composite outputs. Legacy UE=1.0 rows remain in the source root but
 are excluded from the standardized composite. The composite is WholePass-only
 and does not manufacture DMR values.
 
+An optional `--taskset-profile priority-aligned` population redistributes
+WCETs toward a high-power, high-priority anchor while retaining meaningful
+low-priority work. Ordinary generation remains the default. Profile parameters
+can be overridden with one JSON file via `--taskset-profile-config`; see
+[the population definition and full UC/UE commands](docs/PRIORITY_ALIGNED_TASKSETS.md).
+This mode supports the A-implicit RM campaigns, with either initial-energy
+rule, and retains the existing compact WholePass execution and figure style.
+
 ## Tests
 
 Run the current target suite with `python3 -m pytest` and the selected RTA,

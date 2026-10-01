@@ -1347,6 +1347,46 @@ def _a_implicit_validate_config(
     return config, cells, spec["scan_contract"], spec["figure_slices"], "RM"
 
 
+def _validate_taskset_profile(config: dict, taskset: dict) -> None:
+    """Bind new population labels to actual task material; leave old rows intact."""
+    from experiments.v9_3 import priority_aligned
+    from experiments.v9_3.config import domain_hash
+    from experiments.v9_3.taskset_store import FROZEN_TASKSET_SEMANTIC_DOMAIN
+    profile = config.get("taskset_profile")
+    if taskset.get("taskset_profile") != profile:
+        raise SystemExit("taskset profile differs from run_config")
+    if profile is None:
+        return
+    try:
+        if profile != priority_aligned.profile_material(profile["name"], profile["parameters"]):
+            raise ValueError("profile version/parameters are not canonical")
+        document = json.loads(Path(taskset["canonical_taskset_json"]).read_text(encoding="utf-8"))
+        dimensions = document["generation_parameters"]
+        details = dimensions["priority_aligned_material"]
+        payload = json.loads(taskset["task_input_json"])
+        if dimensions["taskset_profile"] != profile or payload != document["tasks"]:
+            raise ValueError("profile/payload differs from canonical taskset")
+        keys = ("schema", "generation_id", "taskset_index", "seed", "generation_parameters",
+                "target_total_utilization", "actual_total_utilization", "priority_policy", "power_mode",
+                "deadline_mode", "service_curve_reference", "tasks", "task_workload_contract", "numeric_contract")
+        digest = domain_hash(FROZEN_TASKSET_SEMANTIC_DOMAIN, {k: document[k] for k in keys})
+        if digest != document["taskset_hash"] or digest != taskset["taskset_hash"]:
+            raise ValueError("canonical taskset hash mismatch")
+        model = {r["workload"]: Fraction(r["energy_per_tick"])
+                 for r in document["task_workload_contract"]["power_model"]}
+        features = priority_aligned.audit(
+            payload, [model[t["workload"]] for t in payload], processors=config["processors"],
+            min_task_util=Fraction(config["min_task_util"]), max_task_util=Fraction(config["max_task_util"]),
+            target=Fraction(document["target_total_utilization"]),
+            tolerance=Fraction(config["util_tolerance_total"]), parameters=profile["parameters"],
+            source_wcets=details["source_wcets"],
+        )
+        if features != details["features"]:
+            raise ValueError("stored profile features disagree with tasks")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise SystemExit(f"invalid priority-aligned material: {exc}") from exc
+
+
 def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, Any]:
     validate_workers(analysis_workers, "analysis-workers")
     config, cells, scan_contract, figure_slices, priority_policy = (
@@ -1374,6 +1414,7 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
     if len(taskset_by_id) != len(tasksets):
         raise SystemExit("A-implicit tasksets contain duplicate identities")
     for taskset in tasksets:
+        _validate_taskset_profile(config, taskset)
         if taskset.get("deadline_mode") != "implicit":
             raise SystemExit("A-implicit taskset deadline mode is not implicit")
         try:
@@ -1478,6 +1519,9 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
                 "n_deadline_miss": len(selected) - n_wholepass,
                 "acceptance_ratio": n_wholepass / len(selected),
             })
+            if config.get("taskset_profile") is not None:
+                summaries[-1]["taskset_profile"] = config["taskset_profile"]["name"]
+                summaries[-1]["taskset_profile_version"] = config["taskset_profile"]["version"]
     write_csv(root / "summary.csv", summaries)
     write_csv(root / "figure_scheduler_uc_slices.csv", [
         row for slice_config in figure_slices["uc_scans"]
@@ -1505,7 +1549,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
                 xlabel,
                 f"Implicit deadlines (D=T; RM=DM; canonical RM run; "
                 f"initial_energy_rule={initial_energy_rule}) — "
-                f"Whole-taskset pass ratio versus {label}",
+                f"Whole-taskset pass ratio versus {label}"
+                + (" — priority-aligned tasksets" if config.get("taskset_profile") else ""),
                 axis_min=axis["axis_min"], axis_max=axis["axis_max"], axis_ticks=axis["axis_ticks"],
                 slice_display_labels=[
                     (f"{item['label']}: fixed supply = "
@@ -1531,6 +1576,8 @@ def _analyze_a_implicit(root: Path, *, analysis_workers: int = 1) -> dict[str, A
         "harvest_model": experiment.HARVEST_MODEL,
         "initial_energy_rule": initial_energy_rule,
     }
+    if config.get("taskset_profile") is not None:
+        report["taskset_profile"] = config["taskset_profile"]
     (root / "analysis_report.json").write_text(
         json.dumps(report, sort_keys=True, indent=2) + "\n", encoding="utf-8",
     )

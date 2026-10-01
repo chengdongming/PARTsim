@@ -105,6 +105,8 @@ def _expected_source(label: str) -> tuple[str, str, dict[str, Any]]:
 
 
 def _common_config_checks(config: dict[str, Any], label: str) -> None:
+    if config.get("taskset_profile") is not None:
+        raise SystemExit(f"{label}: historical composite requires ordinary tasksets; use complete V2 campaigns for profiles")
     exact = {
         "seed": 20260906,
         "processors": 4,
