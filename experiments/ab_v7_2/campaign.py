@@ -332,7 +332,7 @@ def campaign_summary(output, inputs=None):
                     b_tighter_R=sum(x['response_bounds']!=y['response_bounds'] and all(p>=q for p,q in zip(x['response_bounds'],y['response_bounds'])) for x,y in common)))
     result=dict(stages=stages,cells=cells,pairs=pairs,statistics=plan['config'].get('statistics'),
         interpretation='NO_CERTIFICATE is not infeasibility. TIMEOUT is censored, not a failed certificate. '
-                       'Qualification cells have two draws and are not formal publication estimates.')
+                       'Use the per-cell independent draw counts; small feasibility batches are not formal population estimates.')
     (output/'campaign-summary.json').write_text(json.dumps(result,indent=2))
     write_csv(output/'campaign-cells.csv',cells);write_csv(output/'campaign-pairs.csv',pairs)
     return result
