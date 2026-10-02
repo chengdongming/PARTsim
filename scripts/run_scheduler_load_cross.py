@@ -833,7 +833,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.taskset_profile == "ordinary":
             raise SystemExit("--taskset-profile-config requires --taskset-profile priority-aligned")
     try:
-        taskset_profile = profile_material(args.taskset_profile, profile_options)
+        taskset_profile = profile_material(
+            args.taskset_profile, profile_options,
+            deadline_mode="constrained" if version in {"v7", "v8"} else "implicit",
+            priority_policy=priority_policy,
+        )
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
     if taskset_profile is not None and version not in {"v7", "v8", "a-implicit"}:

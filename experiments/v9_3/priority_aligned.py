@@ -22,6 +22,7 @@ DEFAULT_PARAMETERS = {
     "pair_total_util_tolerance": "1/10000",
     "max_attempts": 64,
 }
+CONSTRAINED_DM_MAX_ATTEMPTS = 512
 
 
 class IneligibleTaskset(ValueError):
@@ -32,7 +33,8 @@ def _text(value: Fraction) -> str:
     return str(value)
 
 
-def profile_material(name: str = "ordinary", parameters: Mapping[str, Any] | None = None) -> dict | None:
+def profile_material(name: str = "ordinary", parameters: Mapping[str, Any] | None = None, *,
+                     deadline_mode: str | None = None, priority_policy: str = "RM") -> dict | None:
     """Canonical profile, omitted for ordinary so old hashes/seeds stay identical."""
     if name == "ordinary":
         if parameters:
@@ -47,6 +49,8 @@ def profile_material(name: str = "ordinary", parameters: Mapping[str, Any] | Non
     if unknown:
         raise ValueError("unknown priority-aligned parameters: " + ", ".join(sorted(unknown)))
     values = {**DEFAULT_PARAMETERS, **supplied}
+    if deadline_mode == "constrained" and priority_policy == "DM" and "max_attempts" not in supplied:
+        values["max_attempts"] = CONSTRAINED_DM_MAX_ATTEMPTS
     for key in DEFAULT_PARAMETERS:
         value = values[key]
         if key in {"min_low_wcet", "max_attempts"}:

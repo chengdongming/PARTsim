@@ -139,6 +139,70 @@ def test_parameters_change_population_but_initial_energy_does_not():
     assert expand_cells(zero)[0].generation_id != expand_cells(raised_floor)[0].generation_id
 
 
+def test_retry_default_is_larger_only_for_constrained_dm():
+    for mode in ("constrained", "implicit"):
+        for policy in ("RM", "DM"):
+            material = profile.profile_material("priority-aligned", deadline_mode=mode, priority_policy=policy)
+            expected = 512 if (mode, policy) == ("constrained", "DM") else 64
+            assert material["parameters"]["max_attempts"] == expected
+            explicit = profile.profile_material("priority-aligned", {"max_attempts": 2},
+                                                deadline_mode=mode, priority_policy=policy)
+            assert explicit["parameters"]["max_attempts"] == 2
+
+
+def test_constrained_dm_high_uc_regression_preserves_constraints(tmp_path, monkeypatch):
+    monkeypatch.setattr(experiment, "prepare_service_curve", small_service)
+    args = dict(seed=20261003, utilizations=[Fraction(4, 5)], count=111,
+                processors=4, tasks=10, period_min=40, period_max=200,
+                min_task_util=Fraction(1, 100), max_task_util=Fraction(4, 5),
+                tolerance=Fraction(1, 100), deadline_mode="constrained", priority_policy="DM",
+                taskset_profile="priority-aligned", initial_energy_rule="zero")
+    old_config = experiment._config(**args, taskset_profile_options={"max_attempts": 64})
+    old = TasksetStore(tmp_path / "old", old_config, small_service(old_config, tmp_path / "old_service"))
+    with pytest.raises(TasksetStoreError, match="exhausted 64 candidates.*taskset_index=110.*no fallback"):
+        old.get_or_create(expand_cells(old_config)[0], 110)
+    fixed_config = experiment._config(**args)
+    fixed = TasksetStore(tmp_path / "fixed", fixed_config, small_service(fixed_config, tmp_path / "fixed_service"))
+    row = fixed.get_or_create(expand_cells(fixed_config)[0], 110)
+    assert row.taskset_profile["parameters"]["max_attempts"] == 512
+    assert row.generation_id != expand_cells(old_config)[0].generation_id
+    assert all(0 < t["C"] <= t["D"] < t["T"] for t in row.task_payload)
+    cfg = {"taskset_profile": row.taskset_profile, "processors": 4, "priority_policy": "DM",
+           "min_task_util": "1/100", "max_task_util": "4/5", "util_tolerance_total": "1/100"}
+    analyzer._validate_taskset_profile(cfg, row.generated_row())
+
+
+def test_profile_preparation_failure_checkpoints_and_reuses_validated_material(tmp_path, monkeypatch):
+    monkeypatch.setattr(experiment, "prepare_service_curve", small_service)
+    original_prepare = experiment.run_prepare_jobs
+    root = tmp_path / "resumed"
+    args = dict(utilizations=[Fraction(7, 10)], count=2, prepare_workers=2,
+                taskset_profile="priority-aligned")
+
+    def interrupted(jobs, worker, **kwargs):
+        kwargs["on_result"](worker(jobs[0]))
+        raise TasksetStoreError("injected preparation interruption")
+
+    monkeypatch.setattr(experiment, "run_prepare_jobs", interrupted)
+    with pytest.raises(TasksetStoreError, match="injected preparation interruption"):
+        materialize(root, **args)
+    files = list((root / "tasksets").rglob("taskset_*.json"))
+    assert len(files) == 1
+    first_path, first_bytes = files[0], files[0].read_bytes()
+    retried = []
+
+    def resumed(jobs, worker, **kwargs):
+        retried.extend(job["taskset_index"] for job in jobs)
+        return original_prepare(jobs, worker, **kwargs)
+
+    monkeypatch.setattr(experiment, "run_prepare_jobs", resumed)
+    rows, _ = materialize(root, **args)
+    assert len(rows) == 2 and retried == [1]
+    assert first_path.read_bytes() == first_bytes
+    serial, _ = materialize(tmp_path / "serial", **dict(args, prepare_workers=1))
+    assert [r.semantic_hash for r in rows] == [r.semantic_hash for r in serial]
+
+
 @pytest.mark.parametrize("campaign", [experiment.A_IMPLICIT_UC_FIXED_SUPPLY_CAMPAIGN,
                                       experiment.A_IMPLICIT_UE_SERVICE_SCALING_CAMPAIGN])
 def test_cli_json_parameters_reach_both_campaigns_before_simulation(tmp_path, monkeypatch, campaign):

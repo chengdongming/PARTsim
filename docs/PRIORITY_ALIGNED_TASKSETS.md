@@ -48,8 +48,11 @@ much smaller serialization differences. Workloads are not reassigned, and
 not every high-priority task is forced to be costly or every low task cheap.
 
 Candidates are accepted using task material only, before any scheduler runs.
-Ineligible candidates are retried deterministically, at most 64 attempts per
-taskset. Exhaustion stops with an error and never substitutes ordinary
+Ineligible candidates are retried deterministically, at most 512 attempts per
+taskset for constrained DM and 64 for the other combinations. Constrained DM
+needs more attempts at high utilization because grouping by short deadlines
+restricts feasible WCET allocations. This changes the search budget, not the
+material constraints. Exhaustion stops with an error and never substitutes ordinary
 material. Source WCETs, accepted candidate seed, retry reasons and actual
 material features are saved with each canonical taskset.
 
@@ -69,11 +72,13 @@ parameter file. Defaults are defined in
 | `low_group_util_max` | `"1"` | Maximum low-group `sum(C/T)` |
 | `min_low_wcet` | `2` | Minimum low-task WCET in ticks; values below 2 are rejected |
 | `pair_total_util_tolerance` | `"1/10000"` | Maximum total utilization drift from accepted source |
-| `max_attempts` | `64` | Deterministic material attempts per taskset |
+| `max_attempts` | `512` for constrained DM; `64` otherwise | Deterministic material attempts per taskset |
 
 Rational parameters use strings such as `"1/5"` or integer values, rather than
 JSON floating-point numbers. A file may contain only the parameters being
-overridden. To use the example, append:
+overridden. An explicit `max_attempts` overrides the mode-specific default.
+The example omits that parameter so the mode-specific default applies.
+To use the example, append:
 
 ```bash
 --taskset-profile-config configs/taskset_profiles/priority_aligned.json
@@ -82,6 +87,11 @@ overridden. To use the example, append:
 The canonical parameter set is propagated through generation, taskset rows,
 `run_config.json`, run identity, summary CSVs, analysis reports and plot labels.
 Different profiles/parameters cannot resume into each other's output directory.
+The retry budget is part of the generation identity, including candidate seeds.
+Existing constrained-DM runs prepared with the old 64-attempt default therefore
+need a fresh directory for the 512-attempt default. Use that same budget for
+both initial-energy rules when comparing shared tasksets. Other mode/policy
+defaults are unchanged.
 There is no account login, credential, approval, attestation or pinned Git/SHA
 requirement in this mode.
 
@@ -122,6 +132,10 @@ done
 
 Use a fresh output directory or the existing `--resume` option with the same
 scientific configuration. Choose a worker count supported by the machine.
+Profile preparation checkpoints each validated canonical taskset as workers
+finish. If another candidate exhausts its budget or preparation is interrupted,
+the next run with the same configuration reuses those files and prepares only
+missing tasksets. An incomplete preparation still stops before simulation.
 
 | Campaign | Independent cells | Supply treatment | Main figure |
 | --- | --- | --- | --- |

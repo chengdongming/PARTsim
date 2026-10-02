@@ -571,7 +571,8 @@ class TasksetStore:
 
         Candidate generation is deliberately separate from this method.  Only
         the main process calls it, so the canonical taskset file and pairing
-        manifest retain their historical deterministic commit order.
+        manifest retain their deterministic canonical contents even when
+        validated profile candidates are checkpointed in completion order.
         """
         path = self.path_for(cell.generation_id, taskset_index)
         if path.is_file():
@@ -752,7 +753,8 @@ class TasksetStore:
             else:
                 raise TasksetStoreError(
                     f"priority-aligned material exhausted {parameters['max_attempts']} candidates "
-                    f"at U_C={cell.utilization}; no fallback to ordinary: {rejected[-1]}"
+                    f"at U_C={cell.utilization}, policy={priority_aligned.construction_policy(generation)}, "
+                    f"taskset_index={taskset_index}, seed={seed}; no fallback to ordinary: {rejected[-1]}"
                 )
         actual = sum(Fraction(t["C"], t["T"]) for t in payload)
         dimensions = generation_dimensions(

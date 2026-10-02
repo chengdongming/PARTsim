@@ -990,7 +990,8 @@ def _config(seed: int, *, utilizations: Sequence[Fraction], count: int,
         "utilization_tolerance": fraction_text(tolerance),
     })
     from .priority_aligned import profile_material, configured_profile
-    profile = profile_material(taskset_profile, taskset_profile_options)
+    profile = profile_material(taskset_profile, taskset_profile_options,
+                               deadline_mode=deadline_mode, priority_policy=priority_policy)
     if profile is not None:
         if processors != 4 or tasks != 10:
             raise ValueError("priority-aligned V2 currently requires 4 processors and 10 tasks")
@@ -1089,14 +1090,26 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
                 raise ValueError("scheduler LOAD-CROSS requires synchronous release")
             tasksets_by_key[(cell.generation_id, index)] = taskset
     if missing:
+        cells_by_id = {cell.generation_id: cell for cell in cells}
+
+        def checkpoint_candidate(candidate: Mapping[str, Any]) -> None:
+            key = str(candidate["generation_id"]), int(candidate["taskset_index"])
+            tasksets_by_key[key] = store.commit_candidate(
+                cells_by_id[key[0]], key[1], candidate["document"],
+            )
+
         candidates = run_prepare_jobs(
             missing, prepare_taskset_candidate, workers=prepare_workers,
             phase="scheduler-load-cross prepare-tasksets",
             key=lambda row: (row["generation_id"], row["taskset_index"]),
+            **({"on_result": checkpoint_candidate}
+               if config["generation"].get("taskset_profile") is not None else {}),
         )
         for cell in cells:
             for index in range(count):
                 key = (cell.generation_id, index)
+                if key in tasksets_by_key:
+                    continue
                 if key in candidates:
                     candidate = candidates[key]
                     taskset = store.commit_candidate(cell, index, candidate["document"])

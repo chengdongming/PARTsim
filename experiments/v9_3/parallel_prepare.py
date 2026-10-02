@@ -21,11 +21,14 @@ def validate_workers(value: int, label: str) -> int:
 def run_prepare_jobs(
     jobs: Iterable[T], worker: Callable[[T], R], *, workers: int,
     phase: str, key: Callable[[R], Any],
+    on_result: Callable[[R], None] | None = None,
 ) -> dict[Any, R]:
     """Run pure preparation jobs and return results keyed by immutable identity.
 
     The caller is responsible for canonical ordering and shared-state commits.
     A worker exception aborts the phase; no partial result is returned.
+    An optional main-process callback may checkpoint validated material as
+    each result arrives. Checkpoints never imply that the phase is complete.
     """
     validate_workers(workers, "prepare-workers")
     items = list(jobs)
@@ -52,6 +55,8 @@ def run_prepare_jobs(
             result_key = key(result)
             if result_key in prepared:
                 raise RuntimeError(f"{phase} produced duplicate key {result_key!r}")
+            if on_result is not None:
+                on_result(result)
             prepared[result_key] = result
             completed += 1
             if completed % interval == 0 or completed == len(items):
@@ -67,6 +72,8 @@ def run_prepare_jobs(
                 result_key = key(result)
                 if result_key in prepared:
                     raise RuntimeError(f"{phase} produced duplicate key {result_key!r}")
+                if on_result is not None:
+                    on_result(result)
                 prepared[result_key] = result
                 completed += 1
                 if completed % interval == 0 or completed == len(items):

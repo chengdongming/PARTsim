@@ -39,12 +39,15 @@ def test_rta_fixed_scale_preparation_is_exactly_order_independent(monkeypatch):
         phase="test fixed parallel", key=lambda row: (row["target_uc"], row["generation_index"]),
     )
     assert serial == parallel
+    # The helper returns keyed results in completion order. Match the runner's
+    # canonical (U_C, generation_index) assembly before making requests.
+    ordered_keys = sorted(serial, key=lambda item: (Fraction(item[0]), item[1]))
     serial_requests = rta.make_requests(
-        [row["taskset"] for row in serial.values()], [Fraction(37)], ["CW"],
+        [serial[item]["taskset"] for item in ordered_keys], [Fraction(37)], ["CW"],
         4, Fraction(11, 2), Fraction(2, 5), 1.0,
     )
     parallel_requests = rta.make_requests(
-        [row["taskset"] for row in parallel.values()], [Fraction(37)], ["CW"],
+        [parallel[item]["taskset"] for item in ordered_keys], [Fraction(37)], ["CW"],
         4, Fraction(11, 2), Fraction(2, 5), 1.0,
     )
     assert [row["request_id"] for row in serial_requests] == [
@@ -127,3 +130,21 @@ def test_prepare_worker_failure_fails_closed():
         assert "generation failed" in str(exc)
     else:
         raise AssertionError("preparation failure must not be swallowed")
+
+
+def test_prepare_callback_checkpoints_without_masking_worker_failure():
+    checkpoints = []
+
+    def fail(item):
+        if item == 2:
+            raise RuntimeError("generation failed")
+        return item, item
+
+    try:
+        run_prepare_jobs([1, 2, 3], fail, workers=1, phase="checkpoint failure",
+                         key=lambda row: row[0], on_result=checkpoints.append)
+    except RuntimeError as exc:
+        assert "generation failed" in str(exc)
+    else:
+        raise AssertionError("checkpointing must not hide an incomplete phase")
+    assert checkpoints == [(1, 1)]

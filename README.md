@@ -92,6 +92,8 @@ can be overridden with one JSON file via `--taskset-profile-config`; see
 This mode supports constrained V7/V8 and A-implicit V2 campaigns under RM
 or DM, with either initial-energy rule. It retains compact WholePass execution
 and the existing UC/UE figure style; ordinary experiments remain available.
+Constrained DM uses a larger deterministic candidate budget at high load;
+validated profile material is checkpointed for interrupted preparation.
 
 ## Tests
 
