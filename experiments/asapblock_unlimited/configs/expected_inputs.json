@@ -1,0 +1,22 @@
+{
+  "main": {
+    "inputs": 1920,
+    "identity_sha256": "5a4a1b2089ced70738a9d35ef181c701401beb466dc2815286b1b0c02eaf44bf"
+  },
+  "latest": {
+    "inputs": 720,
+    "identity_sha256": "fff5af9cbb510a174a893eed53ebab0d54643bd1424912cfa8aec436f5641c1e"
+  },
+  "flow": {
+    "inputs": 576,
+    "identity_sha256": "3f3ca64b5effee9e4c6ad88174af1b434bbe729999df4ee3561d04a3c3a76735"
+  },
+  "constructed": {
+    "inputs": 180,
+    "identity_sha256": "46d141a3628562bd958c090a5fa3c47a14d5b2b7d6726498d37ef7180e202216"
+  },
+  "scale_all": {
+    "inputs": 390,
+    "identity_sha256": "0d23a0f272042ed939bc6892741404c02344122959c39f7c1277187fbeb75739"
+  }
+}

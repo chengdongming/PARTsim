@@ -1,0 +1,209 @@
+{
+  "audit_timing": [
+    "85200f0de73d933bea3cc88d4495b80b1c436757bbb277d01296994776d31fc6",
+    "49b25e25cc7a7af779a0732e133b201ae53cc6ab04ea6bf53f98a5fe3d2fab32",
+    "4911e829387a4de53d48e127faea0ed7e743aebf4725908b48cdb3196061a9c8",
+    "bfc5f6913c218ac15ef5fd039d4873c248e95ce7cdf0f319d10e97edd3958255",
+    "7d3dfad4f49213583d5bdcd198c54ca20d5299451ed557c651d5d0f97b617d44",
+    "837780f98038984093f82bc0757f7b08223cc120946096b1236061663307a8b1",
+    "94dc06b954e0d5c6d98fd064d1e7d73e70d1f162eea227ef41f612352e244e76",
+    "8b924ecccb2ee95d1f780a19ff7562ec7b584d0d28d0e47c40dbdf37a2d5200e",
+    "aea89f8e373392d84095456e0ccbe0df75062b1d638d933421b4108801072137",
+    "e444a4b0601a08d023236b29254ada7e9e653457757f3e689fd747ac19f93bdf",
+    "a2eeb381343d6816552390389d8dff572616ee310e3cc59ef0525b479e2bdb5f",
+    "9e82058c4ef7c104f5cefd526b567010244d6c42e778a43fc99985aff914b162",
+    "45354e688905527c7f7e0206f2b302ede899ad47cb80090cebc546292b8ffc3b",
+    "69931eee7fa659041e8de789515ac9068996de9770a3e91924086e1cae0d2483",
+    "efc1706a0bf1f0fc0daedd23fb994db4d9ff2b586ae5da8aa28538396d9fe75d",
+    "145b1d3ba32861848a02855e4c368715b780f8c86f5e5cdc458ce5f5327c0ef6",
+    "6c1bfe5992300ebb011be41b5a71f63124d7a9a71845dc64698f21e5d8d347e6",
+    "e94573d0b6dfe1f084f1f3f6df2c777ea667ec5915231abbd4cbb1f15140b989",
+    "71979629ad9be3e6bf7f80d0e51094553b4c9cdd6eaad9b8ed3a717da2451c94",
+    "f522c725c53e8887bfd8b5d2325f1221f73fc383e003783a8c1649b772d42beb",
+    "fb63c5ee10d09767373eee25e163ac1968d40f5811170586a7c000190627eaae",
+    "b42b08d076eb3d692494465f23d4d95c3dfb8a5fa4d0ef84ed695d299d82fca6",
+    "fee48905ff475bb069badf0b7c333ffc50910f1851eee47aaede96dfad2faf0d",
+    "4625d18d1f9486f4a8010589bc18a84b825554f802f677a0aeaade729bd37884"
+  ],
+  "scale": [
+    "4882b41f15d2a4bfb458e45284b5434e04cad779d119ac39abf03978c9ba2acd",
+    "37e0dfa7cbc791585ad9a35d57e5279e243b226410d2d6e94d751664bd4fc3c6",
+    "b3682488f63af211b5837b94e6a9a2d54fda89e4392f17dc3ba58214ecd9f310",
+    "7ae21c779fc24c732362d8ea193eabffd1efd7c7777e83dd034e35c4df511fe1",
+    "7a8deaa378546e202225ed35665ed94a7ecc96d4f233bb9edf956130232b3ef3",
+    "00aaedbf77715bce151c98957e85b98fdfb2965d90c79762de61c767a10875fa",
+    "3d372462f3e62fea2546bbd903f0fe7875977244498f1febcaa5b091ff39b428",
+    "d7dee200654a3cafa85b8f7d26111f6fe3a51ba310dbe5696dd8cbfc0633345c",
+    "3c710b9f90d684bc71d2818d9b144cebaa117c4b43ad876e142fc272463bd59d",
+    "a77fdba94452e40da59c1a2626338d2bb11f231dc153e022d74316dff8a7b63b",
+    "9ade6f7ffeadd3e4ac76cf824d164421eac42132fcf2ce7efa7e3c960eaac5f6",
+    "6a1d041842071e4f31632a0edbea54644ea268a484d47d7f87bb28780db6315a",
+    "f2b79a25ad72cfef1e9338c3682c17eb43a66df33acc1d596bec26f295d74053",
+    "d5c9099b25d5d247189adf32b2ac5cfd3a84adcef401a384f22ce1219c87e964",
+    "364ee58fc5bb879daaf9886597fb94be7f742f36e6424f764130020b56b33685",
+    "8cefc74952cf014ea5f04d59d5c4cbee597189066ef0a3a6103fe139f2d30079",
+    "821b1715602ba3e00da1a9f4c9b933fb3303356cebc54bb9ddebd7b686d89760",
+    "62a23288b4e43981e4c2b49e59ec1ab6b1bdf23a2a8ab0de4e006eabf33313c6"
+  ],
+  "flow_timing": [
+    {
+      "case_id": "e561e5e3efde6d6a61778e9e0d0772aee093532fbec8f91672f7e96972f5ea45",
+      "category": "common_certified",
+      "group": "current_long",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "8ce3e36b2acf05c716453762ae1185650d5a0eb13ae3baff7594ff2f06511f6f",
+      "category": "common_no_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "2a9fc54408906f9491ec528ec51c94f5a326c5d4a521a0445bc41a903abe4896",
+      "category": "common_no_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "4bc1ab9097cb4afd4aac905b77f06fec82ca0e95d252daded0156c90532a8602",
+      "category": "precision_gain_example",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "The unique completed precision-gain example; targeted diagnostic, not speed aggregation."
+    },
+    {
+      "case_id": "0ad9f3778efcbb54b636702d282eb331acf4bd78f369e1958bcc94d3c7da281e",
+      "category": "common_no_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "97129cda0d01a4d79db5623678b5b5bb27ad85b4cbb41254be324c18643bd366",
+      "category": "common_certified",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "17207f39007fb48fd4cfa2ab7accb8ced94e957b20bba947e602c4ccb7b910fd",
+      "category": "delayed_common_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 120,
+      "selection": "Hash-selected common certificate found only after the prior timeout extension; targeted diagnostic."
+    },
+    {
+      "case_id": "ebdc4ac8df58b6a8701d0634836c5474b2a64c4f7fc9f34bb66d18e2d28212a6",
+      "category": "common_certified",
+      "group": "current_long",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "ed5560cd1f11fd4518a384fed098bc5114a9c80dc854af567a3a0f56bfb4d9fe",
+      "category": "common_certified",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "eff186b8c57a73cdd4748f97841bd3d192fa823d89841b361582dcbef58f3491",
+      "category": "common_certified",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "19b8a9575a639ec916d10bb8555e26b2eaf8effc780929e30c8b1c27635e4bfb",
+      "category": "common_no_certificate",
+      "group": "current_long",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "2d3e60ce0f3759f5d9b267a6172821ab8bc41861a4c86feb29b3aa1fc1b47709",
+      "category": "common_certified",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "4749c22cd133618b99871aab847a70d1ff753806b73415aae5891f5dc2fd1678",
+      "category": "common_no_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "df7aeb34b168b07e99a617eb0b3c16009571a4415a3586f6203892a434f437ba",
+      "category": "common_certified",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "174188f9ce27006b13351c65a41acbf0a494fe5df4af055ec51af2b780c1966b",
+      "category": "common_no_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "f9aa43a1c800e0102af3d2556142f75529e2014ab4701b6dd016093a6b0c4262",
+      "category": "common_no_certificate",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "a7f7376ac539f77b3926aaf6937fa47b1923099afa1d402e6ab6b64bd89c7549",
+      "category": "common_certified",
+      "group": "current_long",
+      "budget_cpu_seconds": 60,
+      "selection": "One hash-selected common-certified input per available (time group,M,N) cell."
+    },
+    {
+      "case_id": "eb918818a66407061c59bab4fdfc458ea2fd0e1d45ef4eb40e5ed5886b04370c",
+      "category": "common_no_certificate",
+      "group": "current_long",
+      "budget_cpu_seconds": 30,
+      "selection": "One hash-selected baseline common-NO input per fresh size cell, plus two long-period cells."
+    },
+    {
+      "case_id": "af855bf7c6d34d9d8879cd7a9fbb4ff308eae4d210bc106c0c4a8bb99042393f",
+      "category": "large_timeout_example",
+      "group": "new_short_scale",
+      "budget_cpu_seconds": 30,
+      "selection": "Hash-selected N=32 analytic-C/flow-unresolved example; censored diagnostic, not speed aggregation."
+    }
+  ],
+  "quick_timing": [
+    "1876d8184306fe421e587110dfc71c1338100fb85a3fbbb3287eb530ffc39c9c",
+    "857d75f34145d56629b23c85bf31e5962eee1dec7b54884cf946fc1cc3a73063",
+    "71a88ecda30624b82bf2211257d4fea6768ea6ac19f6a7869c8af87ff0276e7c",
+    "90d4a9bf32fa5cd1b556bce7e6984787a261d363e595db719530f40cee6af168",
+    "b5e6702d045e41d77e6701553c0effb9c04e77082989cb01030e66849e8bbc17",
+    "c580672c1da41637aeb71d7e32dc71d418d375e9be37393a11b40d07685cc0c4",
+    "6bd360688c708d65f771b09d2f14d94a971a63c02b648889f57f5a55140c01b2",
+    "19b8a9575a639ec916d10bb8555e26b2eaf8effc780929e30c8b1c27635e4bfb",
+    "5c963d606c52595c457c24745b31ecafe39d561d5fd06f2072a8a4e01e08aca1",
+    "6d26b4e9d6f11d7b6feee10cf508c55f6fe5b8ccb46938ae55af513e3c2f683f",
+    "1ec521871e0b3adda7bb2b7a081c5bb1b902a6950cb4403d443d91833a0d8477",
+    "7cf36d6a4a86a3498576bccb678041392886f95c716f2621f64ad6f7069ff23f",
+    "8b03db302021349f40f60642b24d42be9014c876e545ab202739ff06a336d573",
+    "74426cde1da48624717af5064a847d6f4e13f7dc3a5d7e0848831617498755f4",
+    "2331aee0748ace4f033137434f53c3555ce10042be6096dc1a4ce140c9de49df",
+    "1e781684a360154b15e46298cd4b0e5d7990e1137eca43d40e943415e9fb7b2f",
+    "7baaf2496baa300255f3729b3d3d8b01e780c76e18786a4a64ccac3eb1ae03c2",
+    "d73e775c6c227ee47aa03407ecd70393ea971208c1965dfd7534e3a4d50be774",
+    "ad376c52c08e04f3d74d822fa94396e67bca2b47462ced992c6417ac89ede7ec",
+    "bfc5f6913c218ac15ef5fd039d4873c248e95ce7cdf0f319d10e97edd3958255",
+    "8698dd73aa6314df7f9423e14bd8f15dd2a94a84d5be383e0d75498803d141cd",
+    "2294155267a64c0cf9ee4020a5de0552f2a94652e067d2da3e99c3cd7b66e0ce",
+    "05d9db975b934ee83d5e3e0a8c51293d5ebca33c03091e7a6dc27e89fba709a7",
+    "943711074249189af5e97214ff83f5dee95e1212eb97b7777a9e30fe151715c4"
+  ]
+}

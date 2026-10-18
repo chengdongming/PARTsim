@@ -1,0 +1,138 @@
+{
+  "runtime/reproduction/optimized/asap_block_rta_v9_3.py": {
+    "sha256": "a4bcfbb473bed8ccb4a9e2a8de59b10ba236ab83893ed54c36e25f6982b5dd38",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/asap_block_rta_v9_3.py"
+  },
+  "runtime/reproduction/optimized/asap_block_rta_v9_3_ph.py": {
+    "sha256": "ca1695d31ab8c774dd1b5a0ebf0b0f7601f2b9bdb37c3b9e13cdc0fb3d444df4",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/asap_block_rta_v9_3_ph.py"
+  },
+  "runtime/reproduction/optimized/asap_block_rta_v9_3_seq.py": {
+    "sha256": "880967aa85657af2f12f112ba9e6267f1598d7bca93a9f6b0980d225a050a260",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/asap_block_rta_v9_3_seq.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/ab_joint.py": {
+    "sha256": "5fb1133309bace27f0ebb287c03aceba03984f33fb00ae41b22f188e8cc4d979",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/ab_joint.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/ab_ht_joint.py": {
+    "sha256": "15b6d6b826bec7ce492297bfcea5a0f1f242b26ed346398bd0ee5a8c1702ea4e",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/ab_ht_joint.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/ab_last_block_joint.py": {
+    "sha256": "3097644388ab4e432f9f89c1eb2b577dadb9ba0839fb66eb3de6f84767a81c4a",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/ab_last_block_joint.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/ab_interval_joint.py": {
+    "sha256": "71702105678a685acfa91cbe198408574efb2ea7ac9a892ca30a7b5c94517cc8",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/ab_interval_joint.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/ab_milestone_rta.py": {
+    "sha256": "13f432b297df89cbdcc70bcfa6dd30eafcfa37e302566cf0afdfae537ad605f3",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/ab_milestone_rta.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/ab_structural_rta.py": {
+    "sha256": "22ad9b32438cfbfd8da44ee6184ce9576d420e150f419ec82dce6bd4a13d38c9",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/ab_structural_rta.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/claim_audit_v7_2.py": {
+    "sha256": "c3c55087a7aa62a59706ba4d0c60ed440a3ede172fc10a68593fd960f53f49e2",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/claim_audit_v7_2.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3.py": {
+    "sha256": "a4bcfbb473bed8ccb4a9e2a8de59b10ba236ab83893ed54c36e25f6982b5dd38",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3.py"
+  },
+  "runtime/reproduction/optimized/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3_ph.py": {
+    "sha256": "ca1695d31ab8c774dd1b5a0ebf0b0f7601f2b9bdb37c3b9e13cdc0fb3d444df4",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3_ph.py"
+  },
+  "runtime/reproduction/original_verifier/asap_block_rta_v9_3.py": {
+    "sha256": "a4bcfbb473bed8ccb4a9e2a8de59b10ba236ab83893ed54c36e25f6982b5dd38",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/asap_block_rta_v9_3.py"
+  },
+  "runtime/reproduction/original_verifier/asap_block_rta_v9_3_ph.py": {
+    "sha256": "ca1695d31ab8c774dd1b5a0ebf0b0f7601f2b9bdb37c3b9e13cdc0fb3d444df4",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/asap_block_rta_v9_3_ph.py"
+  },
+  "runtime/reproduction/original_verifier/asap_block_rta_v9_3_seq.py": {
+    "sha256": "880967aa85657af2f12f112ba9e6267f1598d7bca93a9f6b0980d225a050a260",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/asap_block_rta_v9_3_seq.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_joint.py": {
+    "sha256": "5fb1133309bace27f0ebb287c03aceba03984f33fb00ae41b22f188e8cc4d979",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_joint.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_ht_joint.py": {
+    "sha256": "15b6d6b826bec7ce492297bfcea5a0f1f242b26ed346398bd0ee5a8c1702ea4e",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_ht_joint.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_last_block_joint.py": {
+    "sha256": "3097644388ab4e432f9f89c1eb2b577dadb9ba0839fb66eb3de6f84767a81c4a",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_last_block_joint.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_interval_joint.py": {
+    "sha256": "71702105678a685acfa91cbe198408574efb2ea7ac9a892ca30a7b5c94517cc8",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_interval_joint.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_milestone_rta.py": {
+    "sha256": "13f432b297df89cbdcc70bcfa6dd30eafcfa37e302566cf0afdfae537ad605f3",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_milestone_rta.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_structural_rta.py": {
+    "sha256": "fbc2343193402b5777aa7e1b9fa1f54c48fecc77b01ffbb4a6f974e0077dee41",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/ab_structural_rta.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/claim_audit_v7_2.py": {
+    "sha256": "c3c55087a7aa62a59706ba4d0c60ed440a3ede172fc10a68593fd960f53f49e2",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/claim_audit_v7_2.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3.py": {
+    "sha256": "a4bcfbb473bed8ccb4a9e2a8de59b10ba236ab83893ed54c36e25f6982b5dd38",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3.py"
+  },
+  "runtime/reproduction/original_verifier/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3_ph.py": {
+    "sha256": "ca1695d31ab8c774dd1b5a0ebf0b0f7601f2b9bdb37c3b9e13cdc0fb3d444df4",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/original_verifier/research/rta/an_ab_joint/ab/frozen_ab/asap_block_rta_v9_3_ph.py"
+  },
+  "runtime/reproduction/optimized/experiments/ab_v7_2/data.py": {
+    "sha256": "105e82c186ff2c1667ad2f799ebf4c42d0003b1f5443c49970f2528e8a07d28d",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/experiments/ab_v7_2/data.py"
+  },
+  "runtime/reproduction/optimized/experiments/ab_v7_2/adapters.py": {
+    "sha256": "59455ff7144f2deb906e606eb78f1ed4255949a8106f6b631d9ccd6004dfe78b",
+    "source": "ASAPBlock_三项补强与实验冻结包_20261014/ASAPBlock_Experimental_Freeze_20261014/frozen_source/reproduction/optimized/experiments/ab_v7_2/adapters.py"
+  },
+  "runtime/tools/unified_kernel.py": {
+    "sha256": "90e54d8b30b75d28dc0206d3006e2014431ee8e3b5c2b89192ffd5321667c7b2",
+    "source": "ASAPBlock_三项研究核查与复测包_20261013/ASAPBlock_Research_20261013/tools/unified_kernel.py"
+  },
+  "runtime/tools/affine_completion.py": {
+    "sha256": "b7b594ea4fcd3db13a364f240bc364b6413331bacd5933be7fc9bee1732ffd28",
+    "source": "ASAPBlock_三项研究核查与复测包_20261013/ASAPBlock_Research_20261013/tools/affine_completion.py"
+  },
+  "runtime/tools/kernel_worker.py": {
+    "sha256": "8dc77be6a5c7f30045789cbdefff3b38e9adbbb588343d36d8fb9b46c7eb7110",
+    "source": "ASAPBlock_三项研究核查与复测包_20261013/ASAPBlock_Research_20261013/tools/kernel_worker.py"
+  },
+  "runtime/tools/research_worker.py": {
+    "sha256": "9cdd97746d53ae5fc0c6480c5ff1a92241a0535f6bdb4394ee97dee394f2972b",
+    "source": "ASAPBlock_三项研究核查与复测包_20261013/ASAPBlock_Research_20261013/tools/research_worker.py"
+  },
+  "runtime/tools/diagnostic_worker.py": {
+    "sha256": "83db70c4ceb136fd4f04f54030aacc11b3f93708c3d11b66b3ae6f2ceb38e08c",
+    "source": "ASAPBlock_三项研究核查与复测包_20261013/ASAPBlock_Research_20261013/tools/diagnostic_worker.py"
+  },
+  "runtime/tools/ab_deadline_certification.py": {
+    "sha256": "a4a8d76d080305d59bca50a26b372abe8bfeff9c18a88222e74a31430616134a",
+    "source": "ASAPBlock_V7_2_无限容量补充实验与复现包_20261012/ASAPBlock_V7_2_Unlimited_Supplement_20261012/code/ab_deadline_certification.py"
+  },
+  "runtime/reproduction/optimized/global_task_generator.py": {
+    "sha256": "e0be94ec68f5076cef7dc73345795d0c4ddee4028fa7dc2ea838db41aa142726",
+    "source": "ASAPBlock_V7_2_无限容量补充实验与复现包_20261012/ASAPBlock_V7_2_Unlimited_Supplement_20261012/frozen/optimized/global_task_generator.py"
+  },
+  "runtime/reproduction/optimized/system_config_unified_template.yml": {
+    "sha256": "2b6c37b312b4021e21b420d31c39c82f55607c70a2e5b327ef0ff8c58669cc1b",
+    "source": "ASAPBlock_V7_2_无限容量补充实验与复现包_20261012/ASAPBlock_V7_2_Unlimited_Supplement_20261012/frozen/optimized/system_config_unified_template.yml"
+  }
+}
