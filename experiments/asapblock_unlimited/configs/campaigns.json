@@ -1,0 +1,344 @@
+{
+  "main": {
+    "schema": "AB_V7_2_CAMPAIGN_1",
+    "seed": 20261002542,
+    "defaults": {
+      "energy_mode": "target_ue",
+      "processors": [
+        2,
+        4
+      ],
+      "task_multipliers": [
+        2
+      ],
+      "uc": [
+        "0.2",
+        "0.35",
+        "0.5"
+      ],
+      "ue": [
+        "0.4",
+        "0.7"
+      ],
+      "deadline_modes": [
+        "implicit",
+        "ratio_0.7_1"
+      ],
+      "power_models": [
+        "workload"
+      ],
+      "priorities": [
+        "RM"
+      ],
+      "supply_models": [
+        {
+          "kind": "periodic",
+          "gap": 1
+        }
+      ],
+      "capacity_factors": [
+        null
+      ],
+      "time_factors": [
+        1
+      ],
+      "samples": 60,
+      "batch_size": 60,
+      "methods": [
+        "v72_analytic",
+        "ablation_full",
+        "ablation_no_shared_budget",
+        "seq"
+      ],
+      "repetitions": 1,
+      "timeout_seconds": 30,
+      "generator": {
+        "period_min": 100,
+        "period_max": 200,
+        "period_distribution": "uniform",
+        "min_task_util": "0",
+        "max_task_util": "1",
+        "tolerance_total": "0.01",
+        "utilization_trials": 100000,
+        "rounding_trials": 1000
+      }
+    },
+    "stages": {
+      "main": {
+        "seed_offset": 500
+      },
+      "density": {
+        "seed_offset": 600,
+        "task_multipliers": [
+          4
+        ],
+        "uc": [
+          "0.5"
+        ]
+      }
+    }
+  },
+  "latest": {
+    "schema": "AB_V7_2_CAMPAIGN_1",
+    "seed": 202610121744,
+    "defaults": {
+      "processors": [
+        2,
+        4
+      ],
+      "task_multipliers": [
+        2
+      ],
+      "uc": [
+        "0.2",
+        "0.5"
+      ],
+      "ue": [
+        "0.4",
+        "0.7"
+      ],
+      "deadline_modes": [
+        "implicit",
+        "ratio_0.7_1"
+      ],
+      "power_models": [
+        "workload"
+      ],
+      "priorities": [
+        "RM"
+      ],
+      "supply_models": [
+        {
+          "kind": "periodic",
+          "gap": 1
+        },
+        {
+          "kind": "periodic",
+          "gap": 5
+        },
+        {
+          "kind": "periodic",
+          "gap": 10
+        }
+      ],
+      "capacity_factors": [
+        null
+      ],
+      "time_factors": [
+        1
+      ],
+      "energy_mode": "target_ue",
+      "power_scales": [
+        "1"
+      ],
+      "samples": 10,
+      "batch_size": 10,
+      "repetitions": 1,
+      "methods": [
+        "v72_analytic",
+        "seq"
+      ],
+      "timeout_seconds": 15.0,
+      "generator": {
+        "period_min": 100,
+        "period_max": 200,
+        "period_distribution": "uniform",
+        "min_task_util": "0.001",
+        "max_task_util": "0.9",
+        "tolerance_total": "0.01",
+        "rounding_trials": 1000,
+        "utilization_trials": 100000
+      }
+    },
+    "stages": {
+      "main": {
+        "seed_offset": 0
+      },
+      "density": {
+        "seed_offset": 1000,
+        "task_multipliers": [
+          4
+        ],
+        "uc": [
+          "0.5"
+        ]
+      }
+    }
+  },
+  "flow_fresh": {
+    "schema": "AB_V7_2_CAMPAIGN_1",
+    "seed": 202610172045,
+    "defaults": {
+      "processors": [
+        2,
+        4,
+        8
+      ],
+      "task_multipliers": [
+        2,
+        4
+      ],
+      "uc": [
+        "0.3",
+        "0.5",
+        "0.7"
+      ],
+      "ue": [
+        "0.4",
+        "0.7"
+      ],
+      "deadline_modes": [
+        "implicit",
+        "ratio_0.7_1"
+      ],
+      "power_models": [
+        "workload"
+      ],
+      "priorities": [
+        "RM"
+      ],
+      "supply_models": [
+        {
+          "kind": "periodic",
+          "gap": 1
+        },
+        {
+          "kind": "periodic",
+          "gap": 5
+        },
+        {
+          "kind": "periodic",
+          "gap": 10
+        }
+      ],
+      "capacity_factors": [
+        null
+      ],
+      "time_factors": [
+        1
+      ],
+      "energy_mode": "target_ue",
+      "power_scales": [
+        "1"
+      ],
+      "samples": 2,
+      "batch_size": 2,
+      "repetitions": 1,
+      "methods": [
+        "v72_analytic",
+        "v72_flow"
+      ],
+      "timeout_seconds": 30.0,
+      "generator": {
+        "period_min": 16,
+        "period_max": 32,
+        "period_distribution": "uniform",
+        "min_task_util": "0.001",
+        "max_task_util": "0.9",
+        "tolerance_total": "0.01",
+        "rounding_trials": 1000,
+        "utilization_trials": 100000
+      }
+    },
+    "stages": {
+      "short_scale": {
+        "seed_offset": 0
+      }
+    }
+  },
+  "scale": {
+    "schema": "AB_V7_2_CAMPAIGN_1",
+    "seed": 20261021,
+    "defaults": {
+      "energy_mode": "target_ue",
+      "processors": [
+        2,
+        4,
+        8,
+        16
+      ],
+      "task_multipliers": [
+        2,
+        4,
+        8
+      ],
+      "uc": [
+        "0.3"
+      ],
+      "ue": [
+        "0.4"
+      ],
+      "deadline_modes": [
+        "implicit"
+      ],
+      "power_models": [
+        "workload"
+      ],
+      "priorities": [
+        "RM"
+      ],
+      "supply_models": [
+        {
+          "kind": "periodic",
+          "gap": 1
+        }
+      ],
+      "capacity_factors": [
+        null
+      ],
+      "time_factors": [
+        1
+      ],
+      "samples": 30,
+      "batch_size": 30,
+      "methods": [
+        "v72_analytic",
+        "seq"
+      ],
+      "repetitions": 1,
+      "timeout_seconds": 30,
+      "generator": {
+        "period_min": 100,
+        "period_max": 200,
+        "period_distribution": "uniform",
+        "min_task_util": "0",
+        "max_task_util": "1",
+        "tolerance_total": "0.01",
+        "utilization_trials": 100000,
+        "rounding_trials": 1000
+      }
+    },
+    "stages": {
+      "scale": {
+        "seed_offset": 100
+      },
+      "time_scale": {
+        "seed_offset": 200,
+        "processors": [
+          2,
+          4
+        ],
+        "task_multipliers": [
+          2
+        ],
+        "samples": 5,
+        "time_factors": [
+          1,
+          2,
+          4
+        ]
+      }
+    }
+  },
+  "main_metadata": {
+    "methods": [
+      "v72_analytic",
+      "ablation_full",
+      "ablation_no_shared_budget",
+      "seq"
+    ],
+    "developed": false,
+    "preregistered_holdout": true,
+    "validation_stage": "FINAL_FREEZE_CHECK"
+  }
+}
