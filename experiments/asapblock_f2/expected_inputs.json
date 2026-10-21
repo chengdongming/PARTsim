@@ -1,0 +1,50 @@
+{
+  "main": {
+    "inputs": 9600,
+    "clusters": 1000,
+    "unique_models": 9600,
+    "identity": "82f15a88e0d700262034eb7e9e6b69664c30a97910a46701eb38c497c8012477"
+  },
+  "mechanism": {
+    "inputs": 600,
+    "clusters": 50,
+    "unique_models": 600,
+    "identity": "94e70f5e6016357b966778fcee8b5277cedb2c5d9a82fe730d621dfbe746bd88"
+  },
+  "scale": {
+    "inputs": 1100,
+    "clusters": 1100,
+    "unique_models": 1100,
+    "identity": "02e29831002763c98f7d13159aab919484c1d2f474e70efd956a3e69b69559d2"
+  },
+  "numeric_scale": {
+    "inputs": 160,
+    "clusters": 40,
+    "unique_models": 160,
+    "identity": "a2c12d5ed9302ede22d853661acc79301bdb9f0615e302b4499f3f9757843a82"
+  },
+  "robustness": {
+    "inputs": 400,
+    "clusters": 200,
+    "unique_models": 400,
+    "identity": "64f9695726c04c7fa293982f0c414e3196055bd14a404e2185954f7e90d99933"
+  },
+  "timing": {
+    "inputs": 240,
+    "clusters": 240,
+    "unique_models": 240,
+    "identity": "b35b5f86f42de2493297bd159d3c4b80563b677b769ec8d19c2831cb8b08749b"
+  },
+  "mechanism_timing": {
+    "inputs": 72,
+    "clusters": 38,
+    "unique_models": 72,
+    "identity": "4f460bb8f4f3fb6f0043ff89b0125bf3084f212074a8c352110101b5f688f721"
+  },
+  "pilot": {
+    "inputs": 192,
+    "clusters": 20,
+    "unique_models": 192,
+    "identity": "e78ddbddf94314d56a603bd19722f6446849b4c9d080a4924ad4e01372a59d19"
+  }
+}
