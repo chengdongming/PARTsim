@@ -227,6 +227,8 @@ def summarize(output,suite):
      budgets.append({'family':family,'method':method,'budget_seconds':budget,'inputs':len(ids),
       'certified':count,'certification_percent':100*count/len(ids) if ids else None})
  result={'suite':suite,'run_id':spec['run_id'],'custom_run':spec['custom_run'],'pilot':spec['pilot'],
+  'execution_profile':spec['execution_profile'],'parallel_timing':spec['parallel_timing'],
+  'analysis_concurrency':len(spec['cpus']),'time_scope':spec['time_scope'],
   'inputs':len(cases),'planned_requests':len(cases)*len(spec['methods'])*spec['repetitions'],
   'observed_requests':len(logs),'reference_checks_pending':pending,'invalid_certificates':invalid,
   'request_status_counts':dict(request_status_counts),
@@ -241,6 +243,8 @@ def summarize(output,suite):
   ('certification_differences',diffs),('precision_summary',bounds),('timing_summary',timings),
   ('speed_pairs',speeds),('budget_coverage',budgets),('repeat_stability',stability),
   ('paired_states_by_cell',cell_pairs),('certification_differences_by_cell',cell_diffs),
-  ('precision_by_cell',cell_bounds),('paired_speed_summary',speed_summaries)]:csvwrite(tables/(name+'.csv'),items)
+  ('precision_by_cell',cell_bounds),('paired_speed_summary',speed_summaries)]:
+  csvwrite(tables/(name+'.csv'),[{**x,'execution_profile':spec['execution_profile'],
+   'analysis_concurrency':len(spec['cpus']),'time_scope':spec['time_scope']} for x in items])
  C.write(folder/'summary.json',result)
  return {k:result[k] for k in ['suite','inputs','planned_requests','observed_requests','reference_checks_pending','invalid_certificates','methods']}

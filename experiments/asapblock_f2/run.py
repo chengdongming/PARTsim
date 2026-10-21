@@ -15,6 +15,7 @@ import tempfile
 from threading import Event
 import time
 import common as C
+import execution
 
 def call(case,method,budget,cpu,job='analysis',answer=None):
  payload={'case':case,'method':method,'budget_seconds':budget,'clock':'wall','cpu':cpu,
@@ -60,19 +61,14 @@ def suite_spec(output,suite,args):
  if selection is not None:
   cases=sorted(cases,key=lambda c:C.digest(['F2-smoke',c['case_id']]))[:selection]
  if not cases:raise ValueError('No inputs selected')
- requested=getattr(args,'workers',2)
- env=C.environment();cpus=env['physical_cpus']
- quota=env.get('cpu_quota')
- if quota and quota.split()[0]!='max':
-  amount,period=map(int,quota.split());cpus=cpus[:max(1,amount//period)]
- if serial:cpus=cpus[:1]
- else:cpus=cpus[:min(requested,len(cpus))]
- if not cpus:raise ValueError('No available physical CPUs')
+ requested=getattr(args,'timing_workers',1) if serial else getattr(args,'workers',2)
+ env=C.environment();allocation=execution.allocate(env,requested);cpus=allocation['cpus']
+ timing_mode=execution.mode(suite,cpus)
  identity=C.source_identity()
  params={'schema':C.PROTOCOL['schema'],'suite':suite,'methods':methods,'budget_seconds':budget,
   'repetitions':repeats,'memory_limit_mib':C.PROTOCOL['memory_limit_mib'],
   'reference_budget_seconds':C.PROTOCOL['reference_budget_seconds'],
-  'serial':serial,'cpus':cpus,'source_sha256':identity['sha256'],
+  **timing_mode,'allocation':allocation,'cpus':cpus,'source_sha256':identity['sha256'],
   'protocol_sha256':C.digest(C.PROTOCOL),'selected':[(c['case_id'],c['input_sha256']) for c in cases],
   'environment':{k:v for k,v in env.items() if k!='git_head'},
   'custom_run':selection is not None,'pilot':suite=='pilot'}
@@ -114,7 +110,7 @@ def run_suite(output,suite,args):
   if not gate.exists():raise ValueError('Run the check action before this experiment')
   checked=C.read(gate)
   if checked.get('status')!='PASS' or checked['source_sha256']!=identity['sha256']:raise ValueError('Preflight is missing, failed or belongs to different source code')
- with lock(folder/'run.lock'),lock(Path(tempfile.gettempdir())/'asapblock-f2-host.lock',shared=not spec['serial']):
+ with lock(folder/'run.lock'),lock(Path(tempfile.gettempdir())/'asapblock-f2-host.lock',shared=not spec['exclusive_host']):
   C.write(folder/'plan.json',spec,immutable=True)
   C.write(folder/'sources.json',identity,immutable=True)
   C.write(folder/'environment.json',C.environment(),immutable=False)
@@ -180,7 +176,7 @@ def run_suite(output,suite,args):
   validate_records(spec,cases,allrows,complete=True)
  return allrows
 
-def verify(output,suite):
+def verify(output,suite,args=None):
  import inputs
  output=Path(output);folder=output/suite;spec=C.read(folder/'plan.json')
  if C.source_identity()['sha256']!=spec['source_sha256']:raise ValueError('Source changed since analysis')
@@ -192,6 +188,11 @@ def verify(output,suite):
   for check in checks:
    if check['request_id'] not in certified:raise ValueError('Foreign reference check in run records')
    if check['status']!='PASS':raise RuntimeError('A previous independent replay did not pass; it cannot be skipped')
+  requested=getattr(args,'verification_workers',None) or len(spec['cpus'])
+  allocation=execution.allocate(C.environment(),requested);cpus=allocation['cpus']
+  C.write(folder/'verification_plan.json',{'run_id':spec['run_id'],'source_sha256':spec['source_sha256'],
+   'allocation':allocation,'outside_primary_clocks':True,'budget_seconds':spec['reference_budget_seconds']},immutable=True)
+  jobs=[]
   for row in records:
    if row['status']!='CERTIFIED':continue
    cert=C.read(output/row['certificate_file'])
@@ -199,16 +200,41 @@ def verify(output,suite):
    if row['request_id'] in done:
     if done[row['request_id']]['certificate_sha256']!=row['certificate_sha256']:raise ValueError('Replay hash mismatch')
     continue
-   budget=spec['reference_budget_seconds']
-   value=call(cases[row['case_id']],row['method'],budget,spec['cpus'][0],'reference',cert)
-   check={'request_id':row['request_id'],'case_id':row['case_id'],'method':row['method'],
-    'certificate_sha256':row['certificate_sha256'],'reference_budget_seconds':budget,**value}
-   C.journaled_append(folder/'verification.jsonl',check);checks.append(check)
-   if value['status']!='PASS':raise RuntimeError('Independent replay did not pass: '+C.canonical(check))
+   jobs.append(row)
+  # Only the coordinator writes JSONL. Replays use fresh pinned interpreters.
+  jobs.sort(key=lambda r:C.digest(['F2-reference-order',r['request_id']]))
+  queues=[jobs[i::len(cpus)] for i in range(len(cpus))];queue=Queue();stop=Event()
+  def consume(cpu,pending):
+   try:
+    for row in pending:
+     if stop.is_set():break
+     budget=spec['reference_budget_seconds'];cert=C.read(output/row['certificate_file'])
+     if C.digest(cert)!=row['certificate_sha256']:raise ValueError('Certificate changed before replay')
+     value=call(cases[row['case_id']],row['method'],budget,cpu,'reference',cert)
+     check={'request_id':row['request_id'],'case_id':row['case_id'],'method':row['method'],
+      'certificate_sha256':row['certificate_sha256'],'reference_budget_seconds':budget,'host_cpu':cpu,**value}
+     queue.put(check)
+     if value['status']!='PASS':stop.set()
+   except BaseException as exc:stop.set();queue.put(exc)
+   finally:queue.put(None)
+  finished=0;last=time.monotonic();failure=None
+  with ThreadPoolExecutor(max_workers=len(cpus)) as pool:
+   futures=[pool.submit(consume,cpu,pending) for cpu,pending in zip(cpus,queues)]
+   while finished<len(cpus):
+    item=queue.get()
+    if item is None:finished+=1;continue
+    if isinstance(item,BaseException):failure=item;continue
+    C.journaled_append(folder/'verification.jsonl',item);checks.append(item)
+    if time.monotonic()-last>=15:
+     print(C.canonical({'replayed':len(checks),'planned_replays':len(certified)}),flush=True);last=time.monotonic()
+   for future in futures:future.result()
   checks=C.sync_journal(folder/'verification.jsonl',checks)
+  if failure is not None:raise failure
+  if any(x['status']!='PASS' for x in checks):raise RuntimeError('Independent replay did not pass; saved checks are preserved')
+  if {x['request_id'] for x in checks}!=set(certified):raise ValueError('Independent replay coverage is incomplete')
  return {'replayed':len(checks),'pass':sum(x['status']=='PASS' for x in checks)}
 
-def diagnose(output,suite):
+def diagnose(output,suite,args=None):
  """Final-profile counterfactuals on preselected inputs, outside performance clocks."""
  import inputs
  if suite!='mechanism':raise ValueError('Same-X diagnostics use the mechanism suite; constructs are checked by check')
@@ -221,26 +247,48 @@ def diagnose(output,suite):
    md=c['metadata'];return(md['target_uc'],md['target_ue'],md['harvest_gap'],md['heterogeneity_h'])
   cases=inputs.choose(cases,key,1,'F2-same-X-diagnostic')
  with lock(folder/'run.lock'),lock(folder/'diagnose.lock'),lock(Path(tempfile.gettempdir())/'asapblock-f2-host.lock',shared=True):
+  requested=getattr(args,'verification_workers',None) or len(spec['cpus'])
+  allocation=execution.allocate(C.environment(),requested);cpus=allocation['cpus']
   C.write(folder/'diagnostic_plan.json',{'run_id':spec['run_id'],'inputs':[c['case_id'] for c in cases],
    'budget_seconds':120,'selection':'one result-independent hash choice per cell; all selected inputs for a custom smoke',
-   'outside_analysis_budget':True,'custom_run':spec['custom_run']},immutable=True)
+   'outside_analysis_budget':True,'custom_run':spec['custom_run'],'allocation':allocation},immutable=True)
   primary={(r['case_id'],r['method']):r for r in C.sync_journal(folder/'primary.jsonl') if r['repeat']==0}
   checks={r['request_id']:r for r in C.sync_journal(folder/'verification.jsonl')}
   records=C.sync_journal(folder/'diagnostics.jsonl');done={r['request_id'] for r in records}
-  for case in cases:
+  def one(case,cpu):
    cid=case['case_id'];full=primary[cid,'full'];rid=C.digest([spec['run_id'],'same-X-diagnostic',cid])
-   if rid in done:continue
    if full['status']!='CERTIFIED':value={'status':'SKIPPED_NOT_CERTIFIED','analysis_status':full['status']}
    else:
     if checks.get(full['request_id'],{}).get('status')!='PASS':raise ValueError('Replay the full certificate before diagnostics')
     cert=C.read(output/full['certificate_file'])
     if C.digest(cert)!=full['certificate_sha256']:raise ValueError('Diagnostic certificate hash mismatch')
-    value=call(case,'full',120,spec['cpus'][0],'diagnose',cert)
+    value=call(case,'full',120,cpu,'diagnose',cert)
    row={'request_id':rid,'run_id':spec['run_id'],'case_id':cid,'input_sha256':case['input_sha256'],
-    'paired_analysis_states':{m:primary[cid,m]['status'] for m in spec['methods']},**value}
-   C.journaled_append(folder/'diagnostics.jsonl',row);records.append(row)
-   if value['status'] in ('ERROR','RESOURCE_LIMIT'):raise RuntimeError('Same-X diagnostic failed: '+C.canonical(row))
+    'host_cpu':cpu,'paired_analysis_states':{m:primary[cid,m]['status'] for m in spec['methods']},**value}
+   return row
+  if any(r['status'] in ('ERROR','RESOURCE_LIMIT') for r in records):raise RuntimeError('A saved diagnostic error needs review')
+  pending=[c for c in cases if C.digest([spec['run_id'],'same-X-diagnostic',c['case_id']]) not in done]
+  pending.sort(key=lambda c:C.digest(['F2-diagnostic-order',c['case_id']]))
+  queue=Queue();stop=Event();failure=None;finished=0
+  def consume(cpu,jobs):
+   try:
+    for case in jobs:
+     if stop.is_set():break
+     row=one(case,cpu);queue.put(row)
+     if row['status'] in ('ERROR','RESOURCE_LIMIT'):stop.set()
+   except BaseException as exc:stop.set();queue.put(exc)
+   finally:queue.put(None)
+  with ThreadPoolExecutor(max_workers=len(cpus)) as pool:
+   futures=[pool.submit(consume,cpu,pending[i::len(cpus)]) for i,cpu in enumerate(cpus)]
+   while finished<len(cpus):
+    row=queue.get()
+    if row is None:finished+=1;continue
+    if isinstance(row,BaseException):failure=row;continue
+    C.journaled_append(folder/'diagnostics.jsonl',row);records.append(row)
+   for future in futures:future.result()
   records=C.sync_journal(folder/'diagnostics.jsonl',records)
+  if failure is not None:raise failure
+  if any(r['status'] in ('ERROR','RESOURCE_LIMIT') for r in records):raise RuntimeError('Same-X diagnostic failed; saved records are preserved')
  return {'selected':len(cases),'states':dict(Counter(r['status'] for r in records)),
   'outside_performance_timing':True}
 
@@ -258,13 +306,16 @@ def plan():
 
 def main():
  ap=argparse.ArgumentParser(description=__doc__)
- ap.add_argument('action',choices=['prepare','plan','check','run','verify','diagnose','summarize','plot','all'])
+ ap.add_argument('action',choices=['prepare','plan','resources','check','run','verify','diagnose','summarize','plot','all'])
  ap.add_argument('--output',type=Path,default=C.HERE/'runs/f2')
  ap.add_argument('--suite',choices=list(C.SUITES),default='pilot')
  ap.add_argument('--workers',type=int,default=2)
+ execution.add_arguments(ap)
  ap.add_argument('--limit',type=int,help='Result-independent smoke subset; always marked custom_run')
  args=ap.parse_args()
  if args.workers<1 or (args.limit is not None and args.limit<1):ap.error('workers/limit must be positive')
+ execution.validate_args(args,ap)
+ if args.action=='resources':print(C.canonical(execution.describe(args.workers,args.timing_workers,args.verification_workers)));return
  if args.action=='plan':print(C.canonical(plan()));return
  import inputs
  if args.action in ('prepare','all'):
@@ -274,8 +325,8 @@ def main():
   with lock(Path(tempfile.gettempdir())/'asapblock-f2-host.lock',shared=True):
    print(C.canonical(checks.preflight(args.output)),flush=True)
  if args.action in ('run','all'):run_suite(args.output,args.suite,args)
- if args.action in ('verify','all'):print(C.canonical(verify(args.output,args.suite)),flush=True)
- if args.action=='diagnose':print(C.canonical(diagnose(args.output,args.suite)),flush=True)
+ if args.action in ('verify','all'):print(C.canonical(verify(args.output,args.suite,args)),flush=True)
+ if args.action=='diagnose':print(C.canonical(diagnose(args.output,args.suite,args)),flush=True)
  if args.action in ('summarize','all'):
   import summarize
   with lock(Path(tempfile.gettempdir())/'asapblock-f2-host.lock',shared=True):

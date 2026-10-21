@@ -58,10 +58,12 @@ def plot(output,suite):
  plt.rcParams.update({'font.size':9,'axes.spines.top':False,'axes.spines.right':False,
   'pdf.fonttype':42,'savefig.bbox':'tight','axes.grid':True,'grid.alpha':.18})
  def finish(fig,name,note=None):
-  if spec['pilot'] or spec['custom_run']:
-   fig.suptitle('PILOT / SELECTED INPUTS — NOT FINAL PAPER RESULTS',fontsize=10,color='#944')
+  labels=[]
+  if spec['pilot'] or spec['custom_run']:labels.append('PILOT / SELECTED INPUTS — NOT FINAL PAPER RESULTS')
+  if spec['parallel_timing']:labels.append('PARALLEL TIMING — F2 EXTENSION / '+str(len(spec['cpus']))+' concurrent single-core requests')
+  if labels:fig.suptitle('\n'.join(labels),fontsize=9,color='#944')
   if note:fig.text(.5,.005,note,ha='center',fontsize=7)
-  fig.tight_layout(rect=(0,.035,1,.94 if spec['pilot'] or spec['custom_run'] else 1))
+  fig.tight_layout(rect=(0,.035,1,.91 if len(labels)>1 else (.94 if labels else 1)))
   for ext in ['pdf','png']:
    p=figdir/(name+'.'+ext);fig.savefig(p,dpi=200);saved.append(str(p))
   plt.close(fig)
@@ -200,5 +202,7 @@ def plot(output,suite):
    ax.set_title(family+' preselected sample');ax.set_xlabel('Request wall-time budget (s)');ax.set_ylabel('Certified task sets (%)');ax.set_ylim(-2,102);ax.legend()
   finish(fig,'fig7_budget_coverage','First predeclared repetition only. Denominators are 192 main / 48 scale in the complete timing suite.')
  manifest={'suite':suite,'files':saved,'pilot':spec['pilot'],'custom_run':spec['custom_run'],
+  'execution_profile':spec['execution_profile'],'parallel_timing':spec['parallel_timing'],
+  'analysis_concurrency':len(spec['cpus']),'time_scope':spec['time_scope'],
   'inputs':summary['inputs'],'note':'PDF and PNG are two exports of the same figure; these are not extra independent experiments.'}
  C.write(figdir/'manifest.json',manifest);return manifest

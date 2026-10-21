@@ -12,6 +12,7 @@ import tempfile
 import time
 import zipfile
 import common as C
+import execution
 import run
 
 ORDER=['main','mechanism','scale','robustness','timing','numeric_scale','mechanism_timing']
@@ -29,7 +30,7 @@ def snapshot(output):
    for path in (output/'inputs').glob('*.json.gz'):add(path)
    for suite in ORDER:
     folder=output/suite
-    for name in ['plan.json','sources.json','environment.json','execution.json','diagnostic_plan.json']:
+    for name in ['plan.json','sources.json','environment.json','execution.json','verification_plan.json','diagnostic_plan.json']:
      add(folder/name)
     rows=[]
     for kind in ['primary','verification','diagnostics']:
@@ -64,9 +65,12 @@ def campaign(args):
  import inputs
  output=args.output;output.mkdir(parents=True,exist_ok=True)
  identity=C.source_identity();env=C.environment()
- plan={'schema':'F2_FULL_CAMPAIGN_1','source_sha256':identity['sha256'],
+ resources=execution.describe(args.workers,args.timing_workers,args.verification_workers)
+ plan={'schema':'F2_FULL_CAMPAIGN_2','source_sha256':identity['sha256'],
   'commit':env['git_head'],'protocol_sha256':C.digest(C.PROTOCOL),
-  'environment':env,'coverage_workers':args.workers,'suites':ORDER,
+  'environment':env,'coverage_workers':args.workers,'timing_workers':args.timing_workers,
+  'verification_workers':args.verification_workers or args.workers,
+  'resource_allocation':resources,'suites':ORDER,
   'core_requests':C.PROTOCOL['expected']['core_requests'],
   'core_cap_seconds':C.PROTOCOL['expected']['core_cap_seconds']}
  with run.lock(output/'campaign.lock'):
@@ -77,7 +81,8 @@ def campaign(args):
   def command(action,suite=None):
    argv=[sys.executable,str(C.HERE/'run.py'),action,'--output',str(output)]
    if suite:argv+=['--suite',suite]
-   if action=='run':argv+=['--workers',str(args.workers)]
+   if action=='run':argv+=['--workers',str(args.workers),'--timing-workers',str(args.timing_workers)]
+   if action in ('verify','diagnose'):argv+=['--verification-workers',str(args.verification_workers or args.workers)]
    return argv
   def save_checkpoint():
    # Separate low-priority process; coverage workers keep their dedicated CPUs.
@@ -105,12 +110,14 @@ def campaign(args):
   completed=0;last_checkpoint=0;started=time.monotonic()
   try:
    for suite in ORDER:
-    dataset,methods,budget,reps,serial=C.SUITES[suite]
+    dataset,methods,budget,reps,timing=C.SUITES[suite]
+    allocation=resources['timing' if timing else 'coverage'];serial=allocation['effective_workers']==1
     expected=C.PROTOCOL['expected'][dataset]*len(methods)*reps
     for action in ['run','verify','summarize','plot']+(['diagnose'] if suite=='mechanism' else []):
      status(state='RUNNING',suite=suite,action=action,completed_previous_suites=completed,
       planned_requests=plan['core_requests'],elapsed_seconds=time.monotonic()-started)
-     print(C.canonical({'suite':suite,'action':action,'planned_requests':expected,'serial':serial}),flush=True)
+     print(C.canonical({'suite':suite,'action':action,'planned_requests':expected,
+      'serial':serial,'analysis_workers':allocation['effective_workers'],'timing_suite':timing}),flush=True)
      with subprocess.Popen(command(action,suite),text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,bufsize=1) as process:
       for line in process.stdout:
        print(line,end='',flush=True)
@@ -120,7 +127,7 @@ def campaign(args):
         total=completed+progress['done']
         status(state='RUNNING',suite=suite,action=action,completed_requests=total,
          planned_requests=plan['core_requests'],suite_progress=progress,elapsed_seconds=time.monotonic()-started)
-        if not serial and total-last_checkpoint>=args.checkpoint_every:
+        if not timing and total-last_checkpoint>=args.checkpoint_every:
          saved=save_checkpoint();last_checkpoint=total
          print(C.canonical({'checkpoint_requests':saved['requests']}),flush=True)
       if process.wait():raise RuntimeError(f'{suite}/{action} failed; records are preserved')
@@ -136,12 +143,17 @@ def main():
  ap=argparse.ArgumentParser(description=__doc__)
  ap.add_argument('--output',type=Path,default=C.HERE/'runs/formal_f2_20261021')
  ap.add_argument('--workers',type=int,default=2)
+ execution.add_arguments(ap)
  ap.add_argument('--checkpoint-every',type=int,default=500)
  ap.add_argument('--checkpoint-hook',type=Path,help='Optional trusted Python script accepting the completed archive path')
  ap.add_argument('--initialize-only',action='store_true')
  ap.add_argument('--snapshot-only',action='store_true')
+ ap.add_argument('--resources-only',action='store_true',help='Report allowed physical cores, quota and allocations without starting experiments')
  args=ap.parse_args()
  if args.workers<1 or args.checkpoint_every<1:ap.error('Counts must be positive')
+ execution.validate_args(args,ap)
+ if args.resources_only:
+  print(C.canonical(execution.describe(args.workers,args.timing_workers,args.verification_workers)));return
  args.output=args.output.resolve()
  if args.snapshot_only:
   os.nice(10);os.sched_setaffinity(0,{C.environment()['physical_cpus'][-1]})

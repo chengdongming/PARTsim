@@ -7,6 +7,8 @@ import io
 from pathlib import Path
 import random
 import tempfile
+import threading
+import time
 import unittest
 import zipfile
 from unittest.mock import patch
@@ -14,6 +16,7 @@ import common as C
 import inputs
 import run
 import summarize as S
+import execution
 
 class ProtocolTests(unittest.TestCase):
  @classmethod
@@ -263,5 +266,119 @@ class ProcessTests(unittest.TestCase):
 
  def test_dependencies_remain_byte_identical(self):
   self.assertGreaterEqual(len(C.source_identity()['files']),40)
+
+class ServerExecutionTests(unittest.TestCase):
+ def case(self,name):
+  return inputs.data.make_case(name,[(1,3,5,1)],1,list(range(4)),metadata={
+   'cluster_id':name,'target_uc':'.30','target_ue':'.4','time_factor':1})
+
+ def environment(self,count=2):
+  return {**C.environment(),'physical_cpus':list(range(count)),'cpu_quota':'max 100000'}
+
+ def test_32_core_allocation_honors_physical_cores_and_quota(self):
+  env=self.environment(32)
+  self.assertEqual(execution.allocate(env,28)['cpus'],list(range(28)))
+  self.assertEqual(execution.allocate(env,64)['effective_workers'],32)
+  self.assertEqual(execution.allocate({**env,'cpu_quota':'800000 100000'},28)['effective_workers'],8)
+  self.assertEqual(execution.allocate(self.environment(16),28)['effective_workers'],16)
+  with self.assertRaises(ValueError):execution.allocate({**env,'cpu_quota':'50000 100000'},1)
+
+ def test_every_suite_supports_parallel_requests_without_changing_repetitions(self):
+  c=self.case('all-suites');args=argparse.Namespace(limit=1,workers=28,timing_workers=28)
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=[c]),patch.object(C,'environment',return_value=self.environment(32)):
+   for suite in C.CORE_SUITES:
+    spec,_,_=run.suite_spec(Path(tmp),suite,args)
+    self.assertEqual(spec['cpus'],list(range(28)))
+    self.assertEqual(spec['repetitions'],C.SUITES[suite][3])
+    self.assertEqual(spec['budget_seconds'],C.SUITES[suite][2])
+    self.assertEqual(spec['methods'],C.SUITES[suite][1])
+    self.assertEqual(spec['exclusive_host'],C.SUITES[suite][4])
+    self.assertEqual(spec['parallel_timing'],C.SUITES[suite][4])
+   args.timing_workers=1
+   for suite in ['timing','numeric_scale','mechanism_timing']:
+    spec,_,_=run.suite_spec(Path(tmp),suite,args)
+    self.assertEqual(spec['cpus'],[0]);self.assertTrue(spec['serial'])
+    self.assertEqual(spec['execution_profile'],'F2')
+
+ def test_parallel_timing_keeps_repeats_on_same_cpu_and_refuses_changed_resume(self):
+  cases=[self.case(x) for x in ['a','b']];env=self.environment();args=argparse.Namespace(limit=2,workers=2,timing_workers=2)
+  barrier=threading.Barrier(2);seen=set();guard=threading.Lock();calls=[]
+  def call(c,method,budget,cpu):
+   with guard:first=c['case_id'] not in seen;seen.add(c['case_id']);calls.append((c['case_id'],cpu))
+   if first:barrier.wait(timeout=5)
+   return {'status':'NO_CERTIFICATE','request_wall_seconds':.1}
+  original=run.lock
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=cases),patch.object(C,'environment',return_value=env):
+   out=Path(tmp)
+   def lock(path,shared=False):
+    path=Path(path)
+    if path.name=='asapblock-f2-host.lock':path=out/'test-host.lock'
+    return original(path,shared)
+   C.write(out/'preflight_checks.json',{'status':'PASS','source_sha256':C.source_identity()['sha256']})
+   with patch.object(run,'lock',side_effect=lock),patch.object(run,'call',side_effect=call):
+    rows=run.run_suite(out,'numeric_scale',args)
+   self.assertEqual(len(rows),12);self.assertEqual({cpu for _,cpu in calls},{0,1})
+   for c in cases:self.assertEqual(len({r['host_cpu'] for r in rows if r['case_id']==c['case_id']}),1)
+   with patch.object(run,'lock',side_effect=lock),patch.object(run,'call',side_effect=AssertionError('Repeated a saved request')):
+    self.assertEqual(run.run_suite(out,'numeric_scale',args),rows)
+    args.timing_workers=1
+    with self.assertRaisesRegex(ValueError,'changed identity'):run.run_suite(out,'numeric_scale',args)
+   S.summarize(out,'numeric_scale');summary=C.read(out/'numeric_scale/summary.json')
+   self.assertEqual(summary['execution_profile'],'F2_PARALLEL_TIMING_EXTENSION')
+   self.assertEqual(summary['analysis_concurrency'],2)
+   import plots
+   titles=[]
+   with patch('matplotlib.figure.Figure.savefig',autospec=True,side_effect=lambda fig,*a,**kw:titles.append(fig._suptitle.get_text())):
+    manifest=plots.plot(out,'numeric_scale')
+   self.assertTrue(manifest['parallel_timing'])
+   self.assertTrue(all('PARALLEL TIMING' in title for title in titles))
+
+ def test_parallel_timing_still_requires_exclusive_host_lock(self):
+  c=self.case('host-lock');env=self.environment();args=argparse.Namespace(limit=1,workers=2,timing_workers=2)
+  original=run.lock
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=[c]),patch.object(C,'environment',return_value=env):
+   out=Path(tmp);host=out/'test-host.lock'
+   def lock(path,shared=False):return original(host if Path(path).name=='asapblock-f2-host.lock' else path,shared)
+   C.write(out/'preflight_checks.json',{'status':'PASS','source_sha256':C.source_identity()['sha256']})
+   with original(host,shared=True),patch.object(run,'lock',side_effect=lock):
+    with self.assertRaisesRegex(RuntimeError,'Another experiment'):run.run_suite(out,'timing',args)
+
+ def test_parallel_reference_replays_are_durable_and_not_repeated(self):
+  cases=[self.case(x) for x in ['a','b']];env=self.environment();args=argparse.Namespace(limit=2,workers=2,verification_workers=2)
+  barrier=threading.Barrier(2);guard=threading.Lock();visited=[]
+  def call(c,method,budget,cpu,*other):
+   with guard:first=len(visited)<2;visited.append(cpu)
+   if first:barrier.wait(timeout=5)
+   return {'status':'PASS','request_wall_seconds':.1}
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=cases),patch.object(C,'environment',return_value=env):
+   out=Path(tmp);folder=out/'pilot';spec,_,_=run.suite_spec(out,'pilot',args);C.write(folder/'plan.json',spec)
+   for rid,ident,c in run.planned_tasks(spec,cases):
+    cert={'response_bounds':[2]};path=folder/'certificates'/(rid+'.json.gz');C.write(path,cert)
+    C.journaled_append(folder/'primary.jsonl',{**ident,'request_id':rid,'input_sha256':c['input_sha256'],
+     'status':'CERTIFIED','certificate_file':str(path.relative_to(out)),'certificate_sha256':C.digest(cert)})
+   with patch.object(run,'call',side_effect=call):self.assertEqual(run.verify(out,'pilot',args),{'replayed':4,'pass':4})
+   self.assertEqual(set(visited),{0,1})
+   self.assertEqual(len(C.rows(folder/'verification.jsonl')),4)
+   self.assertEqual(len(list((folder/'verification.records').glob('*.json'))),4)
+   with patch.object(run,'call',side_effect=AssertionError('Repeated a saved replay')):
+    self.assertEqual(run.verify(out,'pilot',args),{'replayed':4,'pass':4})
+
+ def test_parallel_same_x_diagnostics_keep_selected_population(self):
+  cases=[self.case(x) for x in ['a','b']];env=self.environment();args=argparse.Namespace(limit=2,workers=2,verification_workers=2)
+  barrier=threading.Barrier(2);visited=[]
+  def call(c,method,budget,cpu,*other):
+   visited.append(cpu);barrier.wait(timeout=5);return {'status':'PASS','request_wall_seconds':.1}
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=cases),patch.object(C,'environment',return_value=env):
+   out=Path(tmp);folder=out/'mechanism';spec,_,_=run.suite_spec(out,'mechanism',args);C.write(folder/'plan.json',spec)
+   for rid,ident,c in run.planned_tasks(spec,cases):
+    cert={'response_bounds':[2]};path=folder/'certificates'/(rid+'.json.gz');C.write(path,cert)
+    C.journaled_append(folder/'primary.jsonl',{**ident,'request_id':rid,'input_sha256':c['input_sha256'],
+     'status':'CERTIFIED','certificate_file':str(path.relative_to(out)),'certificate_sha256':C.digest(cert)})
+    C.journaled_append(folder/'verification.jsonl',{'request_id':rid,'status':'PASS','certificate_sha256':C.digest(cert)})
+   with patch.object(run,'call',side_effect=call):result=run.diagnose(out,'mechanism',args)
+   self.assertEqual(result['selected'],2);self.assertEqual(result['states'],{'PASS':2})
+   self.assertEqual(set(visited),{0,1})
+   with patch.object(run,'call',side_effect=AssertionError('Repeated a saved diagnostic')):
+    self.assertEqual(run.diagnose(out,'mechanism',args),result)
 
 if __name__=='__main__':unittest.main(verbosity=2)

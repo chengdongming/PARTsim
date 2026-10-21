@@ -133,5 +133,6 @@ def environment():
   'packages':{name:importlib.metadata.version(name) for name in ['PyYAML','numpy','matplotlib']},
   'physical_cpus':list(physical.values()),'cpu_quota':sysfile('/sys/fs/cgroup/cpu.max'),
   'memory_max':sysfile('/sys/fs/cgroup/memory.max'),
+  'system_memory_bytes':int(next(s.split()[1] for s in Path('/proc/meminfo').read_text().splitlines() if s.startswith('MemTotal:')))*1024,
   'cpu_model':next((s.split(':',1)[1].strip() for s in Path('/proc/cpuinfo').read_text().splitlines() if s.startswith('model name')),None),
   'git_head':subprocess.run(['git','rev-parse','HEAD'],cwd=REPO,capture_output=True,text=True).stdout.strip()}
