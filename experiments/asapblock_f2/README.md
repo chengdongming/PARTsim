@@ -23,6 +23,7 @@ python experiments/asapblock_f2/run.py check
 相同X下的机制诊断，以及有限合法偶发释放/脉冲相位轨迹中的F/R界。
 有限轨迹是错误检查，不是精确最坏响应计算或理论证明。
 生产/统一内核数学对齐核查对双方统一使用120秒，独立于正式30秒分析请求。
+独立证书重放单次上限600秒，另记时间，不计入30/60/120秒分析预算、速度比或28,248次核心请求。
 
 ## 预定试跑
 
@@ -62,6 +63,21 @@ python experiments/asapblock_f2/run.py summarize --suite main
 python experiments/asapblock_f2/run.py plot --suite main
 ```
 
+完整队列可一次启动，按main、mechanism、scale、robustness、timing、numeric_scale、mechanism_timing顺序执行：
+
+```bash
+python experiments/asapblock_f2/campaign.py --output experiments/asapblock_f2/runs/formal_f2_20261021 --workers 4
+```
+
+覆盖率部分可分配四个物理核；三类重复计时仍持宿主互斥锁并只用一个核。
+每组依次完成分析、独立重放、统计和绘图；机制组再执行同X诊断。
+`campaign_plan.json`固定源码、提交、硬件与队列，`campaign_status.json`记录当前阶段。
+相同命令续跑时沿用不可改写的请求记录。工作进程错误或已有失败重放会暂停队列，不能被当作正常完成。
+`--initialize-only`仅准备输入和前置检查；`--snapshot-only`导出数据检查点。
+覆盖率阶段每500次请求及各阶段结束保存`F2_formal_checkpoint_20261021.zip`，只包含数据、配置身份和结果，
+不重复包含Git中的代码；`.records/`是可恢复JSONL索引的原始记录。串行计时中不创建检查点或传输文件。
+可选`--checkpoint-hook PATH`调用可信Python脚本传输已完成的压缩包；传输失败单独记录，不宣称已保存到远端。
+
 用 `--output PATH` 指定独立目录。`--limit N`仅用于结果无关的哈希排序小样本检查，
 永久标注custom_run，不能冒充完整F2。配置、源码、输入、硬件或CPU分配改变会拒绝续跑；
 原始日志只追加，不挑最快重复。不要在串行计时同时运行其他耗CPU的工作。
@@ -78,6 +94,7 @@ python experiments/asapblock_f2/run.py plot --suite main
 main生成图1至3，mechanism生成图4，scale生成图5，numeric_scale生成图6，timing生成图7。
 同一图导出PDF/PNG不重复计数。图3主图固定CPU扫描A的两档能量负载和G=1，
 图2主图固定M=4、D=T；所有配置的原始统计同时提供。
+另外生成图2的其他三个M/截止期配置补充图；仍为七张主图加一张补充图。
 
 认证分母含全部预选输入。只有对方完成未获证书时才记确定新增，超时保持未决。
 独立重放未通过的输出不能计入认证或绘图。上界只比较双方整体认证的完整向量，
@@ -87,6 +104,10 @@ bootstrap使用5,000次配对分层骨架重采样，重复和相关变体不增
 任何超时都不伪装成30/60/120秒完成值。完成子集P95与无法确定的总体P95分开记录。
 `main`/`pilot`等单次运行生成的速度配对只供流程诊断；论文正式速度比使用`timing`
 及`mechanism_timing`中双方三次均稳定完成的配对，不把单次结果当成三次重复结果。
+`paired_speed_summary.csv`按总体来源和配置给出速度比：先对各方法三次完整请求取中位数，
+再计算reference/new，汇总几何均值、配对骨架bootstrap的95%区间及中位数。
+分母保留全部预选输入，单列满足稳定配对的数量和两方法认证状态组成；速度结论条件于该完成子集。
+任何一次重复的工作进程错误都会阻止绘图，不能只检查第一次重复。
 
 `tables/`包含状态计数、配对状态、确定新增、逐输入精度、区间、条件耗时、稳定重复、配对速度和预算覆盖。
 完整配对、认证差及精度还按配置单列；精度表包含均值、中位数、绝对缩短、相同向量比例和变紧/变松数量。

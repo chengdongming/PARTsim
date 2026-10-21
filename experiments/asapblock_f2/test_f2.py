@@ -8,6 +8,7 @@ from pathlib import Path
 import random
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import patch
 import common as C
 import inputs
@@ -86,6 +87,22 @@ class ProtocolTests(unittest.TestCase):
   with self.assertRaises(ValueError):inputs.validate(c)
 
 class StatisticalTests(unittest.TestCase):
+ def test_speed_interval_uses_repeat_medians_and_keeps_censored_denominator(self):
+  cases={cid:inputs.data.make_case(cid,[(1,3,5,1)],1,list(range(4)),
+   metadata={'cluster_id':cid,'target_uc':'.2','family':'main'}) for cid in ['a','b']}
+  by=defaultdict(list)
+  for method,mult in [('production_analytic',1),('seq',2)]:
+   by['a',method]=[{'repeat':i,'status':'NO_CERTIFICATE','request_wall_seconds':v*mult}
+    for i,v in enumerate([1,2,100])]
+   by['b',method]=[{'repeat':i,'status':'TIMEOUT','request_wall_seconds':120} for i in range(3)]
+  result=S.paired_speed_summary(cases,by,'production_analytic','seq',{'repetitions':3},'timing')
+  family=next(x for x in result if x['scope']=='family')
+  self.assertEqual((family['preselected_inputs'],family['eligible_inputs']),(2,1))
+  self.assertAlmostEqual(family['geometric_mean_reference_over_new'],2)
+  for value in family['geometric_mean_ci95']:self.assertAlmostEqual(value,2)
+  self.assertEqual(family['eligible_state_pairs'],[{'new_state':'NO_CERTIFICATE','reference_state':'NO_CERTIFICATE','inputs':1}])
+  self.assertEqual(S.paired_speed_summary(cases,by,'production_analytic','seq',{'repetitions':1},'main'),[])
+
  def test_timeout_and_missing_repetitions_are_not_speed_pairs(self):
   base={'repeat':0,'status':'NO_CERTIFICATE','response_bounds':None,'first_bounds':None,'request_wall_seconds':1}
   self.assertIsNone(S.stable([base],3))
@@ -130,6 +147,81 @@ class StatisticalTests(unittest.TestCase):
   self.assertEqual(plots.equal_cell_mean(rr,'value'),12.5)
 
 class ProcessTests(unittest.TestCase):
+ def case(self,name):
+  return inputs.data.make_case(name,[(1,3,5,1)],1,list(range(4)),metadata={'cluster_id':name})
+
+ def test_saved_request_identity_and_complete_coverage_are_checked(self):
+  c=self.case('identity');args=argparse.Namespace(limit=None,workers=1)
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=[c]):
+   spec,_,_=run.suite_spec(Path(tmp),'pilot',args)
+   tasks=run.planned_tasks(spec,[c]);rid,ident,_=tasks[0]
+   row={**ident,'request_id':rid,'input_sha256':c['input_sha256'],'status':'NO_CERTIFICATE'}
+   run.validate_records(spec,[c],[row])
+   with self.assertRaisesRegex(ValueError,'cover every'):run.validate_records(spec,[c],[row],complete=True)
+   for changed in [{'method':'foreign'},{'repeat':99},{'budget_seconds':1},{'input_sha256':'changed'}]:
+    with self.assertRaisesRegex(ValueError,'identity'):run.validate_records(spec,[c],[{**row,**changed}])
+   with self.assertRaisesRegex(ValueError,'Duplicate'):run.validate_records(spec,[c],[row,row])
+
+ def test_request_error_stops_the_next_job_and_resume(self):
+  c=self.case('stop-error');args=argparse.Namespace(limit=None,workers=1)
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=[c]):
+   out=Path(tmp);C.write(out/'preflight_checks.json',{'status':'PASS','source_sha256':C.source_identity()['sha256']})
+   with patch.object(run,'call',return_value={'status':'ERROR','request_wall_seconds':.1}) as mocked:
+    with self.assertRaisesRegex(RuntimeError,'paused'):run.run_suite(out,'pilot',args)
+    self.assertEqual(mocked.call_count,1)
+    self.assertEqual(len(C.record_rows(out/'pilot/primary.jsonl')),1)
+    self.assertFalse(C.read(out/'pilot/execution.json')['complete'])
+    with self.assertRaisesRegex(RuntimeError,'Resume refused'):run.run_suite(out,'pilot',args)
+    self.assertEqual(mocked.call_count,1)
+
+ def test_failed_cached_replay_cannot_be_skipped_on_resume(self):
+  c=self.case('replay-failure');args=argparse.Namespace(limit=None,workers=1)
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=[c]):
+   out=Path(tmp);folder=out/'pilot';spec,_,_=run.suite_spec(out,'pilot',args)
+   C.write(folder/'plan.json',spec)
+   for i,(rid,ident,_) in enumerate(run.planned_tasks(spec,[c])):
+    row={**ident,'request_id':rid,'input_sha256':c['input_sha256'],'status':'NO_CERTIFICATE'}
+    if i==0:
+     cert={'response_bounds':[2]};path=folder/'certificates'/(rid+'.json.gz');C.write(path,cert)
+     row.update(status='CERTIFIED',certificate_file=str(path.relative_to(out)),certificate_sha256=C.digest(cert))
+     C.journaled_append(folder/'verification.jsonl',{'request_id':rid,'status':'TIMEOUT','certificate_sha256':C.digest(cert)})
+    C.journaled_append(folder/'primary.jsonl',row)
+   with patch.object(run,'call',side_effect=AssertionError('A failed cached replay was retried')):
+    with self.assertRaisesRegex(RuntimeError,'previous independent replay'):run.verify(out,'pilot')
+
+ def test_later_repeat_error_is_counted_and_blocks_figures(self):
+  import plots
+  c=self.case('repeat-error');args=argparse.Namespace(limit=1,workers=1)
+  with tempfile.TemporaryDirectory() as tmp,patch.object(inputs,'load',return_value=[c]):
+   out=Path(tmp);folder=out/'numeric_scale';spec,_,_=run.suite_spec(out,'numeric_scale',args)
+   C.write(folder/'plan.json',spec)
+   for rid,ident,_ in run.planned_tasks(spec,[c]):
+    state='ERROR' if ident['repeat']==2 and ident['method']=='seq' else 'NO_CERTIFICATE'
+    C.journaled_append(folder/'primary.jsonl',{**ident,'request_id':rid,'input_sha256':c['input_sha256'],
+     'status':state,'request_wall_seconds':1})
+   S.summarize(out,'numeric_scale');summary=C.read(folder/'summary.json')
+   self.assertEqual(summary['request_errors'],1)
+   self.assertEqual(summary['request_status_counts']['ERROR'],1)
+   self.assertEqual(summary['methods'][0]['states'],{'NO_CERTIFICATE':1})
+   with self.assertRaisesRegex(ValueError,'every repetition'):plots.plot(out,'numeric_scale')
+
+ def test_snapshot_reads_atomic_copies_instead_of_partial_jsonl(self):
+  import campaign
+  with tempfile.TemporaryDirectory() as tmp:
+   out=Path(tmp);folder=out/'main';rid=C.digest('snapshot');cert={'response_bounds':[2]}
+   path=folder/'certificates'/(rid+'.json.gz');C.write(path,cert)
+   row={'request_id':rid,'status':'CERTIFIED','certificate_file':str(path.relative_to(out)),
+    'certificate_sha256':C.digest(cert)}
+   C.journaled_append(folder/'primary.jsonl',row)
+   with (folder/'primary.jsonl').open('a') as f:f.write('{"partial":')
+   saved=campaign.snapshot(out)
+   self.assertEqual(saved['requests'],1)
+   with zipfile.ZipFile(saved['path']) as archive:
+    self.assertIsNone(archive.testzip())
+    self.assertIn(str(path.relative_to(out)),archive.namelist())
+    self.assertIn('main/primary.records/'+rid+'.json',archive.namelist())
+    self.assertNotIn('main/primary.jsonl',archive.namelist())
+
  def test_missing_jsonl_entry_is_recovered_from_immutable_request_copy(self):
   with tempfile.TemporaryDirectory() as tmp:
    path=Path(tmp)/'primary.jsonl'

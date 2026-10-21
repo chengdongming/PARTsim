@@ -12,6 +12,7 @@ from queue import Queue,Empty
 import subprocess
 import sys
 import tempfile
+from threading import Event
 import time
 import common as C
 
@@ -70,6 +71,7 @@ def suite_spec(output,suite,args):
  identity=C.source_identity()
  params={'schema':C.PROTOCOL['schema'],'suite':suite,'methods':methods,'budget_seconds':budget,
   'repetitions':repeats,'memory_limit_mib':C.PROTOCOL['memory_limit_mib'],
+  'reference_budget_seconds':C.PROTOCOL['reference_budget_seconds'],
   'serial':serial,'cpus':cpus,'source_sha256':identity['sha256'],
   'protocol_sha256':C.digest(C.PROTOCOL),'selected':[(c['case_id'],c['input_sha256']) for c in cases],
   'environment':{k:v for k,v in env.items() if k!='git_head'},
@@ -90,6 +92,20 @@ def planned_tasks(spec,cases):
     tasks.append((C.digest(ident),ident,case))
  return tasks
 
+def validate_records(spec,cases,records,complete=False):
+ selected=dict(spec['selected']);cases=[c for c in cases if c['case_id'] in selected]
+ if len(cases)!=len(selected) or any(c['input_sha256']!=selected[c['case_id']] for c in cases):
+  raise ValueError('Selected input identities differ from the run plan')
+ expected={rid:(ident,c) for rid,ident,c in planned_tasks(spec,cases)};seen=set()
+ for row in records:
+  rid=row['request_id']
+  if rid in seen or rid not in expected:raise ValueError('Duplicate or foreign request in run records')
+  seen.add(rid);ident,c=expected[rid]
+  if any(row.get(k)!=v for k,v in ident.items()) or row.get('input_sha256')!=c['input_sha256']:
+   raise ValueError('Saved request identity differs from the run plan')
+ if complete and seen!=set(expected):raise ValueError('Run records do not cover every planned request')
+ return expected
+
 def run_suite(output,suite,args):
  output=Path(output);folder=output/suite;folder.mkdir(parents=True,exist_ok=True)
  spec,cases,identity=suite_spec(output,suite,args)
@@ -104,6 +120,9 @@ def run_suite(output,suite,args):
   C.write(folder/'environment.json',C.environment(),immutable=False)
   tasks=planned_tasks(spec,cases);lookup={rid:(ident,c) for rid,ident,c in tasks}
   old=C.sync_journal(folder/'primary.jsonl')
+  validate_records(spec,cases,old)
+  if any(r['status'] in {'ERROR','RESOURCE_LIMIT','INVALID_CERTIFICATE'} for r in old):
+   raise RuntimeError('Resume refused: resolve the recorded request error before running a new batch')
   for row in old:
    if row['request_id'] not in lookup:raise ValueError('Resume refused: request not in plan')
    ident,case=lookup[row['request_id']]
@@ -112,10 +131,11 @@ def run_suite(output,suite,args):
   cpus=spec['cpus'];queues=[[] for _ in cpus]
   assignment={cid:i%len(cpus) for i,cid in enumerate(dict.fromkeys(c['case_id'] for _,_,c in tasks))}
   for t in pending:queues[assignment[t[2]['case_id']]].append(t)
-  queue=Queue()
+  queue=Queue();stop=Event()
   def consume(cpu,jobs):
    try:
     for rid,ident,case in jobs:
+     if stop.is_set():break
      value=call(case,ident['method'],ident['budget_seconds'],cpu)
      certificate=value.pop('certificate',None)
      if ident['method']=='seq' and value['status']=='CERTIFIED':
@@ -134,7 +154,8 @@ def run_suite(output,suite,args):
       'cluster_id':case['metadata'].get('cluster_id',case['case_id']),'host_cpu':cpu,
       'completed_utc':datetime.now(timezone.utc).isoformat()}
      queue.put(row)
-   except BaseException as exc:queue.put(exc)
+     if row['status'] in {'ERROR','RESOURCE_LIMIT','INVALID_CERTIFICATE'}:stop.set()
+   except BaseException as exc:stop.set();queue.put(exc)
    finally:queue.put(None)
   finished=0;last=time.monotonic();allrows=list(old)
   with ThreadPoolExecutor(max_workers=len(cpus)) as pool:
@@ -150,10 +171,13 @@ def run_suite(output,suite,args):
       'states':dict(Counter(r['status'] for r in allrows))}),flush=True);last=time.monotonic()
    for f in futures:f.result()
   allrows=C.sync_journal(folder/'primary.jsonl',allrows)
-  if {r['request_id'] for r in allrows}!=set(lookup):raise ValueError('Final saved requests differ from the frozen plan')
-  C.write(folder/'execution.json',{'requests':len(allrows),'complete':True,
+  errors=sum(r['status'] in {'ERROR','RESOURCE_LIMIT','INVALID_CERTIFICATE'} for r in allrows)
+  complete={r['request_id'] for r in allrows}==set(lookup)
+  C.write(folder/'execution.json',{'requests':len(allrows),'complete':complete,
    'run_id':spec['run_id'],'journal_checked':True,
-   'errors':sum(r['status'] in {'ERROR','RESOURCE_LIMIT','INVALID_CERTIFICATE'} for r in allrows)})
+   'errors':errors})
+  if errors:raise RuntimeError('Analysis paused after a request error; saved records are preserved')
+  validate_records(spec,cases,allrows,complete=True)
  return allrows
 
 def verify(output,suite):
@@ -163,16 +187,22 @@ def verify(output,suite):
  cases={c['case_id']:c for c in inputs.load(output,C.SUITES[suite][0])}
  with lock(folder/'run.lock'),lock(folder/'verify.lock'),lock(Path(tempfile.gettempdir())/'asapblock-f2-host.lock',shared=True):
   checks=C.sync_journal(folder/'verification.jsonl');done={x['request_id']:x for x in checks}
-  for row in C.sync_journal(folder/'primary.jsonl'):
+  records=C.sync_journal(folder/'primary.jsonl');validate_records(spec,list(cases.values()),records,complete=True)
+  certified={r['request_id']:r for r in records if r['status']=='CERTIFIED'}
+  for check in checks:
+   if check['request_id'] not in certified:raise ValueError('Foreign reference check in run records')
+   if check['status']!='PASS':raise RuntimeError('A previous independent replay did not pass; it cannot be skipped')
+  for row in records:
    if row['status']!='CERTIFIED':continue
    cert=C.read(output/row['certificate_file'])
    if C.digest(cert)!=row['certificate_sha256']:raise ValueError('Certificate hash mismatch')
    if row['request_id'] in done:
     if done[row['request_id']]['certificate_sha256']!=row['certificate_sha256']:raise ValueError('Replay hash mismatch')
     continue
-   value=call(cases[row['case_id']],row['method'],max(120,spec['budget_seconds']),spec['cpus'][0],'reference',cert)
+   budget=spec['reference_budget_seconds']
+   value=call(cases[row['case_id']],row['method'],budget,spec['cpus'][0],'reference',cert)
    check={'request_id':row['request_id'],'case_id':row['case_id'],'method':row['method'],
-    'certificate_sha256':row['certificate_sha256'],**value}
+    'certificate_sha256':row['certificate_sha256'],'reference_budget_seconds':budget,**value}
    C.journaled_append(folder/'verification.jsonl',check);checks.append(check)
    if value['status']!='PASS':raise RuntimeError('Independent replay did not pass: '+C.canonical(check))
   checks=C.sync_journal(folder/'verification.jsonl',checks)

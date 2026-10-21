@@ -47,9 +47,10 @@ def equal_cell_ci(records,metric,expected):
 def plot(output,suite):
  import inputs
  output=Path(output);folder=output/suite;spec=C.read(folder/'plan.json');summary=C.read(folder/'summary.json')
+ if C.source_identity()['sha256']!=spec['source_sha256']:raise ValueError('Source changed since analysis')
  if summary['reference_checks_pending'] or summary['invalid_certificates']:raise ValueError('Plot requires successful independent certificate replay')
  if summary['observed_requests']!=summary['planned_requests']:raise ValueError('Plot requires all selected requests; no partial denominator')
- if any(x['states'].get('ERROR',0) or x['states'].get('RESOURCE_LIMIT',0) for x in summary['methods']):raise ValueError('Resolve worker errors before plotting')
+ if summary['request_errors']:raise ValueError('Resolve worker errors in every repetition before plotting')
  cases={c['case_id']:c for c in inputs.load(output,C.SUITES[suite][0])}
  cases={cid:cases[cid] for cid,_ in spec['selected']}
  logs=C.record_rows(folder/'primary.jsonl');first={(r['case_id'],r['method']):r for r in logs if r['repeat']==0}
@@ -100,6 +101,19 @@ def plot(output,suite):
   rate(axs[1],lambda c:common(c) and F(md(c)['target_uc'])==F('.50'),'gap',styles);axs[1].set_xlabel('Harvest gap G (slots)')
   for ax in axs:ax.legend(fontsize=7)
   finish(fig,'fig2_energy_certification','M=4, D=T. Other configurations remain in complete tables.')
+  fig,axs=plt.subplots(3,2,figsize=(9,9),squeeze=False)
+  for row,(m,d) in enumerate([(2,'implicit'),(2,'ratio_0.7_1'),(4,'ratio_0.7_1')]):
+   def condition(c,m=m,d=d):return c['model']['processors']==m and md(c)['deadline_mode']==d
+   styles=[(method,lambda c,u=u:F(md(c)['target_uc'])==F(u),LABEL[method]+' / UC='+u,ls)
+    for u,ls in [('0.35','-'),('0.50','--')] for method in C.PRODUCTION]
+   rate(axs[row,0],lambda c:condition(c) and md(c)['harvest_gap']==1,'ue',styles)
+   styles=[(method,lambda c,e=e:F(md(c)['target_ue'])==F(e),LABEL[method]+' / UE='+e,ls)
+    for e,ls in [('0.40','-'),('0.70','--')] for method in C.PRODUCTION]
+   rate(axs[row,1],lambda c:condition(c) and F(md(c)['target_uc'])==F('.50'),'gap',styles)
+   for col in [0,1]:axs[row,col].set_title(f'M={m}, '+('D=T' if d=='implicit' else 'constrained deadlines'))
+   axs[row,0].set_xlabel('Energy utilization UE');axs[row,1].set_xlabel('Harvest gap G (slots)')
+   for ax in axs[row]:ax.legend(fontsize=6)
+  finish(fig,'supp_fig2_other_settings','Companion energy curves for the other processor/deadline settings; same definitions and samples as Fig. 2.')
   fig,ax=plt.subplots(figsize=(7,3.8));groups=defaultdict(list)
   for r in summary['precision']:
    if r['reference']=='seq' and r['gap']==1 and F(r['ue']) in [F('.4'),F('.7')]:groups[float(F(r['uc']))].append(r['response_reduction_percent'])
@@ -158,7 +172,7 @@ def plot(output,suite):
     axs[2*row,col].set_yscale('log');axs[2*row,col].set_ylabel('Completed request time (s)');axs[2*row,col].set_title('UC='+u)
     axs[2*row+1,col].set_ylabel('Done (%)');axs[2*row+1,col].set_ylim(-2,102)
     axs[2*row+1,col].set_xlabel('Tasks N (M=4)' if xname=='n' else 'Processors M (N=2M)')
-  axs[0,0].legend(fontsize=7);finish(fig,'fig5_task_scale','Time statistics condition on completion. Timeouts remain unresolved; complete counts are in tables.')
+  axs[0,0].legend(fontsize=7);finish(fig,'fig5_task_scale','Solid: conditional median; dotted: conditional P95. Timeouts remain unresolved; complete counts are in tables.')
  elif suite=='numeric_scale':
   fig,axs=plt.subplots(2,2,figsize=(9,6),sharex=True)
   rr=summary['repeat_stability']
@@ -176,7 +190,7 @@ def plot(output,suite):
     axs[1,col].plot(xs,rates,marker='o',color=COL[method])
    axs[0,col].set_yscale('log');axs[0,col].set_ylabel('Stable request time (s)');axs[0,col].legend(fontsize=7);axs[0,col].set_title('UC='+u)
    axs[1,col].set_xlabel('Time scale factor');axs[1,col].set_ylabel('Three stable completions (%)');axs[1,col].set_xticks([1,2,4,8]);axs[1,col].set_ylim(-2,102)
-  finish(fig,'fig6_numeric_scale','C, D, T and G scale together. Times only use three stable completions; they do not imply identical schedules.')
+  finish(fig,'fig6_numeric_scale','Solid: median; dotted: P95, using three stable completions. C/D/T/G scale together; identical schedules are not assumed.')
  elif suite=='timing':
   fig,axs=plt.subplots(1,2,figsize=(9,3.8))
   for ax,family in zip(axs,['main','scale']):

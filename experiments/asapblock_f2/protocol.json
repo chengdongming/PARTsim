@@ -1,9 +1,10 @@
 {
-  "schema": "AB_RTA_F2_20261021_1",
+  "schema": "AB_RTA_F2_20261021_2",
   "base_commit": "52800fcac9d788759c6590765a0411307f0b53cd",
   "document": "ASAPBlock_RTA_论文实验方案_F2_20261021.md",
   "document_sha256": "da72c1d8f7ba08cb177ab89e57a5890a9adaccc0dfa0a445a83835d0eae96f64",
   "memory_limit_mib": 4096,
+  "reference_budget_seconds": 600,
   "seed": 2026102100,
   "bootstrap_seed": 2026102109,
   "bootstrap_repetitions": 5000,

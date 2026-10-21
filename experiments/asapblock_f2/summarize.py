@@ -4,6 +4,7 @@ import csv
 from fractions import Fraction
 from pathlib import Path
 import statistics
+import math
 import numpy as np
 import common as C
 
@@ -89,12 +90,46 @@ def precision_summary(values):
   'first_mean_percent':statistics.mean(x['first_reduction_percent'] for x in values if 'first_reduction_percent' in x)
    if any('first_reduction_percent' in x for x in values) else None}
 
+def paired_speed_summary(cases,by,target,reference,spec,suite):
+ """Three stable repeats per method; bootstrap whole bones, including missing pairs."""
+ if spec['repetitions']!=3:return []
+ groups=defaultdict(list)
+ for cid,c in cases.items():
+  family=c['metadata'].get('family',suite)
+  groups[('family',family,None)].append(cid)
+  groups[('cell',family,C.canonical(cell(c)))].append(cid)
+ result=[]
+ for (scope,family,key),ids in sorted(groups.items(),key=str):
+  items=[];ratios=[];states=Counter()
+  for cid in ids:
+   c=cases[cid];a=stable(by[cid,target],3);b=stable(by[cid,reference],3)
+   eligible=a is not None and b is not None
+   value=0.
+   if eligible:
+    if a['request_wall_seconds']<=0 or b['request_wall_seconds']<=0:raise ValueError('Nonpositive request time')
+    ratio=b['request_wall_seconds']/a['request_wall_seconds'];ratios.append(ratio);value=math.log(ratio)
+    states[a['status'],b['status']]+=1
+   items.append((c['metadata'].get('cluster_id',cid),stratum(c,suite),value,int(eligible)))
+  interval=ci(items)
+  result.append({'new':target,'reference':reference,'scope':scope,'family':family,
+   **(cell(cases[ids[0]]) if scope=='cell' else {}),'preselected_inputs':len(ids),'eligible_inputs':len(ratios),
+   'repetitions_per_method':3,'geometric_mean_reference_over_new':math.exp(statistics.mean(map(math.log,ratios))) if ratios else None,
+   'geometric_mean_ci95':[math.exp(x) if x is not None else None for x in interval],
+   'median_reference_over_new':statistics.median(ratios) if ratios else None,
+   'eligible_state_pairs':[{'new_state':a,'reference_state':b,'inputs':n} for (a,b),n in sorted(states.items())],
+   'scope_note':'Conditional on both methods completing stably in all three repeats; repeats are not independent inputs.'})
+ return result
+
 def summarize(output,suite):
  import inputs
+ import run
  output=Path(output);folder=output/suite;spec=C.read(folder/'plan.json')
+ if C.source_identity()['sha256']!=spec['source_sha256']:raise ValueError('Source changed since analysis')
  cases={c['case_id']:c for c in inputs.load(output,C.SUITES[suite][0])}
  cases={cid:cases[cid] for cid,_ in spec['selected']}
  logs=C.record_rows(folder/'primary.jsonl');checks={r['request_id']:r for r in C.record_rows(folder/'verification.jsonl')}
+ run.validate_records(spec,list(cases.values()),logs)
+ request_status_counts=Counter(r['status'] for r in logs)
  by=defaultdict(list);invalid=0;pending=0
  for r in logs:
   if r['case_id'] not in cases or r['run_id']!=spec['run_id']:raise ValueError('Foreign result in summary')
@@ -139,7 +174,7 @@ def summarize(output,suite):
    'certification_percent':100*counts['CERTIFIED']/len(cases)})
  target='production_analytic' if 'production_analytic' in spec['methods'] else 'full'
  contrasts=[m for m in spec['methods'] if m!=target];pairs=[];prec=[];diffs=[];bounds=[];speeds=[]
- cell_pairs=[];cell_diffs=[];cell_bounds=[]
+ cell_pairs=[];cell_diffs=[];cell_bounds=[];speed_summaries=[]
  for ref in contrasts:
   pcount=Counter();delta_items=[];r_items=[];f_items=[];common=[]
   for cid,c in cases.items():
@@ -156,6 +191,8 @@ def summarize(output,suite):
    aa=stable(by[cid,target],spec['repetitions']);bb=stable(by[cid,ref],spec['repetitions'])
    if aa is not None and bb is not None:
     speeds.append({'case_id':cid,'new':target,'reference':ref,'new_state':aa['status'],'reference_state':bb['status'],
+     'repetitions_per_method':spec['repetitions'],
+     'speed_scope':'three_stable_repeats' if spec['repetitions']==3 else 'single_request_diagnostic',
      'new_seconds':aa['request_wall_seconds'],'reference_seconds':bb['request_wall_seconds'],
      'reference_over_new':bb['request_wall_seconds']/aa['request_wall_seconds'],**cell(c)})
   pairs.extend({'new':target,'reference':ref,'new_state':a,'reference_state':b,'inputs':n} for (a,b),n in sorted(pcount.items()))
@@ -167,6 +204,7 @@ def summarize(output,suite):
    'reference_cert_new_timeout':pcount['TIMEOUT','CERTIFIED']})
   bounds.append({'new':target,'reference':ref,**precision_summary(common),
    'response_ci95':ci(r_items),'first_ci95':ci(f_items)})
+  speed_summaries.extend(paired_speed_summary(cases,by,target,ref,spec,suite))
   pm={x['case_id']:x for x in prec if x['reference']==ref}
   for key,ids in sorted(grouped.items()):
    base={'new':target,'reference':ref,**cell(cases[ids[0]]),'inputs':len(ids)}
@@ -191,15 +229,18 @@ def summarize(output,suite):
  result={'suite':suite,'run_id':spec['run_id'],'custom_run':spec['custom_run'],'pilot':spec['pilot'],
   'inputs':len(cases),'planned_requests':len(cases)*len(spec['methods'])*spec['repetitions'],
   'observed_requests':len(logs),'reference_checks_pending':pending,'invalid_certificates':invalid,
+  'request_status_counts':dict(request_status_counts),
+  'request_errors':sum(request_status_counts[s] for s in ['ERROR','RESOURCE_LIMIT','INVALID_CERTIFICATE']),
   'methods':allstats,'differences':diffs,'bounds':bounds,'cells':states,
   'timings':timings,'precision':prec,'speed_pairs':speeds,'budget_coverage':budgets,'repeat_stability':stability,
   'paired_states_by_cell':cell_pairs,'certification_differences_by_cell':cell_diffs,'precision_by_cell':cell_bounds,
+  'paired_speed_summary':speed_summaries,
   'bootstrap_repetitions':C.PROTOCOL['bootstrap_repetitions']}
  tables=folder/'tables'
  for name,items in [('state_counts',states),('paired_states',pairs),('precision_by_input',prec),
   ('certification_differences',diffs),('precision_summary',bounds),('timing_summary',timings),
   ('speed_pairs',speeds),('budget_coverage',budgets),('repeat_stability',stability),
   ('paired_states_by_cell',cell_pairs),('certification_differences_by_cell',cell_diffs),
-  ('precision_by_cell',cell_bounds)]:csvwrite(tables/(name+'.csv'),items)
+  ('precision_by_cell',cell_bounds),('paired_speed_summary',speed_summaries)]:csvwrite(tables/(name+'.csv'),items)
  C.write(folder/'summary.json',result)
  return {k:result[k] for k in ['suite','inputs','planned_requests','observed_requests','reference_checks_pending','invalid_certificates','methods']}
