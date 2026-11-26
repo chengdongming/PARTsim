@@ -1028,6 +1028,7 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
                          system_template: str = ORDINARY_SYSTEM_TEMPLATE,
                          generation_utilizations: Sequence[Fraction] | None = None,
                          initial_energy_rule: str = "battery_capacity/2",
+                         utilization_sampler: str = "legacy",
                          ) -> tuple[list[Any], Any]:
     deadline_mode = normalize_deadline_mode(deadline_mode)
     generation_points = tuple(utilizations) if generation_utilizations is None else tuple(generation_utilizations)
@@ -1041,6 +1042,10 @@ def materialize_tasksets(root: Path, *, seed: int, utilizations: Sequence[Fracti
         system_template=system_template,
         initial_energy_rule=initial_energy_rule,
     )
+    if utilization_sampler not in {"legacy", "bounded-simplex"}:
+        raise ValueError("unknown utilization sampler")
+    if utilization_sampler != "legacy":
+        config["generation"]["utilization_sampler"] = utilization_sampler
     if generation_utilizations is not None:
         selected = {fraction_text(value) for value in utilizations}
         config["grid"]["cell_filter"] = [

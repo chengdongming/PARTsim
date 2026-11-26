@@ -227,6 +227,7 @@ class UUniFastDiscard:
         min_task_util: float = 0.01,
         max_task_util: float = 0.8,
         max_trials: int = 1000,
+        sampler: str = "legacy",
     ) -> List[float]:
         if n <= 0 or U <= 0 or U > n:
             raise ValueError(f"Invalid parameters: n={n}, U={U}")
@@ -256,6 +257,22 @@ class UUniFastDiscard:
                 "n * min_task_util = {}".format(U, n * min_task_util)
             )
         
+        if sampler == "bounded-simplex":
+            # Translation and reflection preserve uniform volume on the
+            # bounded utilization simplex. Sample from its nearer endpoint:
+            # for high loads, draw deficits from the upper utilization bound.
+            # This avoids vanishing acceptance near n * max_task_util.
+            low = U - n * min_task_util
+            high = n * max_task_util - U
+            reflected = high < low
+            total = high if reflected else low
+            width = max_task_util - min_task_util
+            if total <= 1e-12:
+                return [U / n] * n
+            draws = self.generate(n, total, 0.0, width, max_trials)
+            return [max_task_util - u if reflected else min_task_util + u for u in draws]
+        if sampler != "legacy":
+            raise ValueError(f"unknown utilization sampler: {sampler}")
         for trial in range(max_trials):
             utilizations = []
             sumU = U
@@ -618,7 +635,8 @@ class EnergyAwareTaskGenerator:
                         min_task_util: float = 0.01,
                         max_task_util: float = 0.8,
                         wcet_rounding: str = "floor",
-                        actual_utilization_tolerance_total: float = None
+                        actual_utilization_tolerance_total: float = None,
+                        utilization_sampler: str = "legacy",
                         ) -> Tuple[List[Dict], List[Dict], Dict, Dict]:
         """
         生成能量感知任务集 - 增强版
@@ -677,6 +695,7 @@ class EnergyAwareTaskGenerator:
                 total_utilization,
                 min_task_util=min_task_util,
                 max_task_util=max_task_util,
+                sampler=utilization_sampler,
             )
 
             # 生成DAG结构（如果需要）
@@ -1160,6 +1179,8 @@ def main():
     )
     parser.add_argument("--min-task-util", type=float, default=0.01,
                        help="UUniFast-Discard单任务最小利用率")
+    parser.add_argument("--utilization-sampler", choices=("legacy", "bounded-simplex"),
+                        default="legacy", help="Opt-in bounded simplex sampling for high loads")
     parser.add_argument("--max-task-util", type=float, default=0.8,
                        help="UUniFast-Discard单任务最大利用率；顺序任务应不超过1.0")
     parser.add_argument("--wcet-rounding", choices=("floor", "round", "ceil", "compensated"),
@@ -1262,6 +1283,7 @@ def main():
             min_task_util=args.min_task_util,
             max_task_util=args.max_task_util,
             wcet_rounding=args.wcet_rounding,
+            utilization_sampler=args.utilization_sampler,
             actual_utilization_tolerance_total=(
                 args.actual_utilization_tolerance_total
             ),

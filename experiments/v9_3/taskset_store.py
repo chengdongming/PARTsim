@@ -607,6 +607,8 @@ class TasksetStore:
                 "--wcet-rounding", generation["wcet_rounding"],
                 "--actual-utilization-tolerance-total", format(float(Fraction(generation["utilization_tolerance"])), ".15g"),
             ]
+            if generation.get("utilization_sampler", "legacy") != "legacy":
+                command.extend(["--utilization-sampler", generation["utilization_sampler"]])
             for workload in self.task_workload_contract.candidates:
                 command.extend(["--task-workload-candidate", workload])
             if generation["deadline_mode"] == "constrained":
