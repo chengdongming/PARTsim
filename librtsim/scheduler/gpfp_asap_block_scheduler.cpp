@@ -273,7 +273,8 @@ namespace RTSim {
                 });
             _trace_logger->logReleaseEnergySnapshots(
                 "gpfp_asap_block",
-                available_energy * 1000.0,
+                (_harvest_runtime.sameSlot() ? harvest_result.battery_before_j
+                                             : available_energy) * 1000.0,
                 released_jobs);
         }
 
@@ -412,6 +413,7 @@ namespace RTSim {
         }
 
         commitTickEnergy(current_time, available_energy);
+        _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
         SCHEDULER_LOG_INFO(
             std::string("[ASAP-Block] tick=") +
             std::to_string(static_cast<int64_t>(current_time)) +
@@ -1038,6 +1040,7 @@ namespace RTSim {
             static_cast<std::int64_t>(candidate_tick);
 
         const ConfigManager &config = ConfigManager::getInstance();
+        if (!config.acceptsSameSlotDecision(candidate_ms)) return;
         if (config.isPriorityEnergyProfileEnabled() &&
             !priorityEnergyDecisionTickWithinExclusiveHorizon(
                 candidate_ms,
@@ -1120,7 +1123,8 @@ namespace RTSim {
         EnergyBridge::getInstance().initialize();
         const HarvestSourceConfig harvest_config =
             ConfigManager::getInstance().getHarvestSourceConfig();
-        _harvest_runtime.beginRun(harvest_config);
+        _harvest_runtime.beginRun(harvest_config,
+            ConfigManager::getInstance().sameSlotEnergy());
 
         Scheduler::newRun();
         _current_energy = _initial_energy;

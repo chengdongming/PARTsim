@@ -17,6 +17,12 @@ namespace RTSim {
             double battery_before_j,
             double battery_capacity_j);
 
+        // In same-slot mode this is a provisional execution budget, not
+        // stored energy. Capacity clipping is deferred until after debit.
+        HarvestResult openSameSlotInterval(const HarvestInterval &interval,
+                                           double battery_before_j,
+                                           double battery_capacity_j);
+
         const HarvestSource &source() const noexcept;
         bool hasAppliedInterval() const noexcept;
         std::uint64_t lastAppliedIndex() const;

@@ -1544,6 +1544,11 @@ def run_paired_simulation(
     implicit_wholepass_fast: bool = False,
     generic_wholepass_fast: bool = False,
 ) -> SimulationExecution | WholePassFastExecution:
+    energy_timing = simulation_config.get("energy_timing", "debit-before-harvest")
+    if energy_timing not in {"debit-before-harvest", "same-slot"}:
+        raise SimulationConfigurationError("invalid energy timing")
+    if energy_timing == "same-slot" and (implicit_wholepass_fast or generic_wholepass_fast):
+        raise SimulationConfigurationError("same-slot requires the trace experiment")
     priority_policy = normalize_scheduler_priority_policy(
         simulation_config.get("priority_policy", "RM")
     )
@@ -1707,6 +1712,8 @@ def run_paired_simulation(
             f"v93-{simulation_id_value[:16]}-h{horizon}",
             "--taskset-semantic-hash", taskset_hash,
         ]
+        if energy_timing == "same-slot":
+            command.extend(["--energy-timing", energy_timing])
         if simulation_config["trace_mode"] == "semantic":
             command.append("--semantic-traces")
         started = time.perf_counter()
@@ -1759,6 +1766,9 @@ def run_paired_simulation(
                             release_e0=exact_e0,
                             expected_scheduler=scheduler_id,
                             expected_processors=processors,
+                            energy_timing=energy_timing,
+                            **(dict(physical_initial_energy=initial, battery_capacity=capacity)
+                               if energy_timing == "same-slot" else {}),
                             stream_events=(
                                 implicit_streaming_parse
                                 or bounded_streaming_parse

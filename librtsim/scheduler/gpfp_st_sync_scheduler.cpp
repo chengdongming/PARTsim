@@ -450,6 +450,7 @@ namespace RTSim {
                         _current_energy, 1e-9, {}, {}, {}, {}, {}, {}, {}));
                 }
                 SCHEDULER_LOG_WARNING("⚠️ [ST-Sync] _kernel为nullptr，跳过批量调度");
+                _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
                 return;
             }
 
@@ -910,6 +911,7 @@ namespace RTSim {
                 _kernel->dispatch();
             }
 
+            _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
             SCHEDULER_LOG_INFO(std::string("📊 [ST-Sync] Tick冻结同步组: active=") +
                                std::to_string(active_tasks.size()) +
                                " selected=" + std::to_string(selected_tasks.size()) +
@@ -2039,6 +2041,7 @@ namespace RTSim {
             static_cast<std::int64_t>(candidate_tick);
 
         const ConfigManager &config = ConfigManager::getInstance();
+        if (!config.acceptsSameSlotDecision(candidate_ms)) return;
         if (config.isPriorityEnergyProfileEnabled() &&
             !priorityEnergyDecisionTickWithinExclusiveHorizon(
                 candidate_ms,
@@ -2152,7 +2155,8 @@ namespace RTSim {
         EnergyBridge::getInstance().initialize();
         const HarvestSourceConfig harvest_config =
             ConfigManager::getInstance().getHarvestSourceConfig();
-        _harvest_runtime.beginRun(harvest_config);
+        _harvest_runtime.beginRun(harvest_config,
+            ConfigManager::getInstance().sameSlotEnergy());
 
         Scheduler::newRun();
         resetPersistentState();

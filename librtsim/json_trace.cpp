@@ -902,6 +902,27 @@ namespace RTSim {
            << std::endl;
         fd << "    \"run_id\": \"" << escapeJson(_run_id) << "\","
            << std::endl;
+        if (_same_slot_energy) {
+            fd << "    \"energy_timing\": \"HARVEST_BEFORE_DEBIT\",\n";
+            fd << "    \"event_energy_semantics\": "
+                  "\"decision_budget_or_stored_boundary\",\n";
+        }
+        if (_same_slot_snapshot_set) {
+            const auto &snap = _same_slot_snapshot;
+            const auto &energy = snap.summary;
+            fd << "    \"same_slot_energy_summary\": {"
+               << "\"initial_energy_j\":" << exactDoubleString(snap.initial_energy_j)
+               << ",\"capacity_j\":" << exactDoubleString(snap.capacity_j)
+               << ",\"offered_energy_j\":" << exactDoubleString(energy.offered_energy_j)
+               << ",\"credited_energy_j\":" << exactDoubleString(energy.credited_energy_j)
+               << ",\"clipped_energy_j\":" << exactDoubleString(energy.clipped_energy_j)
+               << ",\"consumed_energy_j\":" << exactDoubleString(energy.consumed_energy_j)
+               << ",\"battery_final_j\":" << exactDoubleString(energy.battery_final_j)
+               << ",\"battery_min_j\":" << exactDoubleString(energy.battery_min_j)
+               << ",\"battery_max_j\":" << exactDoubleString(energy.battery_max_j)
+               << ",\"observed_energy_intervals\":" << energy.observed_energy_intervals
+               << "},\n";
+        }
         fd << "    \"taskset_semantic_hash\": \""
            << escapeJson(_taskset_semantic_hash) << "\"," << std::endl;
         fd << "    \"configured_scheduler\": \""
@@ -920,8 +941,10 @@ namespace RTSim {
            << (_simulation_completed ? "true" : "false") << ","
            << std::endl;
         if (_release_cutoff_enabled) {
-            fd << "    \"simulator_trace_contract_version\": "
-                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\","
+            fd << "    \"simulator_trace_contract_version\": \""
+               << (_same_slot_energy ? "ASAP_BLOCK_SAME_SLOT_RELEASE_CUTOFF_V1"
+                                     : "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2")
+               << "\","
                << std::endl;
             fd << "    \"release_horizon_ms\": " << _release_horizon
                << "," << std::endl;
@@ -1030,11 +1053,15 @@ namespace RTSim {
             fd << "\"arrival_time\": \"" << job.arrival_time << "\", ";
             fd << "\"available_energy_mJ\": "
                << exactDoubleString(available_energy_mJ) << ", ";
-            fd << "\"sampling_stage\": "
-                  "\"post_harvest_pre_consumption\", ";
+            fd << "\"sampling_stage\": \""
+               << (_same_slot_energy ? "pre_harvest_pre_consumption"
+                                     : "post_harvest_pre_consumption")
+               << "\", ";
             fd << "\"scheduler\": \"" << escapeJson(scheduler) << "\", ";
-            fd << "\"trace_contract_version\": "
-                  "\"ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2\"}";
+            fd << "\"trace_contract_version\": \""
+               << (_same_slot_energy ? "ASAP_BLOCK_SAME_SLOT_RELEASE_CUTOFF_V1"
+                                     : "ASAP_BLOCK_V9_3_RELEASE_CUTOFF_TRACE_V2")
+               << "\"}";
         }
     }
 

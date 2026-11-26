@@ -1139,7 +1139,10 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                  deadline_mode: str | None = None, campaign: str | None = None,
                  energy_control: str | None = None,
                  campaign_contract: str | None = None,
+                 energy_timing: str = "debit-before-harvest",
                  ) -> list[dict[str, Any]]:
+    if energy_timing not in {"debit-before-harvest", "same-slot"}:
+        raise ValueError("invalid energy timing")
     try:
         policy = normalize_scheduler_priority_policy(priority_policy)
     except RuntimeError as exc:
@@ -1247,6 +1250,8 @@ def request_rows(tasksets: Sequence[Any], cells: Sequence[tuple[Fraction, Fracti
                     request_domain = V4_DOMAIN
                 else:
                     request_domain = V3_DOMAIN
+                if energy_timing == "same-slot":
+                    identity["energy_timing"] = row["energy_timing"] = "HARVEST_BEFORE_DEBIT"
                 row["request_id"] = "scheduler-load-cross-" + _hash(
                     identity, domain=request_domain,
                 )[:32]

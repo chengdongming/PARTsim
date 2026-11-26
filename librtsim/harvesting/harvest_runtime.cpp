@@ -146,6 +146,26 @@ namespace RTSim {
         return result;
     }
 
+    HarvestResult HarvestRuntime::openSameSlotInterval(
+        const HarvestInterval &interval, double battery_before_j,
+        double battery_capacity_j) {
+        validateInterval(interval);
+        validateBatteryInput(battery_before_j, battery_capacity_j);
+        const double offered = validateOfferedEnergy(
+            _source->offeredEnergyForInterval(interval));
+        const double budget = roundedAdd(battery_before_j, offered);
+        if (!std::isfinite(budget)) {
+            throw std::overflow_error("same-slot execution budget overflow");
+        }
+        HarvestResult result;
+        result.offered_j = result.actual_j = offered;
+        result.clipped_j = 0.0;
+        result.battery_before_j = battery_before_j;
+        result.battery_after_j = budget;
+        commitInterval(interval);
+        return result;
+    }
+
     const HarvestSource &HarvestRuntime::source() const noexcept {
         return *_source;
     }

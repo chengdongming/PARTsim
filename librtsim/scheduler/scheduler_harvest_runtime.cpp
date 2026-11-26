@@ -40,7 +40,9 @@ namespace RTSim {
     } // namespace
 
     void SchedulerHarvestRuntime::beginRun(
-        const HarvestSourceConfig &config) {
+        const HarvestSourceConfig &config, bool same_slot) {
+        _same_slot = same_slot;
+        _slot_open = false;
         _runtime.reset();
         resetEnergySummary();
         auto next_runtime = std::make_unique<HarvestRuntime>(
@@ -59,6 +61,28 @@ namespace RTSim {
         if (decision_time_ms < 0) {
             throw std::invalid_argument(
                 "scheduler decision time must be non-negative");
+        }
+        if (_same_slot) {
+            if (_slot_open ||
+                static_cast<std::uint64_t>(decision_time_ms) !=
+                    _energy_summary.observed_energy_intervals) {
+                throw std::logic_error("same-slot decisions must be settled once in order");
+            }
+            const auto t = static_cast<std::uint64_t>(decision_time_ms);
+            if (t == 0) {
+                (void)zeroIntervalResult(battery_before_j, battery_capacity_j);
+                observeInitialBattery(battery_before_j, battery_capacity_j);
+            } else if (!energyApproximatelyEqual(battery_before_j,
+                           _energy_summary.battery_final_j) ||
+                       !energyApproximatelyEqual(battery_capacity_j,
+                           _energy_capacity_j)) {
+                throw std::logic_error("same-slot battery changed outside settlement");
+            }
+            _open_slot = _runtime->openSameSlotInterval(
+                HarvestInterval{t, t, t + 1},
+                battery_before_j, battery_capacity_j);
+            _slot_open = true;
+            return _open_slot;
         }
         if (decision_time_ms == 0) {
             const HarvestResult result = zeroIntervalResult(
@@ -84,6 +108,36 @@ namespace RTSim {
             battery_capacity_j);
         observeEnergyInterval(result, battery_capacity_j);
         return result;
+    }
+
+    double SchedulerHarvestRuntime::finishDecisionTime(double remaining) {
+        if (!_same_slot) return remaining;
+        if (!_slot_open) {
+            throw std::logic_error("same-slot settlement requires an open slot");
+        }
+        const auto &slot = _open_slot;
+        if (!std::isfinite(remaining) || remaining < 0.0 ||
+            remaining > slot.battery_after_j) {
+            throw std::logic_error("invalid same-slot remaining execution budget");
+        }
+        const double final = std::min(_energy_capacity_j, remaining);
+        const double clipped = std::max(0.0, remaining - final);
+        const double consumed = slot.battery_after_j - remaining;
+        _energy_summary.consumed_energy_j += consumed;
+        _energy_summary.offered_energy_j += slot.offered_j;
+        _energy_summary.credited_energy_j += std::max(0.0, slot.offered_j - clipped);
+        _energy_summary.clipped_energy_j += clipped;
+        _energy_summary.battery_min_j = std::min(_energy_summary.battery_min_j, final);
+        _energy_summary.battery_max_j = std::max(_energy_summary.battery_max_j, final);
+        _energy_summary.battery_final_j = final;
+        if (slot.battery_before_j <= STEnergy::kEnergyEpsilonJ)
+            ++_energy_summary.battery_empty_ticks;
+        if (slot.battery_before_j + STEnergy::kEnergyEpsilonJ >= _energy_capacity_j)
+            ++_energy_summary.battery_full_ticks;
+        ++_energy_summary.observed_energy_intervals;
+        _last_post_harvest_battery_j = final;
+        _slot_open = false;
+        return final;
     }
 
     bool SchedulerHarvestRuntime::isInitialized() const noexcept {
@@ -238,6 +292,9 @@ namespace RTSim {
             throw std::logic_error(
                 "energy summary has no time-zero battery observation");
         }
+        if (_slot_open) {
+            throw std::logic_error("unfinished same-slot energy settlement");
+        }
         if (_energy_summary_invalid) {
             throw std::logic_error(
                 _energy_summary_error.empty()
@@ -309,7 +366,7 @@ namespace RTSim {
                 "final observation battery capacity does not match the run");
         }
 
-        if (_energy_summary.observed_energy_intervals <
+        if (!_same_slot && _energy_summary.observed_energy_intervals <
                 expected_horizon_ms &&
             _energy_summary.observed_energy_intervals + UINT64_C(1) ==
                 expected_horizon_ms) {
