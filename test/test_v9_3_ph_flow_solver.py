@@ -3,8 +3,8 @@
 from fractions import Fraction
 import time
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_ph as ph
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_ph as ph
 
 
 def edge(key, source, sink, lower=0, upper=1, cost=0):

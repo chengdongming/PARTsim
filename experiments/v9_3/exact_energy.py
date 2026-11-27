@@ -104,7 +104,9 @@ def numeric_contract_metadata() -> dict[str, Any]:
 
 
 def verify_theory_document(project_root: Path) -> None:
-    path = project_root / THEORY_DOCUMENT_PATH
+    # The old logical path remains in sealed historic metadata. Its exact
+    # bytes are now stored with the other legacy validation dependencies.
+    path = project_root / "experiments/legacy_contracts" / Path(THEORY_DOCUMENT_PATH).name
     try:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError as exc:

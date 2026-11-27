@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import analyze_rta_load_cross as analyzer
 import run_rta_load_cross as runner
 
-import asap_block_rta_v9_3_methods as methods
+from experiments.rta import asap_block_rta_v9_3_methods as methods
 from experiments.v9_3 import rta_load_cross as cross
 
 
@@ -92,7 +92,7 @@ def _semantic_config(**overrides):
         "samples_per_uc": 1,
         "e0_values": [Fraction(0), Fraction(37)],
         "method_names": ["CW", "LOC", "PH", "SEQ"],
-        "system_config": Path("system_config_unified_template.yml").resolve(),
+        "system_config": Path("configs/templates/system_config_unified_template.yml").resolve(),
         "workers": 1,
         "timeout_first": 600.0,
         "timeout_retry": 1200.0,
@@ -139,7 +139,7 @@ def _resume_args(output, *extra):
         "--max-task-util", "0.8", "--util-tolerance-total", "0.01",
         "--e0-values", "0,37", "--methods", "CW,LOC,PH,SEQ", "--rho", "11/2",
         "--latency", "2/5", "--timeout-first", "600", "--timeout-retry", "1200",
-        "--system-config", "system_config_unified_template.yml", "--cells", "0.1:0.5",
+        "--system-config", "configs/templates/system_config_unified_template.yml", "--cells", "0.1:0.5",
         "--resume", *extra,
     ]
 

@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-import asap_block_rta_v9_3_methods as methods
+from experiments.rta import asap_block_rta_v9_3_methods as methods
 
 
 EXPECTED = (

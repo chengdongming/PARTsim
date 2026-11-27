@@ -645,7 +645,7 @@ def render_system_config_v5(
     document["cpu_islands"][0]["kernel"]["scheduler"] = algorithm_cli
     document["harvesting"] = deepcopy(dict(material.runtime_source))
     try:
-        from energy_manager import _normalise_harvest_source
+        from experiments.common.energy_manager import _normalise_harvest_source
         parsed = _normalise_harvest_source(document, {"enabled": False})
     except Exception as exc:
         raise B4EnergySourceV5Error(

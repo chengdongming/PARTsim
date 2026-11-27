@@ -29,10 +29,10 @@ OBSERVABILITY_CONTRACT_V2_PATH = B4_DIR / "observability_summary_contract_v2.jso
 ANALYSIS_CONTRACT_V2_PATH = B4_DIR / "analysis_contract_v2.json"
 IDENTITY_REFERENCE_PATH = B4_DIR / "tests" / "test_protocol_resolution.py"
 FROZEN_DOCUMENT_PATH = (
-    REPO_ROOT / "docs" / "experiments" /
+    REPO_ROOT / "experiments" / "legacy_contracts" /
     "ASAP_BLOCK_B4_priority_energy_v5_2_frozen.md"
 )
-SYSTEM_TEMPLATE_PATH = REPO_ROOT / "v9_3_b4_priority_energy_system_template.yml"
+SYSTEM_TEMPLATE_PATH = REPO_ROOT / "configs/templates/v9_3_b4_priority_energy_system_template.yml"
 SEMANTIC_HASH_PLACEHOLDER = "__B4PE_MATERIALIZED_TASKSET_SEMANTIC_HASH__"
 V4_CANDIDATE_CODE_COMMIT = "681409e35012d2bc883045e4d10a048b36a6483f"
 V4_CANDIDATE_CODE_TREE = "266ecfdca0c1bc194e2ce77a295254893b9737ca"

@@ -24,8 +24,8 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 B4_DIR = Path(__file__).resolve().parent
-SYSTEM_TEMPLATE = ROOT / "v9_3_b4_priority_energy_system_template.yml"
-TASK_GENERATOR = ROOT / "global_task_generator.py"
+SYSTEM_TEMPLATE = ROOT / "configs/templates/v9_3_b4_priority_energy_system_template.yml"
+TASK_GENERATOR = ROOT / "experiments/common/global_task_generator.py"
 SIMULATOR = Path(os.environ.get("PARTSIM_RTSIM_BIN", str(ROOT / "rtsim" / "rtsim")))
 
 PROCESSORS = 4

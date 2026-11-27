@@ -15,9 +15,9 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 
 import yaml
 
-import asap_block_rta_v9_3 as rta_core
-import asap_block_rta_v9_3_methods as method_registry
-import asap_block_rta_v9_3_taskset as rta_adapter
+from experiments.rta import asap_block_rta_v9_3 as rta_core
+from experiments.rta import asap_block_rta_v9_3_methods as method_registry
+from experiments.rta import asap_block_rta_v9_3_taskset as rta_adapter
 
 from . import exact_energy
 from .constrained_taskset_identity import (
@@ -157,7 +157,7 @@ class ProductionTasksetProvider:
         generation = self.config["generation"]
         material = record.material
         try:
-            from global_task_generator import (
+            from experiments.common.global_task_generator import (
                 EnergyAwareTaskGenerator, _task_workload_candidate_identity,
             )
         except Exception as exc:
@@ -216,7 +216,7 @@ class ProductionTasksetProvider:
             return self._skeletons[slot]
         request = self._generation_request(record)
         try:
-            from global_task_generator import EnergyAwareTaskGenerator
+            from experiments.common.global_task_generator import EnergyAwareTaskGenerator
             factory = self._generator_factory or EnergyAwareTaskGenerator
             generator = factory(seed=request.generator_seed, energy_manager=None)
             generated, resources, dag, _energy = generator.generate_taskset(

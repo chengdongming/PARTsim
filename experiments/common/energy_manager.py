@@ -22,7 +22,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
 
 # 使用统一日志系统
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from utils.unified_logger import get_energy_logger, LogLevel
 
 # 获取能量管理器的日志记录器
@@ -1337,7 +1337,7 @@ class EnergyHarvester:
             if config.use_real_solar_data:
                 try:
                     # 动态导入，避免循环依赖
-                    from solar_data_loader import SolarDataLoader
+                    from experiments.common.solar_data_loader import SolarDataLoader
 
                     # 智能路径处理：自动检测运行目录
                     import os

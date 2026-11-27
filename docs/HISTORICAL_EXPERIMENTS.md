@@ -36,3 +36,15 @@ workflow or changing stored source hashes.
 Their original instructions and source files are on the archived branch.
 The native default energy timing and old CLI defaults remain unchanged.
 The current nine-strategy wrapper selects new timing explicitly.
+
+## Root layout archive
+
+The source immediately before the root-file relocation is preserved at
+[archive/pre-root-layout-20261128](https://github.com/chengdongming/PARTsim/tree/archive/pre-root-layout-20261128)
+(`a5018b0affb9707b6405379e8c9a47f86c48c620`). The older proof and B4 freeze
+documents that remain hash-validated have been moved to
+`experiments/legacy_contracts/` without changing their bytes. The old
+schema/dictionary and test-only RTA4 configurations are under
+`test/fixtures/`. Unreferenced outdated theory and V4 experiment
+documentation remain available in the archive. The latest source records
+actual moved paths in new experiment code-hash manifests.

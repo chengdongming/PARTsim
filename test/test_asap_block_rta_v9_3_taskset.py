@@ -7,16 +7,17 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_seq as seq_core
-import asap_block_rta_v9_3_taskset as ts
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_seq as seq_core
+from experiments.rta import asap_block_rta_v9_3_taskset as ts
 from experiments.v9_3 import exact_energy
 
 
 SCHEMA = (
     Path(__file__).resolve().parents[1]
-    / "docs"
-    / "ASAP_BLOCK_v1_3_10_机器合同静态冻结候选包"
+    / "test"
+    / "fixtures"
+    / "legacy_schema"
     / "ASAP_BLOCK_experiment_schema_v1_3_10.yaml"
 )
 DICTIONARY = SCHEMA.with_name("ASAP_BLOCK_data_dictionary_v1_3_10.yaml")

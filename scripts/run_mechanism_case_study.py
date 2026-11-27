@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import acceptance_ratio_test as acceptance
+from scripts import acceptance_ratio_test as acceptance
 from scripts.experiment_analysis import validate_attested_run_directory
 from scripts.experiment_analysis import validate_attested_analyzer_input
 from scripts.experiment_runner import write_analysis_artifact_attestation

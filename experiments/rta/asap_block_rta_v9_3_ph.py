@@ -17,7 +17,7 @@ from enum import Enum
 from fractions import Fraction
 from typing import Callable, Dict, Iterable, Mapping, Optional, Sequence, Tuple
 
-import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3 as core
 
 
 class PHEnvelopeStatus(str, Enum):

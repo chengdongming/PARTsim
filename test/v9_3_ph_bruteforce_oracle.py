@@ -4,8 +4,8 @@ from fractions import Fraction
 from itertools import product
 import random
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_ph as ph
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_ph as ph
 
 
 ORACLE_SEED = 930314

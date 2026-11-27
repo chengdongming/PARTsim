@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Sequence
 
 import yaml
 
-import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta as legacy_rta
 
 from . import exact_energy
 from .constrained_taskset_identity import TasksetIdentityCertificate

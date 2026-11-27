@@ -6,7 +6,7 @@ from fractions import Fraction
 from pathlib import Path
 from typing import Any, Dict, Mapping, Sequence, Tuple
 
-import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta as legacy_rta
 
 from . import exact_energy
 from .config import (

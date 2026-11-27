@@ -278,7 +278,7 @@ class ProductionTasksetProviderV2:
         generation = self.config["generation"]
         material = record.material
         try:
-            from global_task_generator import (
+            from experiments.common.global_task_generator import (
                 EnergyAwareTaskGenerator, _task_workload_candidate_identity,
             )
         except Exception as exc:
@@ -327,7 +327,7 @@ class ProductionTasksetProviderV2:
             return self._tasksets[slot]
         request = self._generation_request(record)
         try:
-            from global_task_generator import EnergyAwareTaskGenerator
+            from experiments.common.global_task_generator import EnergyAwareTaskGenerator
             factory = self._generator_factory or EnergyAwareTaskGenerator
             generator = factory(seed=request.generator_seed, energy_manager=None)
             generated, resources, dag, _historical_energy = generator.generate_taskset(

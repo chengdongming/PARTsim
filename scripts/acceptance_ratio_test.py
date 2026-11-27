@@ -53,11 +53,12 @@ rcParams['figure.figsize'] = (8, 6)
 # ============================================
 # 实验配置
 # ============================================
-CONFIG_TEMPLATE = 'system_config_unified_template.yml'
-TASK_GENERATOR = './global_task_generator.py'
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+CONFIG_TEMPLATE = str(PROJECT_ROOT / 'configs/templates/system_config_unified_template.yml')
+TASK_GENERATOR = str(PROJECT_ROOT / 'experiments/common/global_task_generator.py')
 SIMULATOR = os.environ.get('PARTSIM_RTSIM_BIN', './build/rtsim/rtsim')
-PROJECT_ROOT = Path(__file__).resolve().parent
-RTA_TOOL = str(Path(__file__).resolve().parent / 'asap_block_rta.py')
+RTA_TOOL = str(PROJECT_ROOT / 'experiments/rta/asap_block_rta.py')
 ASAP_BLOCK_ALGORITHM = 'gpfp_asap_block'
 RTA_VERSION = 'v20.4'
 RTA_INACTIVE_VERSION = 'not_used'
@@ -4105,13 +4106,13 @@ def main():
         epilog="""
 示例用法:
   # 运行完整实验并生成6张分组图表
-  python3 acceptance_ratio_test.py --run-experiment
+  python3 scripts/acceptance_ratio_test.py --run-experiment
 
   # 仅从已有数据生成图表
-  python3 acceptance_ratio_test.py --csv acceptance_ratio_experiment/acceptance_ratio_data.csv
+  python3 scripts/acceptance_ratio_test.py --csv acceptance_ratio_experiment/acceptance_ratio_data.csv
 
   # 自定义实验参数
-  python3 acceptance_ratio_test.py --run-experiment --num-points 10 --num-tasksets 5
+  python3 scripts/acceptance_ratio_test.py --run-experiment --num-points 10 --num-tasksets 5
 
 算法说明:
   ASAP系列 (贪婪策略): ASAP-Block, ASAP-NonBlock, ASAP-Sync

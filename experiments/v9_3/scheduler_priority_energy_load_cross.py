@@ -15,7 +15,7 @@ import math
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta as legacy_rta
 
 from . import perf_g
 from . import scheduler_load_cross as ordinary

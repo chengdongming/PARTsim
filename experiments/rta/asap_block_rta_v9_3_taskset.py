@@ -13,8 +13,8 @@ from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Callable, Mapping, Optional, Protocol, Sequence, Tuple
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_methods as methods
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_methods as methods
 from experiments.v9_3 import exact_energy
 
 
@@ -1051,7 +1051,7 @@ def solve_single_task_ph_v9_3(
 
     # Keep the frozen CW/LOC evidence and mutation harness independent of the
     # optional directed PH module unless PH is actually requested.
-    import asap_block_rta_v9_3_ph as ph_core
+    from experiments.rta import asap_block_rta_v9_3_ph as ph_core
 
     if window_mode is not core.EnvelopeKind.LOCAL:
         return SingleTaskSolverResult(
@@ -1109,7 +1109,7 @@ def solve_single_task_seq_v9_3(
 ) -> SingleTaskSolverResult:
     """Adapt the independent exact SEQ core without experiment wiring."""
 
-    import asap_block_rta_v9_3_seq as seq_core
+    from experiments.rta import asap_block_rta_v9_3_seq as seq_core
 
     if window_mode is not core.EnvelopeKind.LOCAL:
         return SingleTaskSolverResult(
@@ -2521,7 +2521,7 @@ def _validate_method_kernel_certificate(
             raise CertificationError("PH witness_h is outside A/H")
         return result
 
-    import asap_block_rta_v9_3_seq as seq_core
+    from experiments.rta import asap_block_rta_v9_3_seq as seq_core
 
     seq_core._validate_seq_certificate(
         w=result.candidate_response_time,
@@ -2634,7 +2634,7 @@ def _dispatch_validated_single_task_method_v9_3(
             )
             return _validate_candidate_for_task(task, result)
 
-        import asap_block_rta_v9_3_ph as ph_core
+        from experiments.rta import asap_block_rta_v9_3_ph as ph_core
 
         telemetry = _FlowTelemetry(ph_core)
         if spec.kernel is methods.V93Kernel.PH:
@@ -2740,7 +2740,7 @@ def _dispatch_validated_single_task_method_v9_3(
 
         if spec.kernel is not methods.V93Kernel.SEQ:
             raise CertificationError("unregistered mathematical kernel")
-        import asap_block_rta_v9_3_seq as seq_core
+        from experiments.rta import asap_block_rta_v9_3_seq as seq_core
 
         raw = seq_core.seq_response_time_v9_3(
             target=task,
