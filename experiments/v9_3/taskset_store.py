@@ -16,8 +16,9 @@ from typing import Any, Dict, Mapping, Sequence, Tuple
 
 import yaml
 
-import asap_block_rta as legacy_rta
-import asap_block_rta_v9_3 as rta_core
+from experiments.rta import asap_block_rta as legacy_rta
+from experiments.common.paths import resolve_system_template
+from experiments.rta import asap_block_rta_v9_3 as rta_core
 
 from .cell_model import (
     Cell, derive_seed, expand_cells, generation_dimensions, taskset_id,
@@ -49,7 +50,7 @@ from .simulation_engine import (
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-TASK_GENERATOR = PROJECT_ROOT / "global_task_generator.py"
+TASK_GENERATOR = PROJECT_ROOT / "experiments/common/global_task_generator.py"
 FROZEN_TASKSET_SCHEMA = "ASAP_BLOCK_V9_3_FROZEN_TASKSET_V4_EXACT_BINARY64"
 FROZEN_TASKSET_SEMANTIC_DOMAIN = "ASAP_BLOCK:V9.3:TASKSET_SEMANTIC:v4"
 PAIRING_MANIFEST_SCHEMA = "ASAP_BLOCK_V9_3_CORE12_PAIRING_MANIFEST_V3_EXACT_BINARY64"
@@ -179,7 +180,7 @@ def prepare_service_curve(
     config: Mapping[str, Any], run_root: Path
 ) -> ServiceCurveMaterial:
     spec = config["energy"]["service_curve"]
-    template = PROJECT_ROOT / str(spec["system_template"])
+    template = resolve_system_template(spec["system_template"], PROJECT_ROOT)
     if not template.is_file():
         raise TasksetStoreError(f"service-curve system template not found: {template}")
     capacity = Fraction(config["energy"]["battery_capacity"])

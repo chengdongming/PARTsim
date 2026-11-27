@@ -150,7 +150,7 @@ namespace RTSim {
 
         std::string enabledFrozenB4Template(const std::string &alpha) {
             const auto path = std::filesystem::path(PARTSIM_SOURCE_DIR) /
-                "v9_3_b4_priority_energy_system_template.yml";
+                "configs/templates/v9_3_b4_priority_energy_system_template.yml";
             std::string contents = readFile(path);
             replaceExactlyOnce(
                 contents, "  enabled: false", "  enabled: true");
@@ -304,7 +304,7 @@ namespace RTSim {
             ScopedLateHarvestFailureLoader() {
                 PythonGilTestGuard gil;
                 TestPyObjectPtr module(
-                    PyImport_ImportModule("energy_manager"));
+                    PyImport_ImportModule("experiments.common.energy_manager"));
                 TestPyObjectPtr original(
                     module
                         ? PyObject_GetAttrString(
@@ -1059,7 +1059,7 @@ namespace RTSim {
         ScopedHarvestConfigCallback callback;
         ScopedSingletonHarvestCleanup singleton_cleanup;
         const auto template_path = std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "v9_3_b4_priority_energy_system_template.yml";
+            "configs/templates/v9_3_b4_priority_energy_system_template.yml";
         {
             System legacy_system(template_path.string());
             ASSERT_EQ(legacy_system.schedulers.size(), 1u);

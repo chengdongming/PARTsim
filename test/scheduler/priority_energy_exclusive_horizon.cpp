@@ -445,7 +445,7 @@ void replaceExactlyOnce(
 std::string systemConfigFor(const std::string &scheduler_id) {
     std::string config = readFile(
         std::filesystem::path(PARTSIM_SOURCE_DIR) /
-        "v9_3_b4_priority_energy_system_template.yml");
+        "configs/templates/v9_3_b4_priority_energy_system_template.yml");
     replaceExactlyOnce(
         config,
         "priority_energy:\n"

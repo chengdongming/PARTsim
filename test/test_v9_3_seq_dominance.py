@@ -2,10 +2,10 @@
 
 from fractions import Fraction
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_ph as ph
-import asap_block_rta_v9_3_seq as seq
-import asap_block_rta_v9_3_taskset as taskset
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_ph as ph
+from experiments.rta import asap_block_rta_v9_3_seq as seq
+from experiments.rta import asap_block_rta_v9_3_taskset as taskset
 from test_v9_3_ph_dominance import _context
 from experiments.v9_3 import exact_energy
 

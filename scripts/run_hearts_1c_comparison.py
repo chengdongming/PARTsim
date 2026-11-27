@@ -201,7 +201,11 @@ def main() -> None:
                   code_sha256={
                       str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                       for p in (Path(__file__).resolve(), ROOT/"experiments/hearts_1c/replay.py",
-                                ROOT/"global_task_generator.py", ROOT/"experiments/v9_3/config.py",
+                                ROOT/"experiments/common/global_task_generator.py",
+                                ROOT/"experiments/common/paths.py", ROOT/"experiments/common/energy_manager.py",
+                                ROOT/"experiments/common/solar_data_loader.py",
+                                ROOT/"configs/templates/system_config_unified_template.yml",
+                                ROOT/"experiments/v9_3/config.py",
                                 ROOT/"experiments/v9_3/cell_model.py",
                                 ROOT/"experiments/v9_3/taskset_store.py",
                                 ROOT/"experiments/v9_3/scheduler_load_cross.py",

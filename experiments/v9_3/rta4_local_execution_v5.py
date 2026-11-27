@@ -1322,7 +1322,7 @@ def _dispatch_existing_worker_v5(
             ),
             "artifact_storage": operation.get("artifact_storage"),
         },
-        system_config_path=str(repository / "system_config_unified_template.yml"),
+        system_config_path=str(repository / "configs/templates/system_config_unified_template.yml"),
         energy_support_path=str(
             repository / "configs/v9_3_rta4_shared_energy_support_v2.yaml"
         ),
@@ -1427,7 +1427,7 @@ def _worker_bootstrap_v5(
             ),
             "artifact_storage": operation.get("artifact_storage"),
         },
-        system_config_path=str(repository / "system_config_unified_template.yml"),
+        system_config_path=str(repository / "configs/templates/system_config_unified_template.yml"),
         energy_support_path=str(
             repository / "configs/v9_3_rta4_shared_energy_support_v2.yaml"
         ),

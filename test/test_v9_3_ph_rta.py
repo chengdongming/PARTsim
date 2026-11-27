@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_ph as ph
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_ph as ph
 
 
 def task(name, c=1, d=5, t=7, p=1):

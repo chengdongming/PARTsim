@@ -514,7 +514,7 @@ namespace RTSim {
         }
         ensureEnergyManagerImportPath();
 
-        PyObjectPtr module(PyImport_ImportModule("energy_manager"));
+        PyObjectPtr module(PyImport_ImportModule("experiments.common.energy_manager"));
         if (!module) {
             failPythonCall("cannot import energy_manager");
         }
@@ -780,7 +780,7 @@ namespace RTSim {
             }
             ensureEnergyManagerImportPath();
 
-            PyObjectPtr module(PyImport_ImportModule("energy_manager"));
+            PyObjectPtr module(PyImport_ImportModule("experiments.common.energy_manager"));
             if (!module) {
                 failPythonCall("cannot import energy_manager");
             }

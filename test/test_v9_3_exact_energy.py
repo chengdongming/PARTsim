@@ -13,9 +13,9 @@ import subprocess
 import pytest
 import yaml
 
-import asap_block_rta as legacy_rta
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_taskset as taskset
+from experiments.rta import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_taskset as taskset
 from experiments.v9_3 import exact_energy
 from experiments.v9_3.cell_model import derive_seed, expand_cells
 from experiments.v9_3.config import ConfigError, load_config, validate_config
@@ -88,7 +88,7 @@ def test_e0_is_exact_rational_lower_bound_and_rejects_float():
 
 def test_numeric_contract_is_derived_metadata_not_normalized_config():
     raw = yaml.safe_load(
-        (ROOT / "configs/v9_3_core1_smoke.yaml").read_text(encoding="utf-8")
+        (ROOT / "test/fixtures/legacy_rta4/v9_3_core1_smoke.yaml").read_text(encoding="utf-8")
     )
     before = deepcopy(raw)
     normalized = validate_config(raw, expected_core="CORE-1")
@@ -163,7 +163,7 @@ def _reference_slow_variation_harvest(
 
 def test_harvest_materializer_matches_independent_slow_variation_reference():
     system = legacy_rta.load_system_config(
-        str(ROOT / "system_config_unified_template.yml")
+        str(ROOT / "configs/templates/system_config_unified_template.yml")
     )
     system = replace(
         system,
@@ -189,7 +189,7 @@ def test_harvest_materializer_matches_independent_slow_variation_reference():
 
 def test_synthetic_slow_variation_ignores_calendar_and_pv_parameters():
     system = legacy_rta.load_system_config(
-        str(ROOT / "system_config_unified_template.yml")
+        str(ROOT / "configs/templates/system_config_unified_template.yml")
     )
     reference = replace(
         system,
@@ -210,7 +210,7 @@ def test_synthetic_slow_variation_ignores_calendar_and_pv_parameters():
 
 def test_synthetic_slow_variation_beta_dominates_date22_reference():
     system = legacy_rta.load_system_config(
-        str(ROOT / "system_config_unified_template.yml")
+        str(ROOT / "configs/templates/system_config_unified_template.yml")
     )
     system = replace(system, use_real_solar_data=False, base_harvesting_rate=1.0)
     trace = [Fraction.from_float(value)
@@ -282,7 +282,7 @@ def test_service_curve_contract_and_exact_json_round_trip(tmp_path):
 
 def test_production_service_curve_raw_spec_round_trips_exactly(tmp_path):
     config = load_config(
-        ROOT / "configs/v9_3_core1_smoke.yaml", expected_core="CORE-1",
+        ROOT / "test/fixtures/legacy_rta4/v9_3_core1_smoke.yaml", expected_core="CORE-1",
     )
     service = prepare_service_curve(config, tmp_path / "service")
     raw = json.loads(service.raw_spec)
@@ -445,7 +445,7 @@ def test_theory_and_numeric_contract_identity_are_full_and_verified():
 
 
 def test_core1_methods_and_frozen_generation_seed_are_unchanged():
-    config = load_config(ROOT / "configs/v9_3_core1_smoke.yaml", expected_core="CORE-1")
+    config = load_config(ROOT / "test/fixtures/legacy_rta4/v9_3_core1_smoke.yaml", expected_core="CORE-1")
     assert config["analysis"]["variants"] == ["CW_THETA_CW", "LOC_THETA_LOC"]
     cell = expand_cells(config)[0]
     assert cell.generation_id == "a11981d1b910d9809bb6cbca0278d059069322c4d37ddef316801e68090932a0"

@@ -59,12 +59,12 @@ from experiments.v9_3.simulation_result import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
-V6_SMOKE = ROOT / "configs/v9_3_rta4_core3_v6_smoke_UNAUTHORIZED.yaml"
-V7_SMOKE = ROOT / "configs/v9_3_rta4_core3_v7_smoke_UNAUTHORIZED.yaml"
+V6_SMOKE = ROOT / "test/fixtures/legacy_rta4/v9_3_rta4_core3_v6_smoke_UNAUTHORIZED.yaml"
+V7_SMOKE = ROOT / "test/fixtures/legacy_rta4/v9_3_rta4_core3_v7_smoke_UNAUTHORIZED.yaml"
 V7_CALIBRATION = (
-    ROOT / "configs/v9_3_rta4_core3_calibration_v7_UNAUTHORIZED.yaml"
+    ROOT / "test/fixtures/legacy_rta4/v9_3_rta4_core3_calibration_v7_UNAUTHORIZED.yaml"
 )
-SYSTEM = ROOT / "system_config_unified_template.yml"
+SYSTEM = ROOT / "configs/templates/system_config_unified_template.yml"
 
 
 def _loaded_v7():

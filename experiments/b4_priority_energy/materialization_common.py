@@ -26,13 +26,13 @@ REPO_ROOT = B4_DIR.parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import acceptance_ratio_test as acceptance
+from scripts import acceptance_ratio_test as acceptance
 
 
 MATERIALIZATION_PROTOCOL_PATH = B4_DIR / "materialization_protocol_v1.json"
 ADMISSION_PROTOCOL_PATH = B4_DIR / "base_pool_admission_protocol_v1.json"
-TASK_GENERATOR_PATH = REPO_ROOT / "global_task_generator.py"
-SYSTEM_TEMPLATE_PATH = REPO_ROOT / "v9_3_b4_priority_energy_system_template.yml"
+TASK_GENERATOR_PATH = REPO_ROOT / "experiments/common/global_task_generator.py"
+SYSTEM_TEMPLATE_PATH = REPO_ROOT / "configs/templates/v9_3_b4_priority_energy_system_template.yml"
 SEMANTIC_HASH_PLACEHOLDER = "__B4PE_MATERIALIZED_TASKSET_SEMANTIC_HASH__"
 
 PROCESSORS = 4

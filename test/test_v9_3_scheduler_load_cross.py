@@ -4585,7 +4585,7 @@ def _real_wholepass_observation(
         raise AssertionError(f"unknown observation mode: {mode}")
     return simulation_engine_module.run_paired_simulation(
         simulation_id_value=f"{label}-{mode}-{scheduler}-{priority_policy}",
-        base_system_path=Path("system_config_unified_template.yml"),
+        base_system_path=Path("configs/templates/system_config_unified_template.yml"),
         run_root=root / f"{label}-{mode}-{scheduler}-{priority_policy}",
         task_payload=task_payload, taskset_hash="a" * 64,
         processors=processors,

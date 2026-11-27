@@ -18,9 +18,9 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import yaml
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_methods as methods
-import asap_block_rta_v9_3_taskset as taskset_api
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_methods as methods
+from experiments.rta import asap_block_rta_v9_3_taskset as taskset_api
 from experiments.v9_3 import exact_energy
 from experiments.v9_3.rta4_physical_core_slots_v3 import (
     PhysicalCoreSlotPoolV3,
@@ -31,7 +31,7 @@ from experiments.v9_3.rta4_physical_core_slots_v3 import (
     SlotWorkerExitV3,
     discover_cpu_topology_v3,
 )
-from global_task_generator import EnergyAwareTaskGenerator
+from experiments.common.global_task_generator import EnergyAwareTaskGenerator
 
 
 FROZEN_UC = tuple(Fraction(str(value)) for value in ("0.1", "0.2", "0.3", "0.4", "0.5", "0.6", "0.7", "0.8"))

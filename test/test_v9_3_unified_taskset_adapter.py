@@ -4,11 +4,11 @@ from fractions import Fraction
 
 import pytest
 
-import asap_block_rta_v9_3 as core
-import asap_block_rta_v9_3_methods as methods
-import asap_block_rta_v9_3_ph as ph_core
-import asap_block_rta_v9_3_seq as seq_core
-import asap_block_rta_v9_3_taskset as taskset
+from experiments.rta import asap_block_rta_v9_3 as core
+from experiments.rta import asap_block_rta_v9_3_methods as methods
+from experiments.rta import asap_block_rta_v9_3_ph as ph_core
+from experiments.rta import asap_block_rta_v9_3_seq as seq_core
+from experiments.rta import asap_block_rta_v9_3_taskset as taskset
 from experiments.v9_3 import exact_energy
 
 

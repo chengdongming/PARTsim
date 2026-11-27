@@ -93,7 +93,7 @@ class SameSlotSimulatorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             system, task = materialize_simulation_inputs(
-                ROOT/"system_config_unified_template.yml", root, payload,
+                ROOT/"configs/templates/system_config_unified_template.yml", root, payload,
                 processors=1,initial_battery=Fraction(0),
                 battery_capacity=Fraction(1,10000),scheduler_id="gpfp_asap_block",
                 service_curve=dict(solar_scale="100",use_real_solar_data=False),
@@ -130,7 +130,7 @@ class SameSlotSimulatorTests(unittest.TestCase):
                             tag=f"{scheduler}-{timing}"
                             execution = run_paired_simulation(
                                 simulation_id_value=tag,
-                                base_system_path=ROOT/"system_config_unified_template.yml",
+                                base_system_path=ROOT/"configs/templates/system_config_unified_template.yml",
                                 run_root=Path(temp)/tag, task_payload=payload,
                                 taskset_hash="a"*64, processors=1, exact_e0=Fraction(0),
                                 energy_config=dict(simulation_initial_battery="0",

@@ -19,7 +19,7 @@ from collections import defaultdict
 from datetime import datetime
 
 # 统一日志系统
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 try:
     from utils.unified_logger import get_taskgen_logger
     logger = get_taskgen_logger()
@@ -148,7 +148,7 @@ def _resolve_frequency_ratios(model: Dict[str, Any]) -> Dict[int, float]:
 
 # 导入能量管理器 - 修复导入问题
 try:
-    from energy_manager import EnergyManager, get_energy_manager
+    from experiments.common.energy_manager import EnergyManager, get_energy_manager
     # 添加一个兼容性包装函数
     def create_energy_manager(system_config: Dict) -> EnergyManager:
         """创建能量管理器的兼容性函数"""

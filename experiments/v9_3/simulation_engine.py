@@ -20,7 +20,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 import yaml
 
-import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta as legacy_rta
 
 from .censoring import next_horizon
 from .config import canonical_json, domain_hash, fraction_text

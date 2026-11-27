@@ -53,14 +53,14 @@ def _mode_rows(mode: str) -> tuple[list[dict], list[dict], list[dict]]:
     if mode == "smoke":
         skeletons = generate_scaled_skeletons(
             target_ucs=(U_C_VALUES[0],), count=1,
-            system_config=PROJECT_ROOT / "system_config_unified_template.yml",
+            system_config=PROJECT_ROOT / "configs/templates/system_config_unified_template.yml",
             allow_bounded=True,
         )
         tasksets = expand_condition_tasksets(skeletons)
         requests = make_requests(tasksets, timeout=10.0)
         return skeletons, tasksets, requests
     skeletons = generate_scaled_skeletons(
-        system_config=PROJECT_ROOT / "system_config_unified_template.yml",
+        system_config=PROJECT_ROOT / "configs/templates/system_config_unified_template.yml",
     )
     tasksets = expand_condition_tasksets(skeletons)
     requests = make_requests(tasksets, timeout=FORMAL_TIMEOUT_FIRST)

@@ -13,7 +13,8 @@ from typing import Any, Dict, Iterable, Mapping
 
 import yaml
 
-import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta as legacy_rta
+from experiments.common.paths import resolve_system_template
 
 from . import exact_energy
 
@@ -498,9 +499,7 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
     system_template = service.get("system_template")
     if not isinstance(system_template, str) or not system_template:
         raise ConfigError("energy.service_curve.system_template must be a non-empty path")
-    system_path = Path(system_template)
-    if not system_path.is_absolute():
-        system_path = PROJECT_ROOT / system_path
+    system_path = resolve_system_template(system_template, PROJECT_ROOT)
     contract = prepare_task_workload_contract(config, system_path)
     generation["workload_contract"] = contract
     if "require_real_solar_data" in service and not isinstance(

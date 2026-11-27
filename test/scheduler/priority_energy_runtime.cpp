@@ -142,7 +142,7 @@ namespace RTSim {
         }
 
         TestPyObjectPtr importEnergyManagerForTest() {
-            TestPyObjectPtr module(PyImport_ImportModule("energy_manager"));
+            TestPyObjectPtr module(PyImport_ImportModule("experiments.common.energy_manager"));
             if (!module) {
                 throwPythonTestError("cannot import energy_manager");
             }
@@ -742,7 +742,7 @@ namespace RTSim {
                 EnergyBridge::ensureConfigCallbackRegistered();
                 const std::filesystem::path system_template =
                     std::filesystem::path(PARTSIM_SOURCE_DIR) /
-                    "v9_3_b4_priority_energy_system_template.yml";
+                    "configs/templates/v9_3_b4_priority_energy_system_template.yml";
                 ASSERT_TRUE(ConfigManager::getInstance().loadSystemConfig(
                     system_template.string()));
                 ASSERT_TRUE(
@@ -843,7 +843,7 @@ namespace RTSim {
 
         const std::filesystem::path legacy =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "system_config_unified_template.yml";
+            "configs/templates/system_config_unified_template.yml";
         ASSERT_TRUE(std::filesystem::is_regular_file(legacy));
         const PythonManagerSnapshot after =
             pythonManagerSnapshot(generation);
@@ -1564,7 +1564,7 @@ namespace RTSim {
     TEST(PriorityEnergyProfileConfig, LegacyTemplateRemainsDisabled) {
         const std::filesystem::path legacy =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "system_config_unified_template.yml";
+            "configs/templates/system_config_unified_template.yml";
         const auto parsed = loadPriorityEnergyProfileConfig(legacy.string());
         EXPECT_FALSE(parsed.enabled);
         EXPECT_TRUE(parsed.profile_id.empty());
@@ -1582,7 +1582,7 @@ namespace RTSim {
          MaterializedLegacyTemplateConstructsAllNineSchedulers) {
         const std::filesystem::path legacy =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "system_config_unified_template.yml";
+            "configs/templates/system_config_unified_template.yml";
         std::ifstream input(legacy);
         ASSERT_TRUE(input.good());
         const std::string template_text(
@@ -1634,7 +1634,7 @@ namespace RTSim {
     TEST(PriorityEnergyProfileConfig, Phase2B1TemplateIsExplicitlyDisabled) {
         const std::filesystem::path system_template =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "v9_3_b4_priority_energy_system_template.yml";
+            "configs/templates/v9_3_b4_priority_energy_system_template.yml";
         const auto parsed =
             loadPriorityEnergyProfileConfig(system_template.string());
         EXPECT_FALSE(parsed.enabled);
@@ -1770,7 +1770,7 @@ namespace RTSim {
         bool hidden = false;
         {
             const PyGILState_STATE state = PyGILState_Ensure();
-            PyObject *module = PyImport_ImportModule("energy_manager");
+            PyObject *module = PyImport_ImportModule("experiments.common.energy_manager");
             if (module != nullptr) {
                 saved_loader =
                     PyObject_GetAttrString(module, "load_config_for_cpp");
@@ -1798,7 +1798,7 @@ namespace RTSim {
         {
             const PyGILState_STATE state = PyGILState_Ensure();
             no_pending_error = PyErr_Occurred() == nullptr;
-            PyObject *module = PyImport_ImportModule("energy_manager");
+            PyObject *module = PyImport_ImportModule("experiments.common.energy_manager");
             if (module != nullptr) {
                 restored =
                     PyObject_SetAttrString(
@@ -1866,7 +1866,7 @@ namespace RTSim {
          SystemDescriptorStrictFailurePrecedesOrdinarySystemConstruction) {
         const std::filesystem::path template_path =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "v9_3_b4_priority_energy_system_template.yml";
+            "configs/templates/v9_3_b4_priority_energy_system_template.yml";
 
         SystemDescriptor descriptor(template_path.string());
         ConfigManager &config = ConfigManager::getInstance();

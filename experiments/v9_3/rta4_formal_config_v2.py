@@ -88,10 +88,10 @@ def default_rta4_formal_config_v2(core: str) -> Dict[str, Any]:
         "workload_config": "system_config_unified_template.yml",
         "energy_support": "configs/v9_3_rta4_shared_energy_support_v2.yaml",
         "system_config_sha256": hashlib.sha256(
-            (PROJECT_ROOT / "system_config_unified_template.yml").read_bytes()
+            (PROJECT_ROOT / "configs/templates/system_config_unified_template.yml").read_bytes()
         ).hexdigest(),
         "workload_config_sha256": hashlib.sha256(
-            (PROJECT_ROOT / "system_config_unified_template.yml").read_bytes()
+            (PROJECT_ROOT / "configs/templates/system_config_unified_template.yml").read_bytes()
         ).hexdigest(),
         "energy_support_sha256": hashlib.sha256(
             (PROJECT_ROOT / "configs/v9_3_rta4_shared_energy_support_v2.yaml").read_bytes()

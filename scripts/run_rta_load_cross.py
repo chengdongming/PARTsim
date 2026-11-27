@@ -144,7 +144,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--latency", default="2/5")
     parser.add_argument("--timeout-first", type=float, default=600.0)
     parser.add_argument("--timeout-retry", type=float, default=1200.0)
-    parser.add_argument("--system-config", default=str(PROJECT_ROOT / "system_config_unified_template.yml"))
+    parser.add_argument("--system-config", default=str(PROJECT_ROOT / "configs/templates/system_config_unified_template.yml"))
     parser.add_argument("--cells", default=None, help='custom cells such as "0.1:0.5,0.3:0.8"')
     parser.add_argument("--resume", action="store_true")
     return parser

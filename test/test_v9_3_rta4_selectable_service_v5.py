@@ -574,7 +574,7 @@ def test_non_core3_rejects_simulation_tick_ms():
 
 def test_core3_example_preflight_reports_explicit_simulation_tick_ms():
     summary = preflight_campaign_v5(
-        "configs/v9_3_rta4_core3_exact_service_v5_example_UNAUTHORIZED.yaml"
+        "test/fixtures/legacy_rta4/v9_3_rta4_core3_exact_service_v5_example_UNAUTHORIZED.yaml"
     )
     assert summary["simulation_tick_ms"] == 1
     assert summary["execution_started"] is False
@@ -693,7 +693,7 @@ def test_preflight_does_not_call_solver(monkeypatch):
         forbidden_solver,
     )
     summary = preflight_campaign_v5(
-        "configs/v9_3_rta4_core1_exact_service_v5_example_UNAUTHORIZED.yaml"
+        "test/fixtures/legacy_rta4/v9_3_rta4_core1_exact_service_v5_example_UNAUTHORIZED.yaml"
     )
     assert summary["execution_started"] is False
 
@@ -1089,7 +1089,7 @@ def test_core3_simulator_failure_uses_only_bounded_stderr(
         production_manifest={"simulator_path": str(simulator)},
         system_config_path=(
             Path(__file__).resolve().parents[1]
-            / "system_config_unified_template.yml"
+            / "configs/templates/system_config_unified_template.yml"
         ),
         energy_support_path=tmp_path / "unused-energy-support",
         output_root=output,

@@ -178,7 +178,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-retry", type=float, default=1200.0)
     parser.add_argument(
         "--system-config",
-        default=str(PROJECT_ROOT / "system_config_unified_template.yml"),
+        default=str(PROJECT_ROOT / "configs/templates/system_config_unified_template.yml"),
     )
     parser.add_argument("--resume", action="store_true")
     return parser

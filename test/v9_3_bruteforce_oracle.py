@@ -8,7 +8,7 @@ checks every mathematical constraint directly.
 import itertools
 from fractions import Fraction
 
-from asap_block_rta_v9_3 import EnvelopeKind
+from experiments.rta.asap_block_rta_v9_3 import EnvelopeKind
 
 
 def _workload(task, length, theta):

@@ -39,6 +39,7 @@ old-model and new-model results.
 PARTSIM_TEST_BINARY=build/rtsim/rtsim python -m unittest discover -s test -p test_same_slot_energy.py
 PARTSIM_TEST_BINARY=build/rtsim/rtsim python -m unittest discover -s test -p test_hearts_1c_comparison.py
 python -m unittest discover -s test -p test_current_research_campaigns.py
+python -m unittest discover -s test -p test_repository_layout.py
 python experiments/asapblock_unlimited/test_reproduction.py
 ```
 

@@ -198,9 +198,9 @@ class SchedulerTests(unittest.TestCase):
 
 class GeneratorTests(unittest.TestCase):
     def test_bounded_sampler_all_loads_and_legacy_compatibility(self):
-        from global_task_generator import UUniFastDiscard
+        from experiments.common.global_task_generator import UUniFastDiscard
         from unittest.mock import patch
-        with patch("global_task_generator.random.random", return_value=0.25):
+        with patch("experiments.common.global_task_generator.random.random", return_value=0.25):
             self.assertEqual(UUniFastDiscard().generate(2, 1.0, 0.01, 0.8), [0.75, 0.25])
         for n in (4, 10):
             max_util = 0.99 if n == 4 else 0.8
@@ -273,7 +273,7 @@ class NativeConformanceTests(unittest.TestCase):
                                     release_cutoff=18)
                 reference = run_method(w, method, details=True)
                 system, tasks_path = materialize_simulation_inputs(
-                    ROOT/"system_config_unified_template.yml", root, payload, processors=2,
+                    ROOT/"configs/templates/system_config_unified_template.yml", root, payload, processors=2,
                     initial_battery=F(0), battery_capacity=F(1,1000), scheduler_id=scheduler,
                     service_curve=dict(solar_scale="1", use_real_solar_data=False), release_horizon=18)
                 text = "\n".join(line for line in system.read_text().splitlines()

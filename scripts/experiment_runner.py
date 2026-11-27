@@ -16,7 +16,7 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXPERIMENT_SCRIPT = PROJECT_ROOT / 'acceptance_ratio_test.py'
+EXPERIMENT_SCRIPT = PROJECT_ROOT / 'scripts/acceptance_ratio_test.py'
 PROVENANCE_SCHEMA_VERSION = 3
 RESULT_FILES = (
     'acceptance_ratio_data.csv',
@@ -112,9 +112,9 @@ def _load_json_no_duplicates(text):
 def _formal_input_hashes():
     inputs = {}
     for relative in (
-        'acceptance_ratio_test.py',
-        'system_config_unified_template.yml',
-        'global_task_generator.py',
+        'scripts/acceptance_ratio_test.py',
+        'configs/templates/system_config_unified_template.yml',
+        'experiments/common/global_task_generator.py',
     ):
         path = PROJECT_ROOT / relative
         inputs[relative] = {
@@ -181,7 +181,7 @@ ANALYSIS_PRODUCER_PROFILES = {
         'code_files': (
             'scripts/experiment_runner.py',
             'scripts/experiment_analysis.py',
-            'acceptance_ratio_test.py',
+            'scripts/acceptance_ratio_test.py',
         ),
     },
     'mechanism_case_selection_v1': {
@@ -210,7 +210,7 @@ ANALYSIS_PRODUCER_PROFILES = {
             'scripts/run_scheduler_diversity_audit.py',
             'scripts/run_mechanism_case_study.py',
             'scripts/experiment_runner.py',
-            'acceptance_ratio_test.py',
+            'scripts/acceptance_ratio_test.py',
         ),
     },
     'mechanism_case_study_v1': {
@@ -228,7 +228,7 @@ ANALYSIS_PRODUCER_PROFILES = {
         'code_files': (
             'scripts/run_mechanism_case_study.py',
             'scripts/experiment_runner.py',
-            'acceptance_ratio_test.py',
+            'scripts/acceptance_ratio_test.py',
         ),
     },
 }
@@ -379,7 +379,7 @@ def _case_key(case_type, seed, utilization, task_idx, scheduler):
 
 
 def _validate_trace_backed_row(row, matched, scheduler):
-    import acceptance_ratio_test as acceptance
+    from scripts import acceptance_ratio_test as acceptance
     status = str(row.get('simulation_status', '')).strip()
     if status not in {'accepted', 'rejected'}:
         raise ValueError('formal derived row lacks a valid simulation result')
@@ -1037,7 +1037,7 @@ def _artifact_record(run_dir, relative_path):
 
 def _validate_result_semantics(run_dir, validate_mutable_sources=True,
                                expected_rta_enabled=None):
-    import acceptance_ratio_test as acceptance
+    from scripts import acceptance_ratio_test as acceptance
 
     run_dir = Path(run_dir).resolve()
     _fields, per_rows = _read_csv_rows(run_dir / 'per_taskset_results.csv')

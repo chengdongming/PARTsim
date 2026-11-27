@@ -11,7 +11,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import asap_block_rta_v9_3 as v93
+from experiments.rta import asap_block_rta_v9_3 as v93
 from v9_3_bruteforce_oracle import (
     brute_force_complete_envelope,
     brute_force_local_envelope,

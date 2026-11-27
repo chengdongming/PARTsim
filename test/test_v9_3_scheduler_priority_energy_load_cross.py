@@ -169,7 +169,7 @@ def test_runtime_power_reproduces_scheduler_operation_order():
         "T": 10, "P": "1/2500", "workload": "hash", "arrival_offset": 0,
     },)
     powers = experiment.runtime_task_powers(
-        payload, {"0": "2"}, Path("v9_3_b4_priority_energy_system_template.yml"),
+        payload, {"0": "2"}, Path("configs/templates/v9_3_b4_priority_energy_system_template.yml"),
     )
     assert powers["0"]["runtime_power_float"] == pytest.approx(0.0008)
     assert powers["0"]["runtime_power_binary64_hex"] == powers["0"]["runtime_power_float"].hex()

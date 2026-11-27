@@ -1,6 +1,6 @@
 import pytest
 
-import global_task_generator as task_generator
+from experiments.common import global_task_generator as task_generator
 
 
 def test_uunifast_discard_uses_standard_zero_based_recurrence(monkeypatch):

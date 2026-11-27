@@ -86,7 +86,7 @@ namespace {
                     .parent_path()
                     .parent_path()
                     .parent_path() /
-                "v9_3_b4_priority_energy_system_template.yml")
+                "configs/templates/v9_3_b4_priority_energy_system_template.yml")
             .string();
     }
 

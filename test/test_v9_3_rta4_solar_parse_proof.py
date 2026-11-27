@@ -13,7 +13,7 @@ import struct
 import pytest
 import yaml
 
-import asap_block_rta as legacy_rta
+from experiments.rta import asap_block_rta as legacy_rta
 from experiments.v9_3 import solar_parse_proof as proof_module
 from experiments.v9_3.config import canonical_json, domain_hash
 from experiments.v9_3.simulation_engine import (
@@ -39,9 +39,9 @@ from scripts import build_v9_3_rta4_solar_parse_proof as proof_cli
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BASE_SYSTEM = ROOT / "system_config_unified_template.yml"
+BASE_SYSTEM = ROOT / "configs/templates/system_config_unified_template.yml"
 CANONICAL_SUPPORT = (
-    ROOT / "configs/v9_3_rta4_core3_simulation_energy_support_v1.yaml"
+    ROOT / "test/fixtures/legacy_rta4/v9_3_rta4_core3_simulation_energy_support_v1.yaml"
 )
 CANONICAL_SOLAR = ROOT / "data/processed/shenyang_solar_minute.csv"
 VERIFIER_SOURCE = ROOT / "tools/rta4_solar_stod_verifier.cpp"

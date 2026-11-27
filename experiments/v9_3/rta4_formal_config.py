@@ -16,7 +16,7 @@ from typing import Any, Dict, Mapping
 
 import yaml
 
-import asap_block_rta_v9_3_methods as method_registry
+from experiments.rta import asap_block_rta_v9_3_methods as method_registry
 
 from . import exact_energy
 from .constrained_taskset_identity import (
