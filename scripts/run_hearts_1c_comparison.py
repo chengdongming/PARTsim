@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from experiments.hearts_1c.replay import Task, Workload, run_method
-from experiments.v9_3 import perf_g, scheduler_load_cross as existing
+from experiments.pipeline import task_generation as perf_g, scheduler_load_cross as existing
 
 SUITES = {
     "hearts": (4, ("HEARTS-1C", "GLOBAL-AB", "GLOBAL-AN")),
@@ -205,11 +205,7 @@ def main() -> None:
                                 ROOT/"experiments/common/paths.py", ROOT/"experiments/common/energy_manager.py",
                                 ROOT/"experiments/common/solar_data_loader.py",
                                 ROOT/"configs/templates/system_config_unified_template.yml",
-                                ROOT/"experiments/v9_3/config.py",
-                                ROOT/"experiments/v9_3/cell_model.py",
-                                ROOT/"experiments/v9_3/taskset_store.py",
-                                ROOT/"experiments/v9_3/scheduler_load_cross.py",
-                                ROOT/"experiments/v9_3/simulation_engine.py")
+                                *sorted((ROOT/"experiments/pipeline").glob("*.py")))
                   })
     (root/"config.json").write_text(json.dumps(config, indent=2)+"\n", encoding="utf-8")
     all_pairs = []

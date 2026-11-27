@@ -13,8 +13,8 @@ import tempfile
 import unittest
 
 from experiments.same_slot import ab_rta
-from experiments.v9_3.simulation_engine import run_paired_simulation
-from experiments.v9_3.simulation_result import SimulationStatus
+from experiments.pipeline.simulation_engine import run_paired_simulation
+from experiments.pipeline.simulation_result import SimulationStatus
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -84,7 +84,7 @@ class SameSlotRTATests(unittest.TestCase):
 
 class SameSlotSimulatorTests(unittest.TestCase):
     def test_release_snapshot_precedes_harvest_and_idle_tail_reaches_horizon(self):
-        from experiments.v9_3.simulation_engine import materialize_simulation_inputs
+        from experiments.pipeline.simulation_engine import materialize_simulation_inputs
         binary = Path(os.getenv("PARTSIM_TEST_BINARY",ROOT/"build/rtsim/rtsim"))
         if not binary.is_file():
             self.skipTest("rebuild simulator or set PARTSIM_TEST_BINARY")

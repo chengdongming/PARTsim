@@ -1,7 +1,7 @@
 # Current nine-strategy comparison
 
 All new comparisons use the same-slot energy recurrence. The implementation is
-shared with `experiments/v9_3/scheduler_load_cross.py`, the native nine C++
+shared with `experiments/pipeline/scheduler_load_cross.py`, the native nine C++
 schedulers, and the existing trace validator. The wrapper
 `scripts/run_scheduler_comparison.py` fixes the energy timing and defaults to
 zero initial energy. It rejects legacy A-implicit V1/supplement modes.

@@ -16,9 +16,15 @@ def resolve_system_template(value, project_root=PROJECT_ROOT):
     # material. Keep the logical strings; only resolve the physical location.
     if not path.is_absolute():
         if str(path) in LEGACY_TEMPLATE_NAMES:
-            return root / "configs" / "templates" / path
+            return root / "configs" / "templates" / (
+                "priority_energy_system_template.yml" if path.name ==
+                "v9_3_b4_priority_energy_system_template.yml" else path.name
+            )
         return root / path
     for name in LEGACY_TEMPLATE_NAMES:
         if path == root / name:
-            return root / "configs" / "templates" / name
+            return root / "configs" / "templates" / (
+                "priority_energy_system_template.yml" if name ==
+                "v9_3_b4_priority_energy_system_template.yml" else name
+            )
     return path

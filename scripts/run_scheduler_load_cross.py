@@ -25,11 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experiments.v9_3 import perf_g, scheduler_load_cross as experiment
-from experiments.v9_3.parallel_prepare import run_prepare_jobs, validate_workers
-from experiments.v9_3 import simulation_engine
-from experiments.v9_3.performance_outcome import evaluate_outcome
-from experiments.v9_3.simulation_engine import SimulationStatus, run_paired_simulation
+from experiments.pipeline import task_generation as perf_g, scheduler_load_cross as experiment
+from experiments.pipeline.parallel_prepare import run_prepare_jobs, validate_workers
+from experiments.pipeline import simulation_engine
+from experiments.pipeline.performance_outcome import evaluate_outcome
+from experiments.pipeline.simulation_engine import SimulationStatus, run_paired_simulation
 
 
 def write_json(path: Path, value: Any) -> None:

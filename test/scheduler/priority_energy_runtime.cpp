@@ -742,7 +742,7 @@ namespace RTSim {
                 EnergyBridge::ensureConfigCallbackRegistered();
                 const std::filesystem::path system_template =
                     std::filesystem::path(PARTSIM_SOURCE_DIR) /
-                    "configs/templates/v9_3_b4_priority_energy_system_template.yml";
+                    "configs/templates/priority_energy_system_template.yml";
                 ASSERT_TRUE(ConfigManager::getInstance().loadSystemConfig(
                     system_template.string()));
                 ASSERT_TRUE(
@@ -1634,7 +1634,7 @@ namespace RTSim {
     TEST(PriorityEnergyProfileConfig, Phase2B1TemplateIsExplicitlyDisabled) {
         const std::filesystem::path system_template =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "configs/templates/v9_3_b4_priority_energy_system_template.yml";
+            "configs/templates/priority_energy_system_template.yml";
         const auto parsed =
             loadPriorityEnergyProfileConfig(system_template.string());
         EXPECT_FALSE(parsed.enabled);
@@ -1866,7 +1866,7 @@ namespace RTSim {
          SystemDescriptorStrictFailurePrecedesOrdinarySystemConstruction) {
         const std::filesystem::path template_path =
             std::filesystem::path(PARTSIM_SOURCE_DIR) /
-            "configs/templates/v9_3_b4_priority_energy_system_template.yml";
+            "configs/templates/priority_energy_system_template.yml";
 
         SystemDescriptor descriptor(template_path.string());
         ConfigManager &config = ConfigManager::getInstance();

@@ -214,8 +214,8 @@ class GeneratorTests(unittest.TestCase):
                     self.assertTrue(all(0.01 - 1e-12 <= x <= max_util + 1e-12 for x in draws))
 
     def test_sampler_is_identified_without_changing_legacy_generation_id(self):
-        from experiments.v9_3 import scheduler_load_cross as existing
-        from experiments.v9_3.cell_model import generation_dimensions
+        from experiments.pipeline import scheduler_load_cross as existing
+        from experiments.pipeline.cell_model import generation_dimensions
         cfg = existing._config(26, utilizations=(F("9/10"),), count=1,
                                processors=4, tasks=4, period_min=40, period_max=200,
                                min_task_util=F("1/100"), max_task_util=F("99/100"),
@@ -249,7 +249,7 @@ class PairingTests(unittest.TestCase):
 
 class NativeConformanceTests(unittest.TestCase):
     def test_global_reference_matches_actual_same_slot_binary(self):
-        from experiments.v9_3.simulation_engine import materialize_simulation_inputs
+        from experiments.pipeline.simulation_engine import materialize_simulation_inputs
         binary = Path(os.getenv("PARTSIM_TEST_BINARY", ROOT/"build/rtsim/rtsim"))
         if not binary.is_file():
             self.skipTest("rebuild PARTsim or set PARTSIM_TEST_BINARY")
