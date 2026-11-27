@@ -99,3 +99,45 @@ Includes analytic/flow checks, finite beta boundary cases, refusal of
 wrong-model certificates and an all-nine-scheduler finite-capacity
 regression. The C++ harvest-runtime unit tests also cover time zero,
 overflow after debit and no extra harvest at the horizon.
+
+## Paired formal-campaign infrastructure
+
+The new `scripts/run_same_slot_rta_campaign.py` prepares the original
+**hypothetical synthetic inputs**, checks every frozen cohort fingerprint,
+then creates fresh same-slot model and case identities. No measured release
+floor or historical result is reinterpreted. Each individual method runs in
+a separate bounded subprocess; certificates are replayed by the existing
+solver. Results, input hashes, source hashes, paired statuses, bounds, and
+completed-only timing statistics are persisted. A timeout is unresolved,
+not non-certification. A technical error does not produce a COMPLETE marker.
+
+```sh
+python scripts/run_same_slot_rta_campaign.py prepare --output runs/rta-inputs
+python scripts/run_same_slot_rta_campaign.py plan --source-dir runs/rta-inputs --suite coverage
+python scripts/run_same_slot_rta_campaign.py run --source-dir runs/rta-inputs \
+  --suite constructed --limit 3 --output runs/current-rta-smoke
+python scripts/run_same_slot_rta_campaign.py run --source-dir runs/rta-inputs \
+  --suite coverage --workers 4 --output runs/current-rta-coverage
+```
+
+| Suite | Full input count | Paired methods |
+|---|---:|---|
+| coverage | 1920 | same-slot analytic, conservative translated SEQ |
+| sensitivity | 720 | same-slot analytic, conservative translated SEQ |
+| flow | 576 | same-slot analytic, same-slot flow |
+| scaling | 390 | same-slot analytic, conservative translated SEQ (serial only) |
+| constructed | 180 | same-slot analytic, same-slot flow |
+
+These are reproducible full-cohort plans for new runs, not yet full new
+experimental results. A run with `--limit` is explicitly a bounded check.
+Resume requires the same source, code, budget and configuration. Complete
+outputs include `config.json`, `inputs.json`, `results.jsonl`,
+`summary.csv`, `paired.csv` and `COMPLETE.json`. Common-certified R/D
+statistics use paired inputs only; paired completed CPU timings omit
+timeouts and errors. The flow suite reports disagreements rather than
+assuming global equivalence.
+
+The old ablation predicates were developed under debit-before-harvest.
+They are not reused as if proven for same-slot. New ablation and
+RTA-to-simulation WCRT experiments need separate model-specific validation;
+a difference between two upper bounds is **not** a measured WCRT error.
