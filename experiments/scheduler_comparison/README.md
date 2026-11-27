@@ -20,6 +20,11 @@ python scripts/analyze_scheduler_load_cross.py --input runs/current-ue
 ```
 
 Use the existing `--simulator`, `--workers`, `--prepare-workers`, and
-`--parse-concurrency` options as appropriate. The analyzer writes
-`same_slot_summary.csv`; do not stitch it into the old debit-before-harvest
-results. Historical commands stay compatible for reproducibility.
+`--parse-concurrency` options as appropriate. After validating the completed
+results, the analyzer writes `same_slot_summary.csv` and, using Matplotlib,
+`same_slot_figure_scheduler_<uc|ue>_<deadline_mode>.png` for each scan and
+deadline mode in the run. The figures show WholePass with 95% Wilson
+intervals; fixed-supply panels identify their reference U_E. Their filenames
+are listed in `same_slot_analysis_report.json`. To plot a completed same-slot
+run, only the analysis command is needed. Keep these figures and results
+separate from the old debit-before-harvest results.

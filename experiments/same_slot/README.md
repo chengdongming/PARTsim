@@ -50,7 +50,10 @@ For the canonical A-implicit grid use the existing formal campaign
 arguments with `--energy-timing same-slot` and a fresh output directory.
 It uses the trace path rather than the historical compact fast observer.
 The analysis publishes `same_slot_summary.csv` (paired whole-taskset pass
-ratios and Wilson intervals), not a historical sealed figure dataset.
+ratios and Wilson intervals) and separate same-slot PNGs using Matplotlib.
+The filenames identify the scan axis and deadline mode, and the plot titles
+identify the priority policy and initial energy. See the
+[nine-strategy comparison guide](../scheduler_comparison/README.md).
 The old B4 schema3 and fast observer are intentionally not accepted in
 same-slot mode until their own result contracts are extended.
 
