@@ -1907,6 +1907,94 @@ def _analyze_v6(
     return report
 
 
+def analyze_same_slot(root: Path, config: dict[str, Any]) -> dict[str, Any]:
+    """Keep new timing results out of the sealed historical figure contracts."""
+    if config.get("run_identity") != experiment.run_identity(config):
+        raise ValueError("same-slot run identity mismatch")
+    requests = read_jsonl(root / "requests.jsonl")
+    results = read_jsonl(root / "results.jsonl")
+    by_id = {row["request_id"]: row for row in requests}
+    by_result = {row["request_id"]: row for row in results}
+    if (len(by_id) != len(requests) or len(by_result) != len(results)
+            or set(by_id) != set(by_result)
+            or len(requests) != config["expected_request_count"]):
+        raise ValueError("same-slot run is incomplete or has duplicate requests")
+    from experiments.v9_3.simulation_result import validate_same_slot_energy_summary
+    groups = {}
+    paired_inputs = {}
+    marker = "HARVEST_BEFORE_DEBIT"
+    expected_groups = {
+        (mode, str(Fraction(uc)), str(Fraction(ue)), scheduler)
+        for mode in config["deadline_modes"]
+        for uc, ue in config["cells"]
+        for scheduler in config["schedulers"]
+    }
+    for key, request in by_id.items():
+        row = by_result[key]
+        if request.get("energy_timing") != marker or row.get("energy_timing") != marker:
+            raise ValueError("mixed energy timing")
+        for field in ("taskset_id", "taskset_hash", "scheduler", "scheduler_cli",
+                      "target_uc", "target_ue", "deadline_mode", "priority_policy",
+                      "generation_index"):
+            if request.get(field) != row.get(field):
+                raise ValueError(f"same-slot request/result mismatch: {field}")
+        outcome = row.get("outcome", {})
+        if (row.get("technical_error") is not None
+                or row.get("simulation_status") not in {"SIM_PASS_OBSERVED", "SIM_DEADLINE_MISS"}
+                or type(row.get("taskset_pass")) is not bool
+                or outcome.get("outcome_status") != "AVAILABLE"
+                or outcome.get("technical_failure") is not False
+                or outcome.get("taskset_pass") is not row["taskset_pass"]
+                or row.get("metrics", {}).get("energy_timing") != marker
+                or row.get("priority_policy") != config["priority_policy"]):
+            raise ValueError("same-slot result lacks a validated complete trace")
+        energy = row["energy"]
+        ledger = validate_same_slot_energy_summary(
+            row["metrics"].get("same_slot_energy_summary"), config["simulation_horizon_ms"],
+            physical_initial_energy=Fraction(energy["initial_energy_j"]),
+            battery_capacity=Fraction(energy["battery_capacity_j"]),
+        )
+        group_key = (row["deadline_mode"], str(Fraction(row["target_uc"])),
+                     str(Fraction(row["target_ue"])), row["scheduler"])
+        pair_key = (*group_key[:3], row["taskset_id"])
+        material = (row["taskset_hash"], energy, ledger["offered_energy_j"])
+        if pair_key in paired_inputs and paired_inputs[pair_key] != material:
+            raise ValueError("same-slot schedulers did not receive the same taskset and supply")
+        paired_inputs[pair_key] = material
+        groups.setdefault(group_key, []).append(row)
+    if set(groups) != expected_groups:
+        raise ValueError("same-slot results do not cover the configured grid")
+    summaries = []
+    for (mode, uc, ue, scheduler), rows in sorted(groups.items()):
+        n = len(rows)
+        if n != config["samples_per_cell"]:
+            raise ValueError("same-slot cell has an unexpected sample count")
+        passed = sum(row["taskset_pass"] for row in rows)
+        lo, hi = wilson_ci(passed, n)
+        summaries.append(dict(energy_timing=marker, deadline_mode=mode,
+                              target_uc=uc, target_ue=ue, scheduler=scheduler,
+                              n_total=n, n_wholepass=passed,
+                              wholepass_ratio=passed/n, ci95_low=lo, ci95_high=hi))
+    # Each same-slot group must compare the same task sets for all schedulers.
+    paired = {}
+    for (mode, uc, ue, scheduler), rows in groups.items():
+        tasksets = {row["taskset_id"] for row in rows}
+        if len(tasksets) != len(rows):
+            raise ValueError("duplicate taskset within same-slot cell")
+        paired.setdefault((mode, uc, ue), {})[scheduler] = tasksets
+    for cells in paired.values():
+        if set(cells) != set(config["schedulers"]) or any(
+                values != next(iter(cells.values())) for values in cells.values()):
+            raise ValueError("same-slot scheduler groups are not paired")
+    write_csv(root / "same_slot_summary.csv", summaries)
+    report = dict(energy_timing=marker, run_identity=config["run_identity"],
+                  requests=len(requests), results=len(results), summary_rows=len(summaries),
+                  technical=0)
+    (root / "same_slot_analysis_report.json").write_text(
+        json.dumps(report, indent=2, sort_keys=True)+"\n", encoding="utf-8")
+    return report
+
+
 def analyze(
     root: Path, *, analysis_workers: int = 1,
     uc_dmr_ymin: float = 0.0, ue_dmr_ymin: float = 0.0,
@@ -1918,6 +2006,10 @@ def analyze(
         )
     except (OSError, TypeError, ValueError):
         initial_config = {}
+    if initial_config.get("energy_timing") == "HARVEST_BEFORE_DEBIT":
+        if shared_implicit_run_dir is not None:
+            raise ValueError("same-slot analysis cannot reuse a historical implicit run")
+        return analyze_same_slot(root, initial_config)
     if shared_implicit_run_dir is not None and (
         initial_config.get("experiment") in {
             experiment.V3_EXPERIMENT,

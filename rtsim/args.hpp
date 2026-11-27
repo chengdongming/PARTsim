@@ -98,6 +98,13 @@ static inline cmdarg::Options parse_arguments(int argc, char *argv[]) {
         .help = "The duration of the simulation in time units",
     });
     parser.addArgument({
+        .long_opt = "energy-timing",
+        .required = false,
+        .parameter_required = cmdarg::Argument::ParameterRequired::REQUIRED,
+        .help = "debit-before-harvest (historical) or same-slot",
+        .default_value = "debit-before-harvest",
+    });
+    parser.addArgument({
         .long_opt = "trace",
         .short_opt = 't',
         .required = false,

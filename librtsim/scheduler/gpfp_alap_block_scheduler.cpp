@@ -446,6 +446,7 @@ namespace RTSim {
             }
             SCHEDULER_LOG_WARNING(
                 "⚠️ [ALAP-Block] _kernel为nullptr，跳过本tick调度");
+            _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
             return;
         }
 
@@ -659,6 +660,7 @@ namespace RTSim {
             _kernel->dispatch();
         }
 
+        _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
         SCHEDULER_LOG_INFO(
             std::string("📊 [ALAP-Block] Tick选择: active=") +
             std::to_string(active_tasks.size()) +
@@ -1596,6 +1598,7 @@ namespace RTSim {
             static_cast<std::int64_t>(candidate_tick);
 
         const ConfigManager &config = ConfigManager::getInstance();
+        if (!config.acceptsSameSlotDecision(candidate_ms)) return;
         if (config.isPriorityEnergyProfileEnabled() &&
             !priorityEnergyDecisionTickWithinExclusiveHorizon(
                 candidate_ms,
@@ -1903,7 +1906,8 @@ namespace RTSim {
         EnergyBridge::getInstance().initialize();
         const HarvestSourceConfig harvest_config =
             ConfigManager::getInstance().getHarvestSourceConfig();
-        _harvest_runtime.beginRun(harvest_config);
+        _harvest_runtime.beginRun(harvest_config,
+            ConfigManager::getInstance().sameSlotEnergy());
 
         _current_energy = _initial_energy;
 

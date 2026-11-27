@@ -12,7 +12,11 @@ namespace RTSim {
 
     class SchedulerHarvestRuntime final {
     public:
-        void beginRun(const HarvestSourceConfig &config);
+        void beginRun(const HarvestSourceConfig &config, bool same_slot = false);
+        // Called once after execution (or on an idle decision); legacy mode
+        // is a no-op. Returns the actual stored balance at the next boundary.
+        double finishDecisionTime(double remaining_budget_j);
+        bool sameSlot() const noexcept { return _same_slot; }
 
         HarvestResult applyAtDecisionTime(
             std::int64_t decision_time_ms,
@@ -39,6 +43,9 @@ namespace RTSim {
                                    double battery_capacity_j) noexcept;
         void recordEnergySummaryError(const std::string &message) noexcept;
 
+        bool _same_slot = false;
+        bool _slot_open = false;
+        HarvestResult _open_slot{};
         std::unique_ptr<HarvestRuntime> _runtime;
         EnergySummary _energy_summary;
         bool _energy_initial_observed = false;

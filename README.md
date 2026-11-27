@@ -15,6 +15,12 @@ Current scope:
   RTA--simulation audit, E0/service/power/deadline sensitivity, and
   algorithm/worker scalability.
 
+## Same-slot energy model (new experiments)
+
+For harvest-before-debit simulations and unlimited-capacity ASAP-BLOCK RTA,
+see [the new timing experiment](experiments/same_slot/README.md). The default
+commands and frozen historical reproductions retain their original timing.
+
 ## Build
 
 ```bash

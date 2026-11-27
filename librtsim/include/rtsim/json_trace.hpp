@@ -260,6 +260,9 @@ namespace RTSim {
         std::string _scheduler_implementation;
         std::string _scheduler_rtti_name;
         std::string _run_id;
+        bool _same_slot_energy = false;
+        bool _same_slot_snapshot_set = false;
+        B4ObservabilityEnergySnapshot _same_slot_snapshot{};
         std::string _taskset_semantic_hash;
         bool _release_cutoff_enabled;
         MetaSim::Tick _release_horizon;
@@ -354,6 +357,11 @@ namespace RTSim {
             _scheduler_rtti_name = rtti_name;
         }
 
+        void setSameSlotEnergy(bool value) { _same_slot_energy = value; }
+        void setSameSlotSnapshot(const B4ObservabilityEnergySnapshot &snapshot) {
+            _same_slot_snapshot = snapshot;
+            _same_slot_snapshot_set = true;
+        }
         void setRunId(const std::string &run_id) { _run_id = run_id; }
         void setTasksetSemanticHash(const std::string &value) {
             _taskset_semantic_hash = value;

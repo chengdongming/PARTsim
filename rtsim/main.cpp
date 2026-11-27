@@ -8,6 +8,8 @@
 
 // LibMetasim
 #include <metasim/simul.hpp>
+#include <metasim/entity.hpp>
+#include <metasim/event.hpp>
 
 // LibRTSim
 #include <rtsim/cbserver.hpp>
@@ -1411,6 +1413,23 @@ static void publishTraces(const std::vector<TraceTarget> &targets,
     }
 }
 
+// Keep a future event queued when all releases have stopped before H.
+// This lets Simulation::run advance to H without collecting a fictitious
+// slot H or treating legitimate idle time as infrastructure failure.
+class SameSlotHorizonFence : public MetaSim::Entity {
+    class FenceEvent : public MetaSim::Event {
+    public:
+        FenceEvent() : Event("SameSlotHorizonFenceEvent") {}
+        void doit() override {}
+    } event_;
+    MetaSim::Tick horizon_;
+public:
+    explicit SameSlotHorizonFence(MetaSim::Tick horizon)
+        : Entity("SameSlotHorizonFence"), horizon_(horizon) {}
+    void newRun() override { event_.post(horizon_ + MetaSim::Tick(1)); }
+    void endRun() override { event_.drop(); }
+};
+
 int main(int argc, char *argv[]) {
     const char *quiet_stdout = std::getenv("PARTSIM_QUIET_STDOUT");
     if (quiet_stdout != nullptr &&
@@ -1442,6 +1461,15 @@ int main(int argc, char *argv[]) {
                   << error.what() << std::endl;
         return EXIT_FAILURE;
     }
+    const auto energy_timing = opts["energy-timing"];
+    const bool same_slot = energy_timing == "same-slot";
+    if ((energy_timing != "debit-before-harvest" && !same_slot) ||
+        (same_slot && duration <= MetaSim::Tick(0))) {
+        std::cerr << "PRE-FLIGHT ERROR: invalid energy timing or duration" << std::endl;
+        return EXIT_FAILURE;
+    }
+    RTSim::ConfigManager::getInstance().setSameSlotHorizon(
+        same_slot ? static_cast<std::int64_t>(duration) : -1);
     const bool semantic_traces = opts["semantic-traces"] == "true";
     const bool b4_observability_summary =
         opts["b4-observability-summary"] == "true";
@@ -1452,6 +1480,13 @@ int main(int argc, char *argv[]) {
     const bool wholepass_fast = !opts["wholepass-fast-output"].empty();
     const bool generic_wholepass_fast =
         opts["wholepass-fast-mode"] == "generic_hardrt_wholepass";
+    // The sealed historical summary/fast contracts do not encode the new
+    // time order. Use the distinct same-slot trace experiment instead.
+    if (same_slot && (wholepass_fast || b4_observability_summary)) {
+        std::cerr << "PRE-FLIGHT ERROR: same-slot requires the distinct trace experiment, "
+                     "not a historical compact or B4 contract" << std::endl;
+        return EXIT_FAILURE;
+    }
     if (wholepass_fast) {
         const bool legacy_wholepass_fast =
             opts["wholepass-fast-mode"] == "hard-rt-wholepass";
@@ -1592,6 +1627,16 @@ int main(int argc, char *argv[]) {
     std::unique_ptr<RTSim::ResManager> resmanager;
     try {
         sys = std::make_unique<RTSim::System>(opts["system"]);
+        if (same_slot) {
+            const std::set<std::string> supported = {
+                "gpfp_asap_block", "gpfp_asap_nonblock", "gpfp_asap_sync",
+                "gpfp_alap_block", "gpfp_alap_nonblock", "gpfp_alap_sync",
+                "gpfp_st_block", "gpfp_st_nonblock", "gpfp_st_sync"};
+            if (sys->scheduler_identities.size() != 1 ||
+                !supported.count(sys->scheduler_identities.front().configured_scheduler)) {
+                throw std::invalid_argument("same-slot requires a single global nine-family scheduler");
+            }
+        }
         resmanager = read_resources(opts["taskset"]);
         for (auto &[tasksrv, cpu, params] : taskset) {
             (void) tasksrv;
@@ -1815,6 +1860,7 @@ int main(int argc, char *argv[]) {
                     release_horizon, duration);
             }
             tracer.jtrace->setRunId(opts["run-id"]);
+            tracer.jtrace->setSameSlotEnergy(same_slot);
             tracer.jtrace->setTasksetSemanticHash(
                 opts["taskset-semantic-hash"]);
             if (!sys->scheduler_identities.empty()) {
@@ -1870,6 +1916,9 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    std::unique_ptr<SameSlotHorizonFence> same_slot_fence;
+    if (same_slot)
+        same_slot_fence = std::make_unique<SameSlotHorizonFence>(duration);
     try {
         simulation.run(std::stoi(opts["duration"]));
     } catch (std::exception &e) {
@@ -1909,6 +1958,18 @@ int main(int argc, char *argv[]) {
     publication_contract.expected_observability_contract_version =
         b4_observability_contract_version;
     try {
+        if (same_slot) {
+            if (!outcome.reached_requested_horizon || sys->kernels.empty())
+                throw std::runtime_error("same-slot run did not reach the horizon");
+            auto *provider = dynamic_cast<RTSim::EnergyInfoProvider *>(
+                sys->kernels.front()->getScheduler());
+            if (!provider) throw std::runtime_error("missing same-slot energy provider");
+            const auto snapshot = provider->getB4ObservabilityEnergySnapshot(
+                static_cast<std::uint64_t>(static_cast<std::int64_t>(duration)));
+            for (auto &tracer : tracers) {
+                if (tracer.jtrace) tracer.jtrace->setSameSlotSnapshot(snapshot);
+            }
+        }
         if (b4_observability_summary) {
             if (!outcome.reached_requested_horizon ||
                 !b4_json_trace || !b4_energy_provider) {

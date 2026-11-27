@@ -602,6 +602,9 @@ def make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=perf_g.FORMAL_TIMEOUT_SECONDS)
     parser.add_argument("--kappa", default=str(experiment.DEFAULT_KAPPA))
     parser.add_argument("--simulator", type=Path, default=ROOT / "build/rtsim/rtsim")
+    parser.add_argument("--energy-timing", choices=("debit-before-harvest", "same-slot"),
+                        default="debit-before-harvest",
+                        help="same-slot uses new trace contract; historical runs remain unchanged")
     parser.add_argument("--uc-figure-fixed-ue")
     parser.add_argument("--ue-figure-fixed-uc")
     parser.add_argument("--ue-figure-fixed-ucs")
@@ -652,6 +655,8 @@ def _resolve_grid(args: argparse.Namespace) -> tuple[
     tuple[tuple[Fraction, Fraction], ...], dict[str, Any], dict[str, Any] | None, bool,
 ]:
     campaign = args.campaign
+    if args.energy_timing == "same-slot" and args.uc09_supplement:
+        raise SystemExit("same-slot must use a fresh full grid, not a historical UC09 supplement")
     if campaign != "v6":
         if args.cells is not None or any(
             getattr(args, name) is not None for name in _V4_GRID_ARGS
@@ -664,6 +669,10 @@ def _resolve_grid(args: argparse.Namespace) -> tuple[
         return spec["cells"], spec["figure_slices"], spec["scan_contract"], False
     structured = any(getattr(args, name) is not None for name in _V4_GRID_ARGS)
     if args.cells is not None:
+        if args.energy_timing == "same-slot" and not structured:
+            # Ad-hoc grids are only a new-mode smoke facility, never a
+            # historical formal figure campaign.
+            return experiment.parse_cells(args.cells), {}, None, True
         raise SystemExit(
             "--cells is a legacy write path and is not supported for new v5 runs"
         )
@@ -945,6 +954,12 @@ def main(argv: list[str] | None = None) -> int:
             "full_trace_default": False,
             "dmr_available": False,
         })
+    if args.energy_timing == "same-slot":
+        config["energy_timing"] = "HARVEST_BEFORE_DEBIT"
+        if is_a_implicit:
+            config["wholepass_fast_path"] = False
+            config["full_trace_default"] = True
+            config["dmr_available"] = True
     if args.uc09_supplement:
         config.update({
             "supplement_kind": "uc09",
@@ -1025,6 +1040,7 @@ def main(argv: list[str] | None = None) -> int:
             campaign=campaign if is_v7 else None,
             energy_control=selected_energy_control if is_v7 else None,
             campaign_contract=config.get("campaign_contract") if is_a_implicit else None,
+            energy_timing=args.energy_timing,
         )
     ]
     if len(requests) != expected_request_count:
@@ -1042,6 +1058,8 @@ def main(argv: list[str] | None = None) -> int:
     results_path = root / "results.jsonl"
     attempts_path = root / "attempts.jsonl"
     existing = read_jsonl(results_path) if args.resume else []
+    if any(row.get("energy_timing") != config.get("energy_timing") for row in existing):
+        raise SystemExit("persisted results use another energy timing")
     if any(row.get("priority_policy", "RM") != priority_policy for row in existing):
         raise SystemExit("persisted results priority policy does not match requested policy")
     if any(
@@ -1131,7 +1149,8 @@ def main(argv: list[str] | None = None) -> int:
             "maximum_horizon": args.simulation_horizon, "horizon_extension_policy": "none",
             "priority_policy": priority_policy,
             "warmup": 0, "minimum_jobs_per_task": 1,
-            "trace_mode": "none" if is_a_implicit else "semantic",
+            "trace_mode": "none" if is_a_implicit and args.energy_timing != "same-slot" else "semantic",
+            "energy_timing": args.energy_timing,
             "trace_on_failure": args.keep_traces,
             "retain_trace": args.keep_traces,
             "timeout_seconds": args.timeout_seconds,
@@ -1164,7 +1183,7 @@ def main(argv: list[str] | None = None) -> int:
             "scheduler_id": request["scheduler_cli"],
             "implicit_streaming_parse": bool(args.implicit_streaming_parse),
             "bounded_streaming_parse": bool(args.bounded_streaming_parse),
-            "implicit_wholepass_fast": is_a_implicit,
+            "implicit_wholepass_fast": is_a_implicit and args.energy_timing != "same-slot",
         })
 
     prepare_energy_started = time.perf_counter()

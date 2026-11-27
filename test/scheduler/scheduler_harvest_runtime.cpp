@@ -604,6 +604,44 @@ namespace RTSim {
         EXPECT_EQ(runtime.runtime().lastAppliedIndex(), 0u);
     }
 
+    TEST(SchedulerHarvestSummary, SameSlotTimeZeroAndPostDebitClipping) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 3), true);
+        // At full capacity current harvest is still available for this slot.
+        const auto first = runtime.applyAtDecisionTime(0, 1.0, 1.0);
+        EXPECT_DOUBLE_EQ(first.battery_before_j, 1.0);
+        EXPECT_DOUBLE_EQ(first.battery_after_j, 2.0);
+        EXPECT_DOUBLE_EQ(runtime.finishDecisionTime(0.5), 0.5);
+        const auto second = runtime.applyAtDecisionTime(1, 0.5, 1.0);
+        EXPECT_DOUBLE_EQ(second.battery_after_j, 1.5);
+        EXPECT_DOUBLE_EQ(runtime.finishDecisionTime(1.5), 1.0);
+        const auto third = runtime.applyAtDecisionTime(2, 1.0, 1.0);
+        EXPECT_DOUBLE_EQ(third.battery_after_j, 2.0);
+        EXPECT_DOUBLE_EQ(runtime.finishDecisionTime(0.0), 0.0);
+        const auto snapshot =
+            runtime.finalizeObservabilityEnergySnapshot(3, 0.0, 1.0);
+        EXPECT_DOUBLE_EQ(snapshot.summary.offered_energy_j, 3.0);
+        EXPECT_DOUBLE_EQ(snapshot.summary.credited_energy_j, 2.5);
+        EXPECT_DOUBLE_EQ(snapshot.summary.clipped_energy_j, 0.5);
+        EXPECT_DOUBLE_EQ(snapshot.summary.consumed_energy_j, 3.5);
+        EXPECT_DOUBLE_EQ(snapshot.summary.battery_final_j, 0.0);
+        EXPECT_EQ(snapshot.summary.observed_energy_intervals, 3u);
+    }
+
+    TEST(SchedulerHarvestSummary, SameSlotCannotInventExtraHorizonHarvest) {
+        SchedulerHarvestRuntime runtime;
+        runtime.beginRun(constantConfig(1000.0, 2), true);
+        (void)runtime.applyAtDecisionTime(0, 0.0, 1.0);
+        EXPECT_THROW(runtime.applyAtDecisionTime(1, 1.0, 1.0),
+                     std::logic_error);
+        EXPECT_DOUBLE_EQ(runtime.finishDecisionTime(1.0), 1.0);
+        EXPECT_THROW(runtime.finishDecisionTime(1.0), std::logic_error);
+        EXPECT_THROW(runtime.finalizeObservabilityEnergySnapshot(2, 1.0, 1.0),
+                     std::logic_error);
+        EXPECT_EQ(runtime.finalizeEnergySummary(1).observed_energy_intervals,
+                  1u);
+    }
+
     TEST(SchedulerHarvestSummary,
          ReconcilesOfferedCreditedClippedConsumedAndFinalBattery) {
         SchedulerHarvestRuntime runtime;

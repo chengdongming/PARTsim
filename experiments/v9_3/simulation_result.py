@@ -135,6 +135,8 @@ CORE3_JOB_OBSERVATIONS_SCHEMA_VERSION_V6 = (
     "ASAP_BLOCK_V9_3_RTA4_CORE3_JOB_OBSERVATIONS_V6"
 )
 CORE3_RELEASE_ENERGY_SAMPLING_STAGE = "post_harvest_pre_consumption"
+SAME_SLOT_RELEASE_ENERGY_SAMPLING_STAGE = "pre_harvest_pre_consumption"
+SAME_SLOT_RELEASE_CUTOFF_CONTRACT = "ASAP_BLOCK_SAME_SLOT_RELEASE_CUTOFF_V1"
 CORE3_ENERGY_TOLERANCE_J = 1e-8
 
 
@@ -260,6 +262,43 @@ def _finite(value: Any, label: str) -> float:
     if not math.isfinite(result):
         raise SimulationTraceError(f"{label} must be finite")
     return result
+
+
+def validate_same_slot_energy_summary(
+    ledger: Any, horizon: int, *,
+    physical_initial_energy: Optional[Fraction] = None,
+    battery_capacity: Optional[Fraction] = None,
+) -> dict[str, Any]:
+    """Validate actual stored energy, not provisional execution budgets."""
+    if (not isinstance(ledger, dict)
+            or type(ledger.get("observed_energy_intervals")) is not int
+            or ledger["observed_energy_intervals"] != horizon):
+        raise SimulationTraceError("same-slot ledger does not cover the horizon")
+    fields = ("initial_energy_j", "capacity_j", "offered_energy_j",
+              "credited_energy_j", "clipped_energy_j", "consumed_energy_j",
+              "battery_final_j", "battery_min_j", "battery_max_j")
+    if any(type(ledger.get(key)) not in (int, float) for key in fields):
+        raise SimulationTraceError("same-slot ledger must contain numeric energy values")
+    values = {key: _finite(ledger[key], key) for key in fields}
+    if any(value < 0 for value in values.values()):
+        raise SimulationTraceError("negative same-slot ledger value")
+    if (values["battery_min_j"] > min(values["initial_energy_j"], values["battery_final_j"])
+            or values["battery_max_j"] < max(values["initial_energy_j"], values["battery_final_j"])
+            or values["battery_max_j"] > values["capacity_j"]):
+        raise SimulationTraceError("same-slot battery bounds invalid")
+    for key, expected in (("initial_energy_j", physical_initial_energy),
+                          ("capacity_j", battery_capacity)):
+        if expected is not None and not math.isclose(
+                values[key], float(expected), abs_tol=1e-12, rel_tol=1e-12):
+            raise SimulationTraceError(f"same-slot ledger {key} differs from configuration")
+    if (not math.isclose(values["offered_energy_j"],
+                        values["credited_energy_j"]+values["clipped_energy_j"],
+                        abs_tol=1e-9, rel_tol=1e-9)
+            or not math.isclose(values["initial_energy_j"]+values["credited_energy_j"],
+                                values["consumed_energy_j"]+values["battery_final_j"],
+                                abs_tol=1e-9, rel_tol=1e-9)):
+        raise SimulationTraceError("same-slot energy conservation failed")
+    return {**values, "observed_energy_intervals": horizon}
 
 
 def conditional_release_coverage_v6(
@@ -398,6 +437,7 @@ def parse_simulation_trace(
         Mapping[str, Mapping[str, Any]]
     ] = None,
     stream_events: bool = False,
+    energy_timing: str = "debit-before-harvest",
 ) -> SimulationResult:
     """Parse one complete audited scheduler trace into job/task observations."""
 
@@ -419,6 +459,36 @@ def parse_simulation_trace(
     else:
         data = _strict_json(trace_path)
         events = data["events"]
+    if energy_timing not in {"debit-before-harvest", "same-slot"}:
+        raise SimulationTraceError("invalid energy timing")
+    timing_marker = data.get("energy_timing")
+    if ((energy_timing == "same-slot" and timing_marker != "HARVEST_BEFORE_DEBIT")
+            or (energy_timing == "debit-before-harvest" and timing_marker is not None)):
+        raise SimulationTraceError("trace energy timing mismatch")
+    if energy_timing == "same-slot":
+        ledger = validate_same_slot_energy_summary(
+            data.get("same_slot_energy_summary"), horizon,
+            physical_initial_energy=physical_initial_energy,
+            battery_capacity=battery_capacity,
+        )
+    if energy_timing == "same-slot" and require_core3_observability:
+        raise SimulationTraceError("same-slot is not the historical CORE-3 contract")
+    same_slot_cutoff = (
+        energy_timing == "same-slot"
+        and data.get("release_cutoff_enabled") is True
+        and expected_scheduler == "gpfp_asap_block"
+    )
+    if same_slot_cutoff:
+        actual_release_horizon = _integer(data.get("release_horizon_ms"), "release horizon")
+        if (data.get("simulator_trace_contract_version") != SAME_SLOT_RELEASE_CUTOFF_CONTRACT
+                or not 0 < actual_release_horizon < horizon
+                or _integer(data.get("observation_horizon_ms"), "observation horizon") != horizon
+                or (release_horizon is not None and release_horizon != actual_release_horizon)):
+            raise SimulationTraceError("same-slot release cutoff contract mismatch")
+        release_horizon = actual_release_horizon
+    use_release_snapshots = require_core3_observability or same_slot_cutoff
+    snapshot_stage = (SAME_SLOT_RELEASE_ENERGY_SAMPLING_STAGE if same_slot_cutoff
+                      else CORE3_RELEASE_ENERGY_SAMPLING_STAGE)
     trace_schema = data.get("trace_schema_version")
     expected_schema = 3 if require_core3_observability else 2
     if type(trace_schema) is not int or trace_schema != expected_schema:
@@ -601,7 +671,7 @@ def parse_simulation_trace(
             if key in arrival_jobs:
                 raise SimulationTraceError("duplicate arrival event for one job")
             if (
-                require_core3_observability
+                use_release_snapshots
                 and release_horizon is not None
                 and job["release"] >= release_horizon
             ):
@@ -610,10 +680,10 @@ def parse_simulation_trace(
             energy_j = _finite(event.get("current_energy_mJ"), "arrival energy") / 1000.0
             if energy_j < -1e-12:
                 raise SimulationTraceError("negative arrival energy")
-            if not require_core3_observability:
+            if not use_release_snapshots:
                 release_energies.append(energy_j)
         elif event_type == "release_energy_snapshot":
-            if not require_core3_observability:
+            if not use_release_snapshots:
                 continue
             name = event.get("task_name")
             if name not in names:
@@ -625,8 +695,10 @@ def parse_simulation_trace(
                 raise SimulationTraceError("release snapshot time/release mismatch")
             if release_horizon is not None and arrival >= release_horizon:
                 raise SimulationTraceError("release snapshot is not before H_rel")
-            if event.get("sampling_stage") != CORE3_RELEASE_ENERGY_SAMPLING_STAGE:
+            if event.get("sampling_stage") != snapshot_stage:
                 raise SimulationTraceError("release snapshot sampling stage mismatch")
+            if same_slot_cutoff and event.get("trace_contract_version") != SAME_SLOT_RELEASE_CUTOFF_CONTRACT:
+                raise SimulationTraceError("same-slot release snapshot contract mismatch")
             if event.get("scheduler") != expected_scheduler:
                 raise SimulationTraceError("release snapshot scheduler mismatch")
             key = (str(name), arrival)
@@ -786,7 +858,7 @@ def parse_simulation_trace(
                 st_charge_release_count += 1
                 st_charge_release_reasons.append(str(reason_value))
 
-    if require_core3_observability:
+    if use_release_snapshots:
         observed_jobs = set(raw_jobs)
         if observed_jobs != arrival_jobs:
             raise SimulationTraceError(
@@ -802,6 +874,8 @@ def parse_simulation_trace(
         if not arrival_jobs:
             raise SimulationTraceError(
                 "CORE-3 trace contains no released jobs before H_rel"
+                if require_core3_observability else
+                "same-slot trace contains no released jobs before H_rel"
             )
         if any(
             raw["absolute_deadline"] > horizon for raw in raw_jobs.values()
@@ -863,8 +937,8 @@ def parse_simulation_trace(
                     (raw["task_name"], raw["release"]),
                 ),
                 (
-                    CORE3_RELEASE_ENERGY_SAMPLING_STAGE
-                    if require_core3_observability else None
+                    snapshot_stage
+                    if use_release_snapshots else None
                 ),
             ))
 
@@ -966,6 +1040,8 @@ def parse_simulation_trace(
     release_valid = bool(
         minimum_energy is not None and minimum_energy + 1e-12 >= e0_float
     )
+    if energy_timing == "same-slot" and not same_slot_cutoff and release_e0 > 0:
+        release_valid = False
     completed_responses = [
         job.response_time for job in observations if job.response_time is not None
     ]
@@ -1150,6 +1226,16 @@ def parse_simulation_trace(
                 "task_energy_validation": task_energy_validation,
             } if task_energy_validation is not None else {}),
         })
+    if energy_timing == "same-slot":
+        metrics["energy_timing"] = "HARVEST_BEFORE_DEBIT"
+        metrics["same_slot_energy_summary"] = ledger
+        # Event-level current_energy values can be provisional budgets above
+        # capacity. Do not advertise them as physical battery samples.
+        metrics.pop("battery_trajectory", None)
+        metrics["harvested_energy_j"] = ledger["offered_energy_j"]
+        metrics["consumed_energy_j"] = ledger["consumed_energy_j"]
+        metrics["battery_minimum_j"] = ledger["battery_min_j"]
+        metrics["battery_maximum_j"] = ledger["battery_max_j"]
     return SimulationResult(
         status, reason, horizon, tuple(observations), tuple(task_observations),
         release_valid, minimum_energy, observed_power, trace_schema,

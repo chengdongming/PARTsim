@@ -552,6 +552,7 @@ namespace RTSim {
                     _current_energy, 1e-9, {}, {}, {}, {}, {}, {}, {}));
             }
             SCHEDULER_LOG_WARNING("⚠️ [ASAP-NonBlock] _kernel为nullptr，跳过调度");
+            _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
             return;
         }
 
@@ -749,6 +750,7 @@ namespace RTSim {
             _kernel->dispatch();
         }
 
+        _current_energy = _harvest_runtime.finishDecisionTime(_current_energy);
         SCHEDULER_LOG_INFO("✅ Tick " +
                            std::to_string(static_cast<int64_t>(current_time)) +
                            "ms 完成, 剩余能量: " +
@@ -1300,6 +1302,7 @@ namespace RTSim {
             static_cast<std::int64_t>(candidate_tick);
 
         const ConfigManager &config = ConfigManager::getInstance();
+        if (!config.acceptsSameSlotDecision(candidate_ms)) return;
         if (config.isPriorityEnergyProfileEnabled() &&
             !priorityEnergyDecisionTickWithinExclusiveHorizon(
                 candidate_ms,
@@ -1502,7 +1505,8 @@ namespace RTSim {
         EnergyBridge::getInstance().initialize();
         const HarvestSourceConfig harvest_config =
             ConfigManager::getInstance().getHarvestSourceConfig();
-        _harvest_runtime.beginRun(harvest_config);
+        _harvest_runtime.beginRun(harvest_config,
+            ConfigManager::getInstance().sameSlotEnergy());
 
         _current_energy = _initial_energy;
         _energy_depleted = false;  // ⭐ 重置能量耗尽标志

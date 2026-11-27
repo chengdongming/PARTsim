@@ -92,6 +92,8 @@ namespace RTSim {
         // the legacy fields in one atomic configuration update.
         PriorityEnergyProfileConfig _priority_energy_profile;
         HarvestSourceConfig _harvest_source_config;
+        // CLI-only opt-in; negative means historical debit-before-harvest.
+        std::int64_t _same_slot_horizon = -1;
 
         // 功率模型配置
         double _base_power;
@@ -192,6 +194,11 @@ namespace RTSim {
         }
         HarvestSourceKind getHarvestSourceKind() const {
             return sourceKind(_harvest_source_config);
+        }
+        void setSameSlotHorizon(std::int64_t horizon) { _same_slot_horizon = horizon; }
+        bool sameSlotEnergy() const { return _same_slot_horizon >= 0; }
+        bool acceptsSameSlotDecision(std::int64_t tick) const {
+            return !sameSlotEnergy() || tick < _same_slot_horizon;
         }
         HarvestSourceConfig getHarvestSourceConfig() const {
             return _harvest_source_config;
