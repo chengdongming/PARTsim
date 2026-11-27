@@ -734,6 +734,7 @@ def plot_composite_scan(
     filename: str, xkey: str, schedulers: list[str], xlabel: str, title: str,
     *, axis_min: str, axis_max: str, axis_ticks: list[str],
     slice_display_labels: list[str] | None = None,
+    reserve_legend_space: bool = False,
 ) -> None:
     import matplotlib
     matplotlib.use("Agg")
@@ -747,6 +748,11 @@ def plot_composite_scan(
         axis_ticks=axis_ticks, slice_display_labels=slice_display_labels,
     )
     figure.suptitle(title)
+    if reserve_legend_space:
+        # Reserve physical space for both the headings and the shared legend,
+        # including when there is just one panel.
+        height = figure.get_figheight()
+        figure.subplots_adjust(top=1 - 0.70 / height, bottom=1.35 / height)
     figure.savefig(output / filename)
     plt.close(figure)
 
@@ -1907,6 +1913,90 @@ def _analyze_v6(
     return report
 
 
+def _plot_same_slot_scans(
+    root: Path, config: dict[str, Any], summaries: list[dict[str, Any]],
+) -> list[str]:
+    """Draw WholePass curves for the scan and deadline modes actually measured."""
+    configured = config["figure_slices"]
+    fixed_supply = config["energy_control"] == "FIXED_ABSOLUTE_SUPPLY"
+    schedulers = config["schedulers"]
+    energy_label = {
+        "zero": r"$E_0=0$",
+        "battery_capacity/2": r"$E_0=B_{\max}/2$",
+    }[_configured_initial_energy_rule(config)]
+    deadline_labels = {
+        "constrained": r"Constrained deadlines ($D\leq T$)",
+        "implicit": r"Implicit deadlines ($D=T$)",
+    }
+    figures = []
+    for scan, x_key, fixed_key, xlabel, fixed_symbol in (
+        ("uc", "target_uc", "target_ue", "Target $U_C$", "U_E"),
+        ("ue", "target_ue", "target_uc", "Target $U_E$", "U_C"),
+    ):
+        if configured:
+            slices = configured.get(f"{scan}_scans", [])
+            if not slices:
+                continue
+            axis = _axis_plot_values(config["scan_contract"])
+        else:
+            # Ad-hoc same-slot runs lack a scan contract. Use only observed
+            # grid points, including a single marker for a one-point slice.
+            points: dict[Fraction, set[Fraction]] = {}
+            for uc, ue in config["cells"]:
+                x, fixed = (uc, ue) if scan == "uc" else (ue, uc)
+                points.setdefault(Fraction(fixed), set()).add(Fraction(x))
+            slices = [
+                {"label": "", "x_key": x_key, "fixed_key": fixed_key,
+                 "fixed_value": str(fixed), "x_values": list(map(str, sorted(xs)))}
+                for fixed, xs in sorted(points.items())
+            ]
+            axis = {
+                "axis_min": "0", "axis_max": "1",
+                "axis_ticks": list(map(str, sorted(set().union(*points.values())))),
+            }
+
+        labels = []
+        for item in slices:
+            value = experiment.decimal_text(item["fixed_value"])
+            label = item["label"]
+            if fixed_supply and scan == "uc":
+                level = config["fixed_supply_levels"][label]
+                supply = float(Fraction(level["fixed_supply_mean_j_per_tick"]) * 1000)
+                labels.append(
+                    f"{label.capitalize()} fixed mean supply: {supply:.3f} mJ/tick "
+                    f"(reference $U_E={value}$)"
+                )
+            else:
+                fixed_label = f"Target ${fixed_symbol}={value}$"
+                labels.append(f"{label}: {fixed_label}" if label else fixed_label)
+
+        for mode in config["deadline_modes"]:
+            panel_rows = []
+            for item in slices:
+                expected_x = set(map(Fraction, item["x_values"]))
+                rows = [
+                    row for row in select_scan_rows(summaries, fixed_key, item["fixed_value"])
+                    if row["deadline_mode"] == mode and Fraction(row[x_key]) in expected_x
+                ]
+                _validate_v4_slice(rows, item, schedulers, f"same-slot {scan} {mode}")
+                panel_rows.append((item, rows))
+            filename = f"same_slot_figure_scheduler_{scan}_{mode}.png"
+            title = (
+                f"Same-slot energy | {config['priority_policy']} | "
+                f"{deadline_labels[mode]} | {energy_label} | "
+                f"n={config['samples_per_cell']} per point"
+            )
+            try:
+                plot_composite_scan(
+                    panel_rows, root, filename, x_key, schedulers, xlabel, title,
+                    **axis, slice_display_labels=labels, reserve_legend_space=True,
+                )
+            except ImportError as exc:
+                raise ValueError("Matplotlib is required to render same-slot PNG figures") from exc
+            figures.append(filename)
+    return figures
+
+
 def analyze_same_slot(root: Path, config: dict[str, Any]) -> dict[str, Any]:
     """Keep new timing results out of the sealed historical figure contracts."""
     if config.get("run_identity") != experiment.run_identity(config):
@@ -1987,9 +2077,10 @@ def analyze_same_slot(root: Path, config: dict[str, Any]) -> dict[str, Any]:
                 values != next(iter(cells.values())) for values in cells.values()):
             raise ValueError("same-slot scheduler groups are not paired")
     write_csv(root / "same_slot_summary.csv", summaries)
+    figures = _plot_same_slot_scans(root, config, summaries)
     report = dict(energy_timing=marker, run_identity=config["run_identity"],
                   requests=len(requests), results=len(results), summary_rows=len(summaries),
-                  technical=0)
+                  technical=0, figures=figures)
     (root / "same_slot_analysis_report.json").write_text(
         json.dumps(report, indent=2, sort_keys=True)+"\n", encoding="utf-8")
     return report
