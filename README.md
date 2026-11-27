@@ -1,25 +1,24 @@
 # PARTsim
 
-PARTsim is the research simulator for ASAP-BLOCK power-aware real-time
-scheduling.
+Research simulator for global fixed-priority scheduling on multicore systems
+with a shared energy-harvesting battery.
 
-Current scope:
+## Current research experiments
 
-- the nine scheduler implementations: ASAP-BLOCK, ASAP-NONBLOCK,
-  ASAP-SYNC, ALAP-BLOCK, ALAP-NONBLOCK, ALAP-SYNC, ST-BLOCK,
-  ST-NONBLOCK, and ST-SYNC;
-- the direct B4-PE unified task-family experiment with deterministic tasksets,
-  exact energy-source materialization, and simulator observability summaries;
-- the current CW, LOC, PH, and SEQ RTA methods, including fixed-D ablations;
-- five current RTA experiments: comparison, structural ablation,
-  RTA--simulation audit, E0/service/power/deadline sensitivity, and
-  algorithm/worker scalability.
+New experiments use **harvest-before-debit (same-slot)** energy timing; the
+current slot's harvested energy can support execution in that slot. All
+algorithms retain their original scheduling rules. Static power is not
+modeled separately.
 
-## Same-slot energy model (new experiments)
+| Experiment | Entry point |
+|---|---|
+| Nine scheduling strategies | [scheduler comparison](experiments/scheduler_comparison/README.md): `scripts/run_scheduler_comparison.py` |
+| ASAP-BLOCK response-time analysis (unlimited capacity) | [same-slot RTA](experiments/same_slot/README.md): `scripts/run_same_slot_rta.py` and the paired `scripts/run_same_slot_rta_campaign.py` |
+| HEARTS-1C vs global AB/AN; partitioned vs global AB | [HEARTS comparison](experiments/hearts_1c/README.md): `scripts/run_hearts_1c_comparison.py` |
 
-For harvest-before-debit simulations and unlimited-capacity ASAP-BLOCK RTA,
-see [the new timing experiment](experiments/same_slot/README.md). The default
-commands and frozen historical reproductions retain their original timing.
+See [current research scope](docs/CURRENT_RESEARCH_SCOPE.md) for the dependency
+map and validation commands. The [historical experiment index](docs/HISTORICAL_EXPERIMENTS.md)
+documents the archived and retained compatibility routes.
 
 ## Build
 
@@ -28,70 +27,22 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
 cmake --build build -j2
 ```
 
-The simulator entrypoint is `build/rtsim/rtsim`. The current B4 direct
-experiment entrypoints are:
+The simulator entrypoint is `build/rtsim/rtsim`. For direct simulator calls
+pass `--energy-timing same-slot`; the old implicit CLI default is preserved
+solely for historical reproducibility. New comparison entrypoints select
+same-slot explicitly. Outputs belong in fresh directories; do not combine
+old-model and new-model results.
+
+## Regression tests
 
 ```bash
-PARTSIM_RTSIM_BIN=build/rtsim/rtsim \
-LD_LIBRARY_PATH=build/rtsim/cmdarg:build/libmetasim:build/librtsim \
-python3 scripts/run_b4_priority_energy.py --plan
-
-PARTSIM_RTSIM_BIN=build/rtsim/rtsim \
-LD_LIBRARY_PATH=build/rtsim/cmdarg:build/libmetasim:build/librtsim \
-python3 scripts/run_b4_priority_energy.py --smoke --output /tmp/b4-smoke
-
-python3 scripts/analyze_b4_priority_energy.py --input /tmp/b4-smoke
+PARTSIM_TEST_BINARY=build/rtsim/rtsim python -m unittest discover -s test -p test_same_slot_energy.py
+PARTSIM_TEST_BINARY=build/rtsim/rtsim python -m unittest discover -s test -p test_hearts_1c_comparison.py
+python -m unittest discover -s test -p test_current_research_campaigns.py
+python experiments/asapblock_unlimited/test_reproduction.py
 ```
 
-The current RTA entrypoint is:
-
-```bash
-python3 -m experiments.v9_3.rta4_formal_runner_v5 \
-  --campaign PATH_TO_CURRENT_V5_CAMPAIGN \
-  --preflight-only
-```
-
-The optional Experiment-A implicit-deadline extension is selected explicitly:
-
-```bash
-python3 scripts/run_scheduler_load_cross.py --output OUTPUT --seed 20260906 \
-  --experiment-version a-implicit \
-  --campaign a-implicit-uc-fixed-supply --samples-per-cell 120
-
-python3 scripts/analyze_scheduler_load_cross.py --input OUTPUT
-```
-
-It uses implicit deadlines (`D=T`), with RM as the canonical run because
-RM=DM for implicit deadlines.  Formal A-implicit runs use the compact
-hard-real-time WholePass path by default and do not retain a semantic trace;
-the analyzer therefore publishes Whole-taskset pass CSV/figures only.  DMR
-is explicitly unavailable for this fast-path output and is never fabricated.
-
-`a-implicit` is the canonical V2 contract: both standardized scan axes are
-exactly 0.1 through 0.9, with 27 cells per campaign. The earlier 24-cell UC
-and 30-cell UE formal roots remain readable as V1 data via
-`--experiment-version a-implicit-v1`. The only new formal simulation slice
-is UC=0.9 for the fixed-supply campaign:
-
-```bash
-python3 scripts/run_a_implicit_uc09_supplement.py \
-  --output UC09_OUTPUT --seed 20260906 --samples-per-cell 120 \
-  --workers 30 --prepare-workers 30 --parse-concurrency 30
-
-python3 scripts/stitch_a_implicit_standardized.py \
-  --legacy-uc-root LEGACY_UC_OUTPUT \
-  --legacy-ue-root LEGACY_UE_OUTPUT \
-  --uc09-supplement-root UC09_OUTPUT \
-  --output STANDARDIZED_OUTPUT
-```
-
-The stitcher validates all source identities and scientific invariants before
-writing composite outputs. Legacy UE=1.0 rows remain in the source root but
-are excluded from the standardized composite. The composite is WholePass-only
-and does not manufacture DMR values.
-
-## Tests
-
-Run the current target suite with `python3 -m pytest` and the selected RTA,
-B4, and scheduler nodes. The complete target definition and repository scope
-are documented in `docs/CURRENT_RESEARCH_SCOPE.md`.
+For the complete historical regression suite install pytest and build
+with `-DBUILD_TESTING=ON` (GoogleTest); see the historical scope and
+retained compatibility tests. Do not delete shared dependencies simply
+because their directory or name contains an older version number.

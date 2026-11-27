@@ -1,46 +1,56 @@
-# Current PARTsim Research Scope
+# PARTsim current research scope
 
-This repository contains the current reproducible scope of the PARTsim
-ASAP-BLOCK research simulator. Historical experiment outputs, superseded
-protocols, and retired compatibility pipelines are not part of the current
-source distribution.
+## Scientific scope
 
-## Current scientific scope
+The new research uses discrete slots with offered energy available in the
+same slot. Simulations allow finite storage and clip surplus after debit.
+The current ASAP-BLOCK RTA is for unlimited capacity and zero background
+power, with an exact any-window harvested-energy lower bound and an
+every-release **pre-harvest** floor. A sufficient certificate is not an
+exact WCRT; failure to certify is not proof of unschedulability.
 
-- ASAP-BLOCK RTA methods: CW, LOC, PH, and SEQ, including exact-energy
-  support and the current task-set adapters.
-- Five current RTA4 experiments: CORE-1, CORE-2, CORE-3 V7, CORE-4, and
-  CORE-5A/CORE-5B worker variants.
-- B4-PE: deterministic direct taskset/source materialization, bounded
-  execution with resume/retry, schema-3 observability, analysis, and
-  statistics validation. The nine-scheduler grid and energy protocol are
-  unchanged.
-- The nine simulator schedulers and their energy bridge/runtime tests.
+| Research line | Supported route |
+|---|---|
+| Nine strategies: ASAP/ALAP/ST × BLOCK/NONBLOCK/SYNC | `scripts/run_scheduler_comparison.py`, `scripts/analyze_scheduler_load_cross.py` |
+| New AB RTA | `experiments/same_slot/ab_rta.py`, `scripts/run_same_slot_rta.py`, `scripts/run_same_slot_rta_campaign.py` |
+| HEARTS-1C and global/partitioned comparison | `experiments/hearts_1c/replay.py`, `scripts/run_hearts_1c_comparison.py` |
 
-## Current entrypoints
+HEARTS-1C is a serial, one-dedicated-core, zero-static-power specialization
+of the original paper; it is not the original parallel DAG scheduler.
 
-```text
-scripts/run_b4_priority_energy.py
-scripts/analyze_b4_priority_energy.py
-experiments/b4_priority_energy/experiment.py
-experiments/v9_3/rta4_formal_config_v5.py
-experiments/v9_3/rta4_formal_plan_v5.py
-experiments/v9_3/rta4_formal_runner_v5.py
-experiments/v9_3/rta4_local_execution_v5.py
-```
+## Source layout and shared dependencies
 
-The direct B4 runner has no authorization, freeze, pilot-admission,
-manifest, protocol-resolution, or publication-governance dependency. Its
-`--plan` path constructs the complete request grid directly from the frozen
-scientific constants.
+- `libmetasim/`, `librtsim/`, `rtsim/`: native simulator, schedulers, energy
+  runtime, and trace contracts. No simulator semantics were changed by
+  the layout cleanup.
+- `experiments/scheduler_comparison/`: current entrypoint documentation,
+  backed by `experiments/v9_3/scheduler_load_cross.py`.
+- `experiments/same_slot/`: new RTA and paired experiment orchestration.
+- `experiments/hearts_1c/`: exact paired reference replay.
+- `experiments/common/`: shared-dependency map and exact service curve.
+- `global_task_generator.py` and `experiments/v9_3/`: shared taskset,
+  power, energy, simulator, parsing, and result contracts. Keep the module
+  paths and generation identities; moving these files would change frozen
+  experiment code fingerprints.
+- `experiments/asapblock_unlimited/`: frozen V7.2 reproduction and
+  optimized AB kernel reused directly by current RTA. Keep its original
+  verifier, generator, configuration, and source manifests untouched.
+- `test/`: native and Python regression tests, plus historical
+  compatibility tests that continue to validate retained routes.
 
-## Build and validation
+See [historical experiment index](HISTORICAL_EXPERIMENTS.md).
+The cleanup is deliberately conservative: only files with no retained
+consumers or standalone old snapshots were removed from the current
+branch; dependent compatibility files remain at their original paths.
+The original source tree is recoverable from
+`archive/pre-cleanup-20261128` at `a5218432dccac3a3e61623b758337d99ba74a712`.
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-cmake --build build -j2
-```
+## Validation
 
-The current validation scope is the selected RTA CW/LOC/PH/SEQ, RTA4 V5,
-direct B4-PE, and simulator scheduler/energy-bridge tests. Historical
-artifacts and retired experiment suites are intentionally excluded.
+Build with CMake and run the native test executables or CTest, then run
+the three current Python test modules listed in the root README. Keep
+V7.2's independent reproduction test as a frozen-input/source invariant.
+For retained legacy suites, run the pytest target from the historical
+audit before any further deletion. Compare identical paired workload and
+energy identities, per-case statuses, bounds, selected jobs and energy
+ledger values; runtime measurements need not be bit-identical.
