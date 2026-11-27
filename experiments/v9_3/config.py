@@ -382,6 +382,8 @@ def validate_config(raw: Mapping[str, Any], *, expected_core: str | None = None)
         raise ConfigError("unknown generation.power_mode")
     if generation.get("priority_policy") not in KNOWN_PRIORITY_POLICIES:
         raise ConfigError("unknown generation.priority_policy")
+    if generation.get("utilization_sampler", "legacy") not in {"legacy", "bounded-simplex"}:
+        raise ConfigError("unknown generation.utilization_sampler")
     if generation.get("wcet_rounding") not in KNOWN_WCET_ROUNDING:
         raise ConfigError("unknown generation.wcet_rounding")
     generation["period_min"] = _positive_int(generation.get("period_min"), "generation.period_min")

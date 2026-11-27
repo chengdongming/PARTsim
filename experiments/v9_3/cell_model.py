@@ -90,6 +90,9 @@ def generation_dimensions(
         "power_mode": generation["power_mode"],
         "service_curve_id": config["energy"]["service_curve"]["id"],
     }
+    # Preserve every legacy generation ID; identify the opt-in sampler.
+    if generation.get("utilization_sampler", "legacy") != "legacy":
+        dimensions["utilization_sampler"] = generation["utilization_sampler"]
     contract = generation.get("workload_contract")
     if not isinstance(contract, Mapping):
         raise ValueError("normalized v9.3 config lacks mandatory workload contract")
