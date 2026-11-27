@@ -1245,7 +1245,7 @@ if int(sys.argv[3]) == 3:
     static const char streaming_validator[] = R"PY(
 import sys
 from pathlib import Path
-from experiments.v9_3.implicit_trace_stream import validate_publication_trace
+from experiments.pipeline.implicit_trace_stream import validate_publication_trace
 
 validate_publication_trace(
     Path(sys.argv[1]),

@@ -1,7 +1,6 @@
-# Simulator system templates
+# System templates
 
-The two system YAML templates were moved from the repository root without
-changing their contents. New CLI calls should use the paths in this directory.
-The shared config and taskset-store code resolves the historical root-relative
-logical names to these files; the original names remain in existing config
-identity material to preserve taskset generation and seed identities.
+Use `system_config_unified_template.yml` for ordinary experiments and
+`priority_energy_system_template.yml` for the priority-energy workload
+template. Their contents are unchanged. Shared config resolution accepts
+the historic logical filenames to preserve input/seed identities.

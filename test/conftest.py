@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from experiments.v9_3.solar_parse_proof import (
+from experiments.pipeline.solar_parse_proof import (
     build_diagnostic_untrusted_verifier_binary,
 )
 

@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from experiments.v9_3 import scheduler_load_cross as experiment
-from experiments.v9_3.parallel_prepare import run_independent_jobs, validate_workers
+from experiments.pipeline import scheduler_load_cross as experiment
+from experiments.pipeline.parallel_prepare import run_independent_jobs, validate_workers
 
 
 DMR_BOOTSTRAP_REPLICATES = 10000
@@ -1919,7 +1919,7 @@ def analyze_same_slot(root: Path, config: dict[str, Any]) -> dict[str, Any]:
             or set(by_id) != set(by_result)
             or len(requests) != config["expected_request_count"]):
         raise ValueError("same-slot run is incomplete or has duplicate requests")
-    from experiments.v9_3.simulation_result import validate_same_slot_energy_summary
+    from experiments.pipeline.simulation_result import validate_same_slot_energy_summary
     groups = {}
     paired_inputs = {}
     marker = "HARVEST_BEFORE_DEBIT"

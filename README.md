@@ -43,7 +43,6 @@ python -m unittest discover -s test -p test_repository_layout.py
 python experiments/asapblock_unlimited/test_reproduction.py
 ```
 
-For the complete historical regression suite install pytest and build
-with `-DBUILD_TESTING=ON` (GoogleTest); see the historical scope and
-retained compatibility tests. Do not delete shared dependencies simply
-because their directory or name contains an older version number.
+Run the retained pytest regression tests with `python -m pytest -q test`
+and build with `-DBUILD_TESTING=ON` for native GoogleTest coverage.
+Full retired experiment suites reside on the archive branch, not master.

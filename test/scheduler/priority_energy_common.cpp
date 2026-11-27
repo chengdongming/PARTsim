@@ -302,7 +302,7 @@ int runPriorityEnergyHash9000RuntimeClosure() {
                 "PARTSIM_SOURCE_DIR is not a directory");
 
         const std::filesystem::path template_path =
-            source_root / "configs/templates/v9_3_b4_priority_energy_system_template.yml";
+            source_root / "configs/templates/priority_energy_system_template.yml";
         require(template_path.is_absolute(),
                 "B4-PE system template path is not absolute");
         require(std::filesystem::is_regular_file(template_path),
