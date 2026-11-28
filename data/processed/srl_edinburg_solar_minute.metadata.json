@@ -1,0 +1,33 @@
+{
+  "schema": "PARTSIM_SRL_MINUTE_IRRADIANCE_V1",
+  "source_station": "UTRGV Solar Radiation Lab, Edinburg, Texas, USA",
+  "latitude": "26.3059",
+  "longitude": "-98.1716",
+  "source_doi": "10.5439/1052555",
+  "source_file": "srl_edinburg_20251101_20261101.csv",
+  "source_sha256": "0fb3c6716455b3fa0d473881dc8744366e40ee57dd4b7f1e0a0a5a92a8351477",
+  "column": "Global Horizontal [W/m^2]",
+  "unit": "W/m^2",
+  "timezone": "CST (UTC-06:00; fixed offset)",
+  "first_timestamp": "2025-11-01T00:00",
+  "last_timestamp": "2026-11-01T23:59",
+  "sampling_interval_seconds": 60,
+  "observed_minutes": 526919,
+  "output_minutes": 527040,
+  "missing_minutes": 121,
+  "missing_ranges": [
+    {
+      "first": "2026-08-22T06:00",
+      "last": "2026-08-22T08:00",
+      "minutes": 121
+    }
+  ],
+  "negative_observations_clipped_to_zero": 255498,
+  "raw_minimum_W_per_m2": "-6.97552",
+  "raw_maximum_W_per_m2": "1271.28",
+  "negative_policy": "clip finite values in [-10,0) to zero; reject lower sentinels",
+  "gap_policy": "insert zero placeholders; exclude missing-data windows from observed-data experiments",
+  "interpolation": "none; minute-indexed zero-order hold in existing simulator",
+  "processed_file": "srl_edinburg_solar_minute.csv",
+  "processed_sha256": "703946027cedb76f9f4f336a885b9cb7efffe6b4976832f26eb395a3fd6ea30b"
+}

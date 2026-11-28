@@ -32,6 +32,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 import yaml
 
+from experiments.common.paths import resolve_solar_data_path
+
 
 TICK_SECONDS = 0.001
 
@@ -586,11 +588,9 @@ def rm_order(tasks: Sequence[RTATask]) -> List[RTATask]:
 def _resolve_solar_path(config: RTASystemConfig) -> str:
     if os.path.isabs(config.solar_data_file):
         return config.solar_data_file
-    relative_to_config = os.path.join(
-        os.path.dirname(config.source_path), config.solar_data_file
-    )
-    if os.path.exists(relative_to_config):
-        return relative_to_config
+    resolved = resolve_solar_data_path(config.solar_data_file, config.source_path)
+    if resolved.is_file():
+        return str(resolved)
     return os.path.abspath(config.solar_data_file)
 
 

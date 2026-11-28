@@ -20,10 +20,12 @@ import time
 import threading
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # 使用统一日志系统
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from utils.unified_logger import get_energy_logger, LogLevel
+from experiments.common.paths import BUNDLED_SOLAR_PATHS, resolve_solar_data_path
 
 # 获取能量管理器的日志记录器
 logger = get_energy_logger()
@@ -1002,6 +1004,13 @@ class EnergyConfig:
                 system_config,
                 priority_energy,
             )
+            if (harvest_source["kind"] == "legacy_solar"
+                    and harvest_source.get("use_real_solar_data")
+                    and Path(harvest_source["solar_data_file"]).as_posix() in BUNDLED_SOLAR_PATHS):
+                solar_path = resolve_solar_data_path(harvest_source["solar_data_file"], config_file)
+                if not solar_path.is_file():
+                    raise StrictSystemConfigError(f"bundled solar data missing: {solar_path}")
+                harvest_source["solar_data_file"] = str(solar_path.resolve())
             self.system_config = system_config
             self.priority_energy = priority_energy
             self.harvest_source = harvest_source
@@ -1159,7 +1168,10 @@ class EnergyConfig:
             self.pv_efficiency = energy_config.get('pv_efficiency', self.pv_efficiency)
             self.pv_area_m2 = energy_config.get('pv_area_m2', self.pv_area_m2)
             self.start_offset_minutes = energy_config.get('start_offset_minutes', self.start_offset_minutes)
-            
+            if (self.use_real_solar_data
+                    and Path(self.solar_data_file).as_posix() in BUNDLED_SOLAR_PATHS):
+                self.solar_data_file = str(resolve_solar_data_path(self.solar_data_file, config_file).resolve())
+
             logger.info(f"EnergyConfig loaded from {config_file}")
             logger.info(f"  Initial energy: {self.initial_energy} J")
             logger.info(f"  Max energy: {self.max_energy} J")
@@ -1417,8 +1429,8 @@ class EnergyHarvester:
                     self.config.pv_area_m2
                 )
 
-                # === 关键修复：当使用真实NASA数据时，不应用时间倍率 ===
-                # NASA数据已经是真实的辐照度值，应用时间倍率会导致收集率被错误放大
+                # === 关键修复：当使用真实太阳能实测数据时，不应用时间倍率 ===
+                # 太阳能实测数据已经是真实的辐照度值，应用时间倍率会导致收集率被错误放大
                 # 只有在不使用真实数据时才应用时间倍率
                 
                 # 调试输出
@@ -1473,15 +1485,15 @@ class EnergyHarvester:
                     logger.debug(f"  倍数: {multiplier:.2f}, 季节: {season}")
 
             # ⭐ V28.11修复：只有在使用模拟数据时才确保最小收集率
-            # 当使用真实NASA太阳能数据时，辐照度就是0（如午夜），收集率应该也是0
+            # 当使用真实太阳能实测数据时，辐照度就是0（如午夜），收集率应该也是0
             # 强制设置最小收集率会导致理论值与实际值不匹配
             if self.solar_loader is None:
                 # 只在不使用真实数据时应用最小收集率
                 total_rate = max(total_rate, 0.000001)
                 # 实验强度因子只作用于 synthetic_piecewise 供能。
-                # 真实 NASA 数据分支保持原始物理量，不受此参数影响。
+                # 真实太阳能数据分支保持原始物理量，不受此参数影响。
                 total_rate *= self.config.harvesting_scale
-            # 使用真实NASA数据时，保持total_rate不变（可能为0）
+            # 使用真实太阳能实测数据时，保持total_rate不变（可能为0）
 
             # 缓存结果
             if len(self._harvest_rate_cache) >= self._cache_max_size:
@@ -1507,7 +1519,7 @@ class EnergyHarvester:
             # 理论收集量
             theoretical_harvest = harvest_rate * duration_ms
         
-            # === 关键修复：移除所有限制，使用完整的NASA数据计算 ===
+            # === 关键修复：移除所有限制，使用完整的太阳能实测数据计算 ===
             # 直接使用理论收集量，不进行任何限制
             total_harvested = theoretical_harvest
 
@@ -1575,7 +1587,7 @@ class EnergyHarvester:
                 # 计算收集的能量
                 total_harvested = avg_rate * harvest_duration
                 
-                # 移除限制：直接使用NASA数据计算的收集量
+                # 移除限制：直接使用太阳能实测数据计算的收集量
                 
                 # 更新最后更新时间
                 self.last_update_time = current_time_ms
@@ -2072,7 +2084,7 @@ class EnergyManager:
             harvest_rate = self.harvester.get_harvesting_rate(current_time_ms)
             
             # 计算收集的能量
-            total_harvested = harvest_rate * duration_ms        # 移除限制：直接使用NASA数据计算的收集量，不进行人为限制
+            total_harvested = harvest_rate * duration_ms        # 移除限制：直接使用太阳能实测数据计算的收集量，不进行人为限制
             
             # 确保非负
             total_harvested = max(total_harvested, 0.0)
@@ -2140,7 +2152,7 @@ class EnergyManager:
         # 计算收集的能量
         harvested = avg_rate * duration_ms
         
-        # 移除限制：直接使用NASA数据计算的收集量
+        # 移除限制：直接使用太阳能实测数据计算的收集量
         
         # 确保非负
         harvested = max(harvested, 0.0)
@@ -2169,7 +2181,7 @@ class EnergyManager:
                 return 0.0
 
             # === 关键修复：移除时间跳跃限制，允许实时收集 ===
-            # NASA太阳能数据是实时的，应该按实际时间流逝收集
+            # 太阳能实测数据是实时的，应该按实际时间流逝收集
 
             # 正常时间流逝，实时收集能量
             logger.debug(f"EnergyManager: 收集能量 start={self.last_update_time}ms elapsed={time_elapsed}ms")

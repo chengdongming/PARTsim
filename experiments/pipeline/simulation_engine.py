@@ -20,6 +20,8 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 
 import yaml
 
+from experiments.common.paths import resolve_solar_data_path
+
 from . import system_model as legacy_rta
 
 from .censoring import next_horizon
@@ -931,9 +933,7 @@ def render_system_projection(
             raise SimulationConfigurationError(
                 "real-solar system requires solar_data_file"
             )
-        solar_path = Path(raw_solar_path)
-        if not solar_path.is_absolute():
-            solar_path = (base_system_path.parent / solar_path).resolve()
+        solar_path = resolve_solar_data_path(raw_solar_path, base_system_path).resolve()
         if not solar_path.is_file():
             raise SimulationConfigurationError(
                 f"solar data file not found: {solar_path}"

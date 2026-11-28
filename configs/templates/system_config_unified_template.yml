@@ -17,21 +17,21 @@ cpu_islands:
     speed_model: energy_aware_model
 
 # =============================================
-# 能量管理配置 - NASA太阳能数据 + 新时间参数
+# 能量管理配置 - SRL分钟级实测太阳能数据
 # =============================================
 energy_management:
   # 基本能量参数
   initial_energy: 100.0                # 初始能量 (J) - 根据测试需求调整
   max_energy: 1000.0                   # 最大能量容量 (J)
 
-  day_of_year: 187
+  day_of_year: 248  # 数据文件第248天 = 2026-07-06 (固定CST)
   time_of_day_ms: 21900000  # 6:05 AM = 6 * 3600 * 1000 + 5 * 60 * 1000 ms
   base_harvesting_rate: 0.054  # synthetic harvesting power baseline (W)
   harvesting_scale: 1.0     # 仅缩放 synthetic_piecewise 收集率
 
-  # === NASA真实太阳能数据配置 ===
-  use_real_solar_data: true            # 启用NASA真实太阳能数据
-  solar_data_file: "data/processed/shenyang_solar_minute.csv"  # NASA数据文件路径
+  # === SRL真实太阳能数据配置 ===
+  use_real_solar_data: true            # 启用SRL真实太阳能数据
+  solar_data_file: "data/processed/srl_edinburg_solar_minute.csv"  # GHI (W/m²), day 1 = 2025-11-01
   pv_efficiency: 0.18                  # 光伏转换效率 (18%)
   pv_area_m2: 1.0                      # 光伏板面积 (平方米)
 

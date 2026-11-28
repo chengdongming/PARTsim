@@ -43,7 +43,8 @@ BASE_SYSTEM = ROOT / "configs/templates/system_config_unified_template.yml"
 CANONICAL_SUPPORT = (
     ROOT / "test/fixtures/solar_energy_support.yaml"
 )
-CANONICAL_SOLAR = ROOT / "data/processed/shenyang_solar_minute.csv"
+CANONICAL_SOLAR = ROOT / "data/processed/srl_edinburg_solar_minute.csv"
+HISTORICAL_SOLAR = ROOT / "data/processed/shenyang_solar_minute.csv"
 VERIFIER_SOURCE = ROOT / "tools/solar_stod_verifier.cpp"
 
 
@@ -367,9 +368,11 @@ def test_expected_proof_row_hash_bits_and_json_mutations_fail_closed(
 
 
 def _same_size_comment_mutation(payload: bytes) -> bytes:
-    marker = b"NASA"
+    # Alter an ASCII word in the first comment, without changing YAML
+    # semantics or depending on the name of the configured solar dataset.
+    marker = b"# CPU"
     assert marker in payload
-    return payload.replace(marker, b"NASB", 1)
+    return payload.replace(marker, b"# CPV", 1)
 
 
 def test_same_size_system_support_and_csv_drift_rejects_stale_expectation(
@@ -774,11 +777,16 @@ def test_canonical_proof_matches_production_replay_and_builds_beta(tmp_path):
     beta = shared.beta(3)
     assert len(beta) == 4
     assert beta[0] == 0
-    assert beta[-1] == sum(shared.harvest_j_per_tick[:3])
+    # The extractor reproduces the simulator's sequential binary64 sum,
+    # not the exact-rational sum of the three binary64 input samples.
+    expected_binary64 = 0.0
+    for sample in shared.harvest_j_per_tick[:3]:
+        expected_binary64 += float(sample)
+    assert beta[-1] == Fraction.from_float(expected_binary64)
 
 
 def test_repository_negative_sentinel_never_produces_proof(tmp_path):
-    physical_rows = CANONICAL_SOLAR.read_text(
+    physical_rows = HISTORICAL_SOLAR.read_text(
         encoding="utf-8"
     ).splitlines()[1:]
     negative_index = next(
@@ -789,7 +797,7 @@ def test_repository_negative_sentinel_never_produces_proof(tmp_path):
     support = tmp_path / "negative-support.yml"
     _write_system(
         system,
-        CANONICAL_SOLAR,
+        HISTORICAL_SOLAR,
         day_of_year=negative_index // 1440 + 1,
         time_of_day_ms=(negative_index % 1440) * 60_000,
     )
@@ -801,7 +809,7 @@ def test_repository_negative_sentinel_never_produces_proof(tmp_path):
             source_root=ROOT,
             base_system_path=system,
             energy_support=support,
-            solar_csv_path=CANONICAL_SOLAR,
+            solar_csv_path=HISTORICAL_SOLAR,
             day_of_year=negative_index // 1440 + 1,
             time_of_day_ms=(negative_index % 1440) * 60_000,
             horizon=1,

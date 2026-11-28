@@ -22,6 +22,8 @@ from typing import Any, Dict, Mapping, Sequence
 
 import yaml
 
+from experiments.common.paths import resolve_solar_data_path
+
 from . import system_model as legacy_rta
 
 from .config import canonical_json, domain_hash, fraction_text
@@ -307,9 +309,7 @@ def _resolve_solar_path_from_system_bytes(
     raw_path = energy.get("solar_data_file")
     if not isinstance(raw_path, str) or not raw_path:
         raise SolarParseProofError("snapshotted system has no solar_data_file")
-    candidate = Path(raw_path)
-    if not candidate.is_absolute():
-        candidate = system_path.parent / candidate
+    candidate = resolve_solar_data_path(raw_path, system_path)
     try:
         return candidate.resolve(strict=True)
     except OSError as exc:
