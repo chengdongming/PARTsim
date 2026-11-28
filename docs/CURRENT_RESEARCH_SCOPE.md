@@ -1,7 +1,7 @@
 # Current PARTsim research scope
 
 The maintained research experiments use a shared energy-harvesting battery
-and same-slot harvest-before-debit timing. Current ASAP-BLOCK response-time
+and same-slot harvest-before-debit timing. Current ASAP-BLOCK and ASAP-NONBLOCK response-time
 analysis assumes unlimited storage, no separate background/static power,
 an exact any-window harvest lower bound, and an every-release pre-harvest
 energy floor. Failure to certify is not proof of unschedulability.
@@ -9,7 +9,7 @@ energy floor. Failure to certify is not proof of unschedulability.
 | Research line | Entry points |
 |---|---|
 | Nine strategies (ASAP/ALAP/ST × BLOCK/NONBLOCK/SYNC) | `scripts/run_scheduler_comparison.py`, `scripts/analyze_scheduler_load_cross.py` |
-| ASAP-BLOCK RTA and paired campaigns | `scripts/run_same_slot_rta.py`, `scripts/run_same_slot_rta_campaign.py` |
+| AB/AN RTA and paired campaigns | `scripts/run_same_slot_rta.py`, `scripts/run_same_slot_rta_campaign.py` |
 | HEARTS-1C vs global AB/AN; partitioned vs global AB | `scripts/run_hearts_1c_comparison.py` |
 
 HEARTS-1C is a sequential, one-dedicated-core specialization, not the original
@@ -19,7 +19,8 @@ parallel DAG algorithm. See each experiment's README for its model scope.
 
 - `libmetasim/`, `librtsim/`, `rtsim/`: native simulation and schedulers.
 - `experiments/scheduler_comparison/`: current comparison instructions.
-- `experiments/same_slot/`: active RTA and paired campaign implementation.
+- `experiments/same_slot/`: active AB/AN RTA, common paired campaign and
+  exact finite AN replay with an optional native trace audit.
 - `experiments/hearts_1c/`: paired exact-energy reference replay.
 - `experiments/common/`: task generation, template resolution, energy and
   solar-data utilities.
