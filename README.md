@@ -13,7 +13,7 @@ modeled separately.
 | Experiment | Entry point |
 |---|---|
 | Nine scheduling strategies | [scheduler comparison](experiments/scheduler_comparison/README.md): `scripts/run_scheduler_comparison.py` |
-| ASAP-BLOCK response-time analysis (unlimited capacity) | [same-slot RTA](experiments/same_slot/README.md): `scripts/run_same_slot_rta.py` and the paired `scripts/run_same_slot_rta_campaign.py` |
+| ASAP-BLOCK / ASAP-NONBLOCK response-time analysis (unlimited capacity) | [same-slot RTA](experiments/same_slot/README.md): `scripts/run_same_slot_rta.py` and the paired `scripts/run_same_slot_rta_campaign.py` |
 | HEARTS-1C vs global AB/AN; partitioned vs global AB | [HEARTS comparison](experiments/hearts_1c/README.md): `scripts/run_hearts_1c_comparison.py` |
 
 See [current research scope](docs/CURRENT_RESEARCH_SCOPE.md) for the dependency

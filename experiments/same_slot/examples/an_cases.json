@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "name": "an-bypass-two-task",
+      "model": {
+        "tasks": [
+          {
+            "name": "high",
+            "C": 1,
+            "D": 3,
+            "T": 4,
+            "power": 186
+          },
+          {
+            "name": "low",
+            "C": 1,
+            "D": 5,
+            "T": 5,
+            "power": 93
+          }
+        ],
+        "processors": 2,
+        "beta": [
+          0,
+          93,
+          186,
+          279,
+          372,
+          465
+        ],
+        "release_floor": 0,
+        "capacity": null,
+        "background_power": 0,
+        "priority": "INPUT_ORDER",
+        "harvest_order": "HARVEST_BEFORE_DEBIT",
+        "release_floor_stage": "PRE_HARVEST",
+        "energy_scale": 250000
+      }
+    }
+  ]
+}

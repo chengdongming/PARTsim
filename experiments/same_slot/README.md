@@ -59,6 +59,8 @@ same-slot mode until their own result contracts are extended.
 
 ## RTA (unlimited capacity, zero background)
 
+### Existing AB implementation
+
 `ab_rta.py` reuses V7.2's accounting, workload envelope and joint
 fixed-point machinery. The new origin witness uses `e0+beta[b+1]`;
 positive-origin witnesses still use `beta[ell]`. The retained-progress
@@ -91,11 +93,106 @@ hashes remain intact; the new runner does not reproduce the old full
 ablation/timing campaign. The older v9.3 proof-oriented RTA pipelines
 remain historical, not silently reinterpreted.
 
+### Integrated AN and unified formal method names
+
+The three AN analyses follow the reviewed integer-window joint F/R theory.
+`an_rta_bounds.py` contains the complete integer pattern configuration
+and the two analytical upper bounds. `an_rta.py` validates the same input
+model as AB, scans all integer candidate windows, and independently
+replays each fixed-point certificate. The labels below are used in
+new experiment results; historical AB command-line options remain valid.
+
+| Formal method | Solver | Auxiliary condition |
+|---|---|---|
+| RTA-AB-OPT | Existing `flow` exact region configuration | Unchanged AB |
+| RTA-AB-ANA | Existing `analytic` relaxation | Unchanged AB |
+| RTA-AB-SEQ | Existing conservative translated stage sequence | Unchanged AB |
+| RTA-AN-OPT | Exact integer E-slot patterns and region counts (former PAT) | Frequency-aware |
+| RTA-AN-ANA | Frequency-aware analytical bound (former PRICE) | Frequency-aware |
+| RTA-AN-MR | Merged-region analytical baseline (former FAST) | Base |
+
+The exact optimization concerns an energy-allocation relaxation, not
+the true system's exact worst-case response time. OPT does not discard
+legal configurations. A protective DP state/option or subset enumeration
+limit (200,000) raises `RESOURCE_LIMIT`; a wall-clock worker limit produces
+`TIMEOUT`. Both are unresolved, not a proof of non-certification or a
+deadline miss. All three AN methods use full integer q..D searches;
+internal concavity search does not skip outer windows. Caches are
+bounded and dropped between cases and before certificate replay.
+
+Use the formal names with the same explicit-case runner, optionally
+repeating `--method` to request several methods on identical inputs:
+
+```sh
+python scripts/run_same_slot_rta.py \
+  --input experiments/same_slot/examples/an_cases.json \
+  --output runs/an-explicit-smoke --timeout 30 \
+  --method RTA-AN-OPT --method RTA-AN-ANA --method RTA-AN-MR
+```
+
+The new mode records solver status, input/model identity, F/R bounds,
+certificate and verification, and solver CPU/wall time, with one bounded
+worker per taskset and method. Formal campaigns reject unsupported model
+fields. Worker and resume checks bind the method, auxiliary bound, status,
+input fingerprint and summary vectors to the replayed certificate; hash
+checks detect accidental edits, not malicious fabrication of proofs. The exact historical code labels and solver
+logic of AB are unchanged. `--an-gap base` fixes the AN auxiliary
+condition to the same base upper bound, allowing the main frequency-aware
+constraint to be compared without conflating auxiliary improvements.
+
+### Exact finite replay and native simulator audit
+
+`an_replay.py` independently runs the integer scheduling rule on an
+explicit finite harvest trace and legal release lists. It checks every
+contained beta window and each release's guaranteed pre-harvest balance,
+stops at the first actual deadline miss, records its boundary and remaining
+execution, and observes first-unit completion and response times. Given a
+verified AN certificate it checks every reached F/R boundary (including
+unfinished jobs), and reports the ratio of the bound to the observed
+maximum response per task where a completion exists. Observed maxima are
+not exact WCRT.
+
+```sh
+python scripts/run_same_slot_an_replay.py \
+  --input experiments/same_slot/examples/an_replay.json \
+  --output runs/an-replay-smoke --native-binary build/rtsim/rtsim
+```
+
+Inputs may contain explicit sporadic `releases` of the form
+`releases[task]=[[release,actual_execution_units],...]`, or periodic WCET
+`offsets` and an exclusive `release_horizon`. Energy is given as scaled
+integers; one energy unit is 1/energy_scale J for native projection.
+An optional `certificate` is the actual AN certificate object. Native
+projection currently audits passing finite periodic WCET trajectories
+with explicit input-order priorities. It uses a sampled electrical-power
+trace, per-task energy factors and a finite battery with capacity above
+initial balance plus all offered harvest. A native audit checks
+every nonempty-ready decision's exact job identities/order, selected
+units, remaining execution and observed budget/cost, arrival and completion
+boundaries, and the total no-clipping energy ledger. Idle slots have no
+native decision event; their balances are reconstructed from the input
+trace and checked against subsequent observed budgets and final totals.
+It retains exact reference, input, native trace and binary hashes.
+
+The existing C++ scheduler still uses binary64 and a decision epsilon.
+The numeric audit decodes reported binary64 values exactly and compares
+them against the rational scaled-integer ledger. Its tolerance is at most
+a quarter of an integer energy unit; exact selected job identities must
+match. Unfinished jobs at a passing finite observation horizon are counted
+as right-censored, not as completed jobs or deadline misses. This audit verifies a
+specified finite trace, not general floating-point or unlimited-capacity
+equivalence. Reference misses are recorded, not misrepresented as a
+complete native audit. Positive floors are checked per release; arbitrary
+finite battery runs or an invalid trace cannot use the theoretical
+certificate automatically. No native scheduler behavior is modified.
+
 ## Regression tests
 
 ```sh
 PARTSIM_TEST_BINARY=build/rtsim/rtsim \
   python -m unittest discover -s test -p test_same_slot_energy.py
+PARTSIM_TEST_BINARY=build/rtsim/rtsim \
+  python -m unittest discover -s test -p test_an_rta_same_slot.py
 ```
 
 Includes analytic/flow checks, finite beta boundary cases, refusal of
@@ -140,7 +237,83 @@ statistics use paired inputs only; paired completed CPU timings omit
 timeouts and errors. The flow suite reports disagreements rather than
 assuming global equivalence.
 
+### New AN and six-method paired suites
+
+All new suites reuse the verified hypothetical cohorts. They do not
+import old results, and do not claim the hypothetical release floor holds
+on an arbitrary native trajectory.
+
+| Suffix | Cohort | Full input count |
+|---|---|---:|
+| coverage | main | 1920 |
+| sensitivity | latest | 720 |
+| reference | flow | 576 |
+| scaling | scale_all | 390 |
+| constructed | constructed | 180 |
+
+Prefix a suffix with `an_` for all three AN methods, or `joint_` for all
+six AB/AN methods. Scaling suites require serial measurements. The
+`an_frequency` suite compares RTA-AN-ANA and RTA-AN-MR on the main cohort
+while fixing the base auxiliary condition. A complete six-method result
+has 15 pair comparisons per cell; the summary marks same-scheduler
+versus cross-scheduler pairs, so a cross-policy bound difference is not
+misinterpreted as pure RTA tightness.
+
+```sh
+python scripts/run_same_slot_rta_campaign.py plan --source-dir runs/rta-inputs \
+  --suite joint_coverage
+python scripts/run_same_slot_rta_campaign.py run --source-dir runs/rta-inputs \
+  --suite joint_constructed --limit 3 --timeout 30 --workers 2 \
+  --output runs/joint-smoke
+python scripts/run_same_slot_rta_campaign.py run --source-dir runs/rta-inputs \
+  --suite an_coverage --timeout 30 --workers 4 --output runs/an-coverage
+```
+
+New manifests include the full-window contract, canonical method names,
+AN auxiliary setting and source hashes. The summary separates certified,
+completed without certificate, timeout, resource limit, technical error
+and missing requests; the certification fraction uses all planned
+inputs. Pair timing omits unresolved requests. The formal full cohorts
+and large-scale native observations still need to be executed; the
+bounded checks are integration tests rather than publication results.
+
+### Target four-core/ten-task study (new, separate task family)
+
+The old frozen cohorts do not contain 4-core/10-task inputs. A separate
+`prepare-fourcore10` command builds them using the maintained UUniFast
+sampler and compensated integer WCET generation, strict RM order,
+D=ceil(0.9T), zero every-release floor and unlimited storage. The
+same CPU skeleton and workload weights are reused across all UE levels.
+UC is sum(C/T)/4 and UE is mean task energy demand divided by mean
+harvest. Each target UE is achieved by exact rational scaling, with a
+recorded common integer denominator. Input generation is independent of
+any solver or simulation outcome, and the loaded cohort is regenerated
+and checked before planning. Defaults are period 40–200, UC 0.1–0.9,
+UE 0.4/0.6/0.8, mean harvest 3, constant supply (gap 1); all are explicit
+configuration parameters except core count, task count and deadline
+ratio. The sample count is required rather than starting large runs
+implicitly.
+
+```sh
+python scripts/run_same_slot_rta_campaign.py prepare-fourcore10 \
+  --output runs/rta-4c10-inputs --samples-per-cell 120 --seed 20261128
+python scripts/run_same_slot_rta_campaign.py plan \
+  --source-dir runs/rta-4c10-inputs --suite joint_fourcore10
+python scripts/run_same_slot_rta_campaign.py run \
+  --source-dir runs/rta-4c10-inputs --suite joint_fourcore10 \
+  --limit 1 --timeout 30 --workers 2 --output runs/4c10-smoke
+```
+
+Use `an_fourcore10` for the three AN methods and
+`an_frequency_fourcore10` for the controlled frequency comparison.
+Omit `--limit` only to run the entire configured cohort. These are newly
+generated hypothetical analysis inputs; there are no full formal results
+yet. Native trace auditing requires independently valid finite harvest
+and release sequences; the generator does not assume a native trace
+satisfies its beta or pre-harvest floor.
+
 The old ablation predicates were developed under debit-before-harvest.
-They are not reused as if proven for same-slot. New ablation and
-RTA-to-simulation WCRT experiments need separate model-specific validation;
+They are not reused as if proven for same-slot. The new controlled
+AN frequency comparison and finite replay do not replace large-scale
+RTA-to-simulation validation;
 a difference between two upper bounds is **not** a measured WCRT error.
