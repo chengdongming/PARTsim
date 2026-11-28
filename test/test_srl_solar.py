@@ -13,9 +13,11 @@ from scripts.prepare_srl_solar import HEADER, prepare
 from experiments.common.paths import resolve_solar_data_path
 from experiments.common.energy_manager import EnergyConfig
 from experiments.common.solar_data_loader import SolarDataLoader
+from experiments.common.srl_window import validate_srl_observed_window
 from experiments.pipeline import exact_energy
 from experiments.pipeline.simulation_engine import (
     construct_paired_harvest_trace, materialize_simulation_inputs,
+    SimulationConfigurationError, construct_shared_solar_input,
 )
 from experiments.pipeline.system_model import load_system_config
 
@@ -107,6 +109,43 @@ class SRLTests(unittest.TestCase):
                     self.assertEqual(config.harvest_source["start_offset_ms"], 356045*60000)
             finally:
                 os.chdir(original_cwd)
+
+    def test_measured_window_rejects_gap_and_end_boundary(self):
+        gap = datetime(2026,8,22,6)
+        offset = int((gap-datetime(2025,11,1)).total_seconds()*1000)
+        validate_srl_observed_window(CSV,offset-60000,59999)
+        with self.assertRaisesRegex(ValueError,"missing-data"):
+            validate_srl_observed_window(CSV,offset-60000,60000)
+        with self.assertRaisesRegex(ValueError,"missing-data"):
+            validate_srl_observed_window(CSV,offset,1)
+        after = offset+121*60000
+        validate_srl_observed_window(CSV,after,1)
+        final = (527040-1)*60000
+        validate_srl_observed_window(CSV,final,59999)
+        with self.assertRaisesRegex(ValueError,"exceeds"):
+            validate_srl_observed_window(CSV,final,60000)
+        with self.assertRaisesRegex(ValueError,"identity mismatch"):
+            validate_srl_observed_window(CSV,after,1,payload=b"wrong bytes")
+        # Exercise both production Python entry points rather than only the
+        # small guard in isolation, including the immutable snapshot path.
+        import yaml
+        with tempfile.TemporaryDirectory() as td:
+            directory = Path(td)
+            system_path=directory/"system.yml"
+            system=yaml.safe_load(TEMPLATE.read_text())
+            energy=system["energy_management"]
+            energy["solar_data_file"]=str(CSV)
+            energy["day_of_year"]=(gap.date()-DAY).days+1
+            energy["time_of_day_ms"]=6*3600000
+            system_path.write_text(yaml.safe_dump(system))
+            with self.assertRaisesRegex(SimulationConfigurationError,"missing-data"):
+                construct_paired_harvest_trace(system_path,1)
+            support=yaml.safe_load((ROOT/"test/fixtures/solar_energy_support.yaml").read_text())
+            support["service_curve"]["system_template"]=str(system_path)
+            support_path=directory/"support.yml"
+            support_path.write_text(yaml.safe_dump(support))
+            with self.assertRaisesRegex(SimulationConfigurationError,"missing-data"):
+                construct_shared_solar_input(system_path,support_path,horizon=1,source_root=ROOT)
 
     def test_native_srl_replay_at_minute_boundary(self):
         binary = Path(os.getenv("PARTSIM_TEST_BINARY", ROOT/"build/rtsim/rtsim"))

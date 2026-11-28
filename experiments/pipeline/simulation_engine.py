@@ -21,6 +21,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 import yaml
 
 from experiments.common.paths import resolve_solar_data_path
+from experiments.common.srl_window import validate_srl_observed_window
 
 from . import system_model as legacy_rta
 
@@ -219,6 +220,17 @@ def construct_shared_solar_input(
                 raise SimulationConfigurationError(
                     f"cannot load snapshotted simulator system: {exc}"
                 ) from exc
+            # Check original dataset coverage before the snapshot path hides
+            # its filename; bind coverage to the exact bytes being replayed.
+            try:
+                validate_srl_observed_window(
+                    snapshot.solar_csv.original_path,
+                    legacy_rta.materialize_runtime_start_offset_ms(
+                        base_system.day_of_year, base_system.time_of_day_ms),
+                    horizon, payload=snapshot.solar_csv.payload,
+                )
+            except ValueError as exc:
+                raise SimulationConfigurationError(str(exc)) from exc
             live_proof = build_live_solar_stod_parse_proof_from_snapshot(
                 snapshot,
                 day_of_year=base_system.day_of_year,
@@ -1030,6 +1042,13 @@ def construct_paired_harvest_trace(
         raise SimulationConfigurationError("harvest horizon must be a positive integer")
     try:
         system = legacy_rta.load_system_config(str(system_path))
+        if system.use_real_solar_data:
+            validate_srl_observed_window(
+                legacy_rta._resolve_solar_path(system),
+                legacy_rta.materialize_runtime_start_offset_ms(
+                    system.day_of_year, system.time_of_day_ms),
+                horizon_ms,
+            )
         raw_trace = legacy_rta._harvest_trace_from_config(system, horizon_ms)
     except Exception as exc:
         raise SimulationConfigurationError(
