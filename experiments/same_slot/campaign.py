@@ -123,7 +123,7 @@ def convert(source):
 
 def source_identity():
     # The active solver imports the frozen optimized analysis dependencies.
-    paths = [Path(__file__), ENTRY] + [Path(__file__).with_name(name) for name in
+    paths = [Path(__file__), ENTRY, ROOT / "scripts/run_same_slot_rta.py"] + [Path(__file__).with_name(name) for name in
              ("ab_rta.py", "an_rta.py", "an_rta_bounds.py", "fourcore10.py")]
     paths += [ROOT/"experiments/common/global_task_generator.py",
               ROOT/"configs/templates/system_config_unified_template.yml"]
@@ -184,6 +184,96 @@ def build_plan(source_dir, suite, limit=None, timeout=30, workers=1):
     return manifest, cases
 
 
+def validate_formal_result(case, method, value, an_gap="auto"):
+    """Bind formal summaries to the requested case and worker certificate.
+
+    The worker already replays the mathematical proof. Resume checks the
+    result's identity, status and vectors without repeating costly analysis.
+    The row hash is an integrity check, not a cryptographic attestation.
+    """
+    if method not in FORMAL_METHODS:
+        return
+
+    def require(condition, message):
+        if not condition:
+            raise ValueError("invalid formal result: " + message)
+
+    status = value.get("status")
+    if status in ("TIMEOUT", "ERROR"):
+        require(not any(k in value for k in ("result", "response_bounds",
+                    "first_bounds", "solver_cpu_seconds")), "unresolved result carries bounds")
+        return
+    require(status in WORKER_STATUSES, "unsupported status")
+    family = scheduler_family(method)
+    require(value.get("scheduler") == family, "wrong scheduler")
+    result = value.get("result")
+    require(isinstance(result, dict), "missing worker result")
+    seconds = value.get("solver_cpu_seconds")
+    require(type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0,
+            "invalid timing")
+    expected_status = result.get("status")
+    if method == "RTA-AB-SEQ" and expected_status == "NO_CERTIFICATE_IN_THIS_FAMILY":
+        expected_status = "NO_CERTIFICATE"
+    require(expected_status == status, "inconsistent terminal status")
+    m = case["model"]
+    rows = m["tasks"]
+    seq = method == "RTA-AB-SEQ"
+    if family == "AN":
+        from . import an_rta
+        gap = an_rta.gap_kind(method, an_gap)
+        version, model = an_rta.VERSION, an_rta.MODEL
+        fp = an_rta.fingerprint(case, method, gap)
+        require(result.get("method") == method and result.get("gap") == gap,
+                "wrong AN method or auxiliary bound")
+    else:
+        from . import ab_rta
+        tasks = [ab_rta.Task(t["name"], t["C"], t["D"], t["T"], t["power"])
+                 for t in rows]
+        if seq:
+            frozen = ab_rta.frozen.model
+            version, model = frozen.VERSION, frozen.MODEL
+            fp = frozen.fingerprint(tasks, m["processors"], m["beta"],
+                                    m["release_floor"] + m["beta"][1])
+        else:
+            version, model = ab_rta.VERSION, ab_rta.MODEL
+            fp = ab_rta.fingerprint(tasks, m["processors"], m["beta"],
+                                    m["release_floor"], AB_ALIASES[method])
+    require(result.get("version") == version and (seq or result.get("model") == model),
+            "wrong worker model/version")
+    require("response_bounds" in value and "first_bounds" in value and "certificate" in result,
+            "missing result fields")
+    cert = result["certificate"]
+    response, first = value["response_bounds"], value["first_bounds"]
+    if status != "CERTIFIED":
+        require(cert is None and response is None and first is None
+                and result.get("verification") is None, "uncertified result carries proof or bounds")
+        return
+    require(isinstance(cert, dict) and isinstance(result.get("verification"), dict)
+            and result["verification"].get("status") == "PASS", "missing verified certificate")
+    require(cert.get("version") == version and cert.get("model") == model
+            and cert.get("input_sha256") == fp, "wrong certificate input/model/version")
+    require(isinstance(response, list) and len(response) == len(rows)
+            and all(type(r) is int and t["C"] <= r <= t["D"]
+                    for t, r in zip(rows, response))
+            and digest(response) == digest(cert.get("response_bounds")), "wrong response vector")
+    if seq:
+        require(first is None and "profile" not in cert, "unexpected SEQ first-unit bound")
+        return
+    profile = cert.get("profile")
+    require(isinstance(profile, (list, tuple)) and len(profile) == len(rows)
+            and all(isinstance(p, (list, tuple)) and len(p) == 2
+                    and type(p[0]) is int and type(p[1]) is int
+                    and 1 <= p[0] <= p[1] == r and (t["C"] != 1 or p[0] == r)
+                    for p, t, r in zip(profile, rows, response)), "invalid certified profile")
+    require(digest(first) == digest([p[0] for p in profile]), "wrong first-unit vector")
+    if family == "AN":
+        require(cert.get("method") == method and cert.get("gap") == gap
+                and cert.get("task_names") == [t["name"] for t in rows]
+                and digest(cert.get("first_bounds")) == digest(first), "wrong AN certificate identity")
+    else:
+        require(cert.get("bound") == AB_ALIASES[method], "wrong AB structural bound")
+
+
 def evaluate(case, method, an_gap="auto"):
     """One bounded-worker request. Preserve legacy AB result payloads."""
     m = case["model"]
@@ -242,6 +332,7 @@ def evaluate(case, method, an_gap="auto"):
                  solver_cpu_seconds=seconds)
     if method in FORMAL_METHODS:
         value.update(first_bounds=first, scheduler=family)
+        validate_formal_result(case, method, value, an_gap)
     return value
 
 
@@ -260,6 +351,7 @@ def execute(case, method, timeout, an_gap="auto"):
             value = json.loads(p.stdout)
             if value.get("status") not in WORKER_STATUSES:
                 raise ValueError("unexpected worker result")
+            validate_formal_result(case, method, value, an_gap)
     except subprocess.TimeoutExpired:
         value = dict(status="TIMEOUT")
     except Exception as exc:
@@ -279,7 +371,7 @@ def compact_row(row):
             if k in row}
 
 
-def checked_rows(path, cases, methods):
+def checked_rows(path, cases, methods, an_gap="auto"):
     allowed = {(c["case_id"], m): c for c in cases for m in methods}
     found = {}
     if path.exists():
@@ -294,6 +386,7 @@ def checked_rows(path, cases, methods):
                         row["row_sha256"] != digest({k:v for k,v in row.items()
                                                      if k != "row_sha256"})):
                     raise ValueError("invalid, changed or duplicate persisted result")
+                validate_formal_result(allowed[key], key[1], row, an_gap)
                 found[key] = compact_row(row)
     return found
 
@@ -383,7 +476,7 @@ def run(source_dir, output, suite, limit=None, timeout=30, workers=1, resume=Fal
         config_path, inputs_path = output/"config.json", output/"inputs.json"
         results = output/"results.jsonl"
         if config_path.exists():
-            if not resume or read_json(config_path) != manifest or read_json(inputs_path) != cases:
+            if not resume or digest(read_json(config_path)) != digest(manifest) or digest(read_json(inputs_path)) != digest(cases):
                 raise ValueError("resume configuration, source, or inputs changed")
         elif resume:
             raise ValueError("no valid config to resume")
@@ -391,7 +484,7 @@ def run(source_dir, output, suite, limit=None, timeout=30, workers=1, resume=Fal
             write_json(config_path, manifest)
             write_json(inputs_path, cases)
         methods = manifest["methods"]
-        rows = checked_rows(results, cases, methods)
+        rows = checked_rows(results, cases, methods, manifest.get("an_gap", "auto"))
         pending = [(c,m) for c in cases for m in methods if (c["case_id"],m) not in rows]
         # Keep only one bounded request per worker in flight, so interrupting
         # a run never waits for an entire queued formal cohort. Each completed
@@ -413,7 +506,7 @@ def run(source_dir, output, suite, limit=None, timeout=30, workers=1, resume=Fal
                     next_future = submit()
                     if next_future is not None:
                         active.add(next_future)
-        rows = checked_rows(results, cases, methods)
+        rows = checked_rows(results, cases, methods, manifest.get("an_gap", "auto"))
         summaries, pairs = summarize(cases, methods, rows)
         write_csv(output/"summary.csv", summaries)
         write_csv(output/"paired.csv", pairs)

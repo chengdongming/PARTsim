@@ -180,9 +180,13 @@ def patterns(tasks, M, k):
     indices = tuple(range(k + 1, len(tasks)))
     eligible = tuple((i for i in indices if tasks[i][3] < p))
     out = []
+    examined = 0
     for a in range(min(k, M - 1) + 1):
         for cnt in range(min(M - a, len(eligible)) + 1):
             for S in combinations(eligible, cnt):
+                examined += 1
+                if examined > DP_STATE_LIMIT:
+                    raise AnalysisResourceLimit("AN pattern subset enumeration exceeds budget")
                 if sum((tasks[i][3] for i in S)) < p:
                     out.append((a,) + tuple((int(i in S) for i in indices)))
                     _guard_size(out)
@@ -272,8 +276,7 @@ def pat_bound(tasks, M, k, X, q, w, b, z, h):
 
 @lru_cache(maxsize=128)
 def price_rules(tasks, M, k):
-    """Precompute fixed nonnegative weight breakpoints with exact scale."""
-    """Prefix threshold families and exact scaled penalty breakpoints."""
+    """Precompute prefix-threshold nonnegative weight breakpoints exactly."""
     lp = tasks[k + 1:]
     pk = tasks[k][3]
     ordered = tuple(sorted((j for j, t in enumerate(lp) if t[3] < pk), key=lambda j: (lp[j][3], j)))

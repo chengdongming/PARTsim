@@ -132,7 +132,10 @@ python scripts/run_same_slot_rta.py \
 
 The new mode records solver status, input/model identity, F/R bounds,
 certificate and verification, and solver CPU/wall time, with one bounded
-worker per taskset and method. The exact historical code labels and solver
+worker per taskset and method. Formal campaigns reject unsupported model
+fields. Worker and resume checks bind the method, auxiliary bound, status,
+input fingerprint and summary vectors to the replayed certificate; hash
+checks detect accidental edits, not malicious fabrication of proofs. The exact historical code labels and solver
 logic of AB are unchanged. `--an-gap base` fixes the AN auxiliary
 condition to the same base upper bound, allowing the main frequency-aware
 constraint to be compared without conflating auxiliary improvements.
@@ -172,8 +175,11 @@ trace and checked against subsequent observed budgets and final totals.
 It retains exact reference, input, native trace and binary hashes.
 
 The existing C++ scheduler still uses binary64 and a decision epsilon.
-Numeric comparison tolerance is bounded below half an integer energy
-unit; exact selected job identities must match. This audit verifies a
+The numeric audit decodes reported binary64 values exactly and compares
+them against the rational scaled-integer ledger. Its tolerance is at most
+a quarter of an integer energy unit; exact selected job identities must
+match. Unfinished jobs at a passing finite observation horizon are counted
+as right-censored, not as completed jobs or deadline misses. This audit verifies a
 specified finite trace, not general floating-point or unlimited-capacity
 equivalence. Reference misses are recorded, not misrepresented as a
 complete native audit. Positive floors are checked per release; arbitrary

@@ -124,6 +124,7 @@ def replay(case, harvest, releases, initial_energy=0, certificate=None):
                               boundary=tick+1, remaining=job["remaining"])
         if missed is not None:
             break
+    unfinished = [dict(j) for j in active if j is not None]
     ratios = None if X is None else [
         None if observed is None else X[i][1]/observed
         for i, observed in enumerate(maxR)]
@@ -133,7 +134,8 @@ def replay(case, harvest, releases, initial_energy=0, certificate=None):
                 first_deadline_miss=missed, certificate_violation=first_violation,
                 max_observed_first_completion=maxF, max_observed_response=maxR,
                 completed_jobs=complete,
-                unfinished_jobs=[dict(j) for j in active if j is not None],
+                unfinished_jobs=unfinished,
+                right_censored_jobs=len(unfinished) if missed is None else None,
                 initial_energy=initial_energy, final_energy=energy,
                 spent_energy=spent_total, slots=slots)
 
@@ -163,13 +165,16 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
     scale = case["model"]["energy_scale"]
     if not math.isfinite(tolerance_j) or tolerance_j <= 0:
         raise ValueError("native numeric observation tolerance must be positive")
-    tolerance_j = min(tolerance_j, 0.25/scale)
+    tolerance = min(Fraction(str(tolerance_j)), Fraction(1, 4*scale))
     if reference["first_deadline_miss"] is not None:
         raise ValueError("native full-trace audit requires reference without a deadline miss")
     if (trace.get("configured_scheduler") != "gpfp_asap_nonblock"
             or trace.get("energy_timing") != "HARVEST_BEFORE_DEBIT"
-            or not trace.get("simulation_completed")
-            or trace.get("observed_simulation_end_ms") != reference["observation_horizon"]):
+            or trace.get("simulation_completed") is not True
+            or trace.get("expected_simulation_horizon_ms") != reference["observation_horizon"]
+            or trace.get("observed_simulation_end_ms") != reference["observation_horizon"]
+            or reference["observed_slots"] != reference["observation_horizon"]
+            or len(reference["slots"]) != reference["observed_slots"]):
         raise ValueError("native trace timing/scheduler/horizon mismatch")
     from experiments.pipeline.task_identity import runtime_task_name_for_source_id
     name_to_index = {runtime_task_name_for_source_id(i): i for i in range(len(tasks))}
@@ -178,14 +183,28 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
     arrivals = []
     completions = []
     native_first = {}
-    max_abs_error_j = 0.0
+    max_abs_error_j = Fraction(0)
+
+    def native_amount(observed):
+        # Native numeric observations are binary64, including the round-trip
+        # decimal strings. Decode that value exactly; never round the
+        # reference scaled-integer ledger to a second binary64 value.
+        if type(observed) not in (int, float, str):
+            raise ValueError("invalid native numeric observation")
+        try:
+            value = float(observed)
+        except (ValueError, OverflowError, TypeError) as exc:
+            raise ValueError("invalid native numeric observation") from exc
+        if not math.isfinite(value):
+            raise ValueError("nonfinite native numeric observation")
+        return Fraction.from_float(value)
 
     def check_amount(observed, units, description, millijoules=False):
         nonlocal max_abs_error_j
-        actual = float(observed)/(1000 if millijoules else 1)
-        expected = units/scale
+        actual = native_amount(observed)/(1000 if millijoules else 1)
+        expected = Fraction(units, scale)
         err = abs(actual-expected)
-        if not math.isfinite(actual) or err > tolerance_j:
+        if err > tolerance:
             raise ValueError(f"native {description} differs: {actual} vs {expected}")
         max_abs_error_j = max(max_abs_error_j, err)
 
@@ -198,7 +217,12 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
     def job_key(job):
         return [name_to_index[job["task_name"]], as_int(job["arrival_time"])]
 
+    generation = trace.get("run_generation")
+    if type(generation) is not int:
+        raise ValueError("missing native run generation")
     for event in events:
+        if event.get("run_generation") != generation:
+            raise ValueError("mixed native run generations")
         kind = event["event_type"]
         if kind == "scheduler_decision":
             t = as_int(event["time"])
@@ -209,7 +233,10 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
                 key = tuple(job_key(j))
                 native_first.setdefault(key, t+1)
         elif kind == "arrival":
-            arrivals.append(job_key(event))
+            key = job_key(event)
+            if as_int(event["time"]) != key[1]:
+                raise ValueError("native arrival event time differs from release")
+            arrivals.append(key)
         elif kind == "end_instance":
             completions.append(job_key(event)+[as_int(event["time"])])
         elif kind == "dline_miss":
@@ -236,7 +263,9 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
             raise ValueError(f"native selected/ready set mismatch at {slot['t']}")
         check_amount(event["available_energy_mJ_exact"], slot["budget"],
                      "decision budget", True)
-        for j, ref in zip(event["ready_jobs"], slot["ready"]):
+        ready_by_key = {tuple(key): ref for key, ref in zip(expected_ready, slot["ready"])}
+        for j in event["ready_jobs"] + event["selected_jobs"]:
+            ref = ready_by_key[tuple(job_key(j))]
             if as_int(j["remaining_time_ms"]) != ref["remaining"]:
                 raise ValueError("native remaining execution mismatch")
             check_amount(j["task_unit_energy_mJ_exact"], tasks[ref["task"]][3],
@@ -253,8 +282,8 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
     ledger = trace["same_slot_energy_summary"]
     offered = sum(s["harvest"] for s in reference["slots"])
     if (ledger["observed_energy_intervals"] != reference["observed_slots"]
-            or float(ledger["clipped_energy_j"]) != 0.0
-            or float(ledger["capacity_j"]) < (reference["initial_energy"]+offered)/scale):
+            or native_amount(ledger["clipped_energy_j"]) != 0
+            or native_amount(ledger["capacity_j"]) < Fraction(reference["initial_energy"]+offered, scale)):
         raise ValueError("native storage may clip or has incomplete accounting")
     for field, units in (("initial_energy_j", reference["initial_energy"]),
                          ("offered_energy_j", offered), ("credited_energy_j", offered),
@@ -264,8 +293,11 @@ def audit_native_trace(case, trace, reference, *, tolerance_j=1e-10):
     return dict(status="PASS_FINITE_TRACE", decision_ticks=decision_count,
                 observed_slots=reference["observed_slots"],
                 completed_jobs=len(expected_completed),
-                maximum_numeric_observation_error_j=max_abs_error_j,
-                tolerance_j=tolerance_j, clipped_energy_j=ledger["clipped_energy_j"])
+                maximum_numeric_observation_error_j=float(max_abs_error_j),
+                maximum_numeric_observation_error_j_exact=str(max_abs_error_j),
+                tolerance_j=float(tolerance), tolerance_j_exact=str(tolerance),
+                right_censored_jobs=reference["right_censored_jobs"],
+                clipped_energy_j=ledger["clipped_energy_j"])
 
 
 def run_native_periodic(case, harvest, initial_energy, offsets, cutoff, binary,

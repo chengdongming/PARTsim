@@ -35,6 +35,9 @@ def normalize_case(case):
         "background_power": 0,
         "priority": "INPUT_ORDER",
     }
+    allowed = set(expected) | {"energy_scale", "processors", "release_floor", "tasks", "beta"}
+    if set(model) != allowed:
+        raise ValueError("AN model must declare exactly the supported analysis fields")
     for key, value in expected.items():
         if key not in model or model[key] != value:
             raise ValueError(f"unsupported AN model field: {key}")
@@ -53,6 +56,8 @@ def normalize_case(case):
         raise ValueError("nonempty task list required")
     names, tasks = [], []
     for row in rows:
+        if not isinstance(row, dict) or set(row) != {"name", "C", "D", "T", "power"}:
+            raise ValueError("invalid or unsupported task model fields")
         name = row["name"]
         task = tuple(row[key] for key in ("C", "D", "T", "power"))
         if not isinstance(name, str) or not name or name in names:
@@ -64,6 +69,8 @@ def normalize_case(case):
             raise ValueError("invalid constrained-deadline task")
         names.append(name)
         tasks.append(task)
+    if not isinstance(model["beta"], (list, tuple)):
+        raise ValueError("beta must be an explicit sequence")
     B = tuple(model["beta"])
     if (len(B) <= max(t[1] for t in tasks)
             or any(type(v) is not int or v < 0 for v in B)

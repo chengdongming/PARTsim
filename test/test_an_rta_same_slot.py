@@ -79,6 +79,12 @@ class ANRTATests(unittest.TestCase):
             wrong=copy.deepcopy(c);wrong["model"][k]=v
             with self.subTest(field=k),self.assertRaises(ValueError):
                 an_rta.analyze_case(wrong)
+        for where in ("model", "task"):
+            wrong=copy.deepcopy(c)
+            target=wrong["model"] if where=="model" else wrong["model"]["tasks"][0]
+            target["unsupported_assumption"]=0
+            with self.assertRaises(ValueError):
+                an_rta.analyze_case(wrong)
         with self.assertRaises(ValueError):
             an_rta.analyze_case(c, method="RTA-AB-OPT")
         cert=an_rta.analyze_case(c)["certificate"]
@@ -141,6 +147,34 @@ class ANReplayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             an_replay.replay(c,[2,2,2],[[[0,1],[1,1]]],3)
 
+    def test_censored_and_exact_numeric_audit(self):
+        c=case_for([(1,3,4,2)],1,[0,0,0,0])
+        r=an_replay.replay(c,[0],[[[0,1]]])
+        self.assertEqual(r["right_censored_jobs"],1)
+        self.assertEqual(r["status"],"PASS_OBSERVED")
+        # The exact budget is greater than 1 J by a single energy unit:
+        # converting both values to float would hide a full unit of error.
+        from experiments.pipeline.task_identity import runtime_task_name_for_source_id
+        scale=10**18
+        c=case_for([(1,1,2,scale+1)],1,[0,scale+1],scale=scale)
+        r=an_replay.replay(c,[scale+1],[[[0,1]]])
+        job=dict(task_name=runtime_task_name_for_source_id(0),arrival_time=0,
+                 remaining_time_ms=1,task_unit_energy_mJ_exact="1000")
+        trace=dict(configured_scheduler="gpfp_asap_nonblock",
+                   energy_timing="HARVEST_BEFORE_DEBIT",simulation_completed=True,
+                   expected_simulation_horizon_ms=1,observed_simulation_end_ms=1,
+                   run_generation=1,events=[
+                       dict(event_type="arrival",time=0,run_generation=1,**job),
+                       dict(event_type="scheduler_decision",time=0,run_generation=1,
+                            scheduler="ASAP-NonBlock",ready_jobs=[job],selected_jobs=[job],
+                            available_energy_mJ_exact="1000"),
+                       dict(event_type="end_instance",time=1,run_generation=1,**job)],
+                   same_slot_energy_summary=dict(observed_energy_intervals=1,capacity_j=2,
+                       clipped_energy_j=0,initial_energy_j=0,offered_energy_j=1,
+                       credited_energy_j=1,consumed_energy_j=1,battery_final_j=0))
+        with self.assertRaisesRegex(ValueError,"decision budget"):
+            an_replay.audit_native_trace(c,trace,r)
+
     def test_native_four_finite_trajectories(self):
         binary=Path(os.getenv("PARTSIM_TEST_BINARY",ROOT/"build/rtsim/rtsim")).resolve()
         if not binary.is_file():
@@ -176,6 +210,20 @@ class ANReplayTests(unittest.TestCase):
                     decision["selected_jobs"]=[]
                     with self.assertRaises(ValueError):
                         an_replay.audit_native_trace(case,modified,ref)
+                    for mutation in ("capacity", "generation", "arrival", "selected_cost"):
+                        modified=copy.deepcopy(native)
+                        if mutation=="capacity":
+                            modified["same_slot_energy_summary"]["capacity_j"]=float("nan")
+                        elif mutation=="generation":
+                            modified["events"][0]["run_generation"]=-1
+                        elif mutation=="arrival":
+                            next(e for e in modified["events"] if e["event_type"]=="arrival")["time"]=-1
+                        else:
+                            decision=next(e for e in modified["events"] if e["event_type"]=="scheduler_decision"
+                                          and e["selected_jobs"])
+                            decision["selected_jobs"][0]["task_unit_energy_mJ_exact"]="0"
+                        with self.assertRaises(ValueError):
+                            an_replay.audit_native_trace(case,modified,ref)
 
 
 class FourCoreTenTests(unittest.TestCase):
@@ -211,6 +259,23 @@ class FourCoreTenTests(unittest.TestCase):
             path.write_text(json.dumps(data))
             with self.assertRaises(ValueError):
                 fourcore10.load(path)
+    def test_strict_exact_generation_contract(self):
+        from experiments.same_slot import fourcore10
+        for uc,ue,rate in (([.1],["2/5"],"3"),([True],["2/5"],"3"),
+                           (["1/10"],["2/5"],3.0)):
+            with self.assertRaises(ValueError):
+                fourcore10.canonical_config(42,1,uc,ue,40,200,rate,1)
+        config=fourcore10.canonical_config(42,1,["1/10"],["2/5"],40,200,"3",1)
+        with tempfile.TemporaryDirectory() as td:
+            output=Path(td);fourcore10.prepare(output,config)
+            path=output/"inputs/fourcore10.json"
+            data=json.loads(path.read_text())
+            data["cases"][0]["metadata"]["sample"]=False
+            data["dataset_sha256"]=campaign.digest({k:v for k,v in data.items() if k!="dataset_sha256"})
+            path.write_text(json.dumps(data))
+            with self.assertRaises(ValueError):
+                fourcore10.load(path)
+
 
 
 class ANCampaignTests(unittest.TestCase):
@@ -231,6 +296,46 @@ class ANCampaignTests(unittest.TestCase):
         self.assertEqual(rows[(case["case_id"],"RTA-AN-OPT")]["first_bounds"],[1,1])
         for name in ("an_coverage","joint_coverage","an_frequency"):
             self.assertIn(name,campaign.METHODS)
+
+    def test_persisted_result_provenance(self):
+        c=case_for([(1,3,4,2),(1,5,5,1)],2,[0,1,2,3,4,5])
+        method=an_rta.ANA
+        valid=campaign.execute(c,method,10)
+        self.assertEqual(valid["status"],"CERTIFIED",valid)
+        with tempfile.TemporaryDirectory() as td:
+            path=Path(td)/"results.jsonl"
+            path.write_text(json.dumps(valid)+"\n")
+            self.assertEqual(len(campaign.checked_rows(path,[c],[method])),1)
+            for mutation in ("response","gap","scheduler","input","status","first","method"):
+                wrong=copy.deepcopy(valid)
+                if mutation=="response": wrong["response_bounds"][0]+=1
+                if mutation=="gap": wrong["result"]["gap"]="base"
+                if mutation=="scheduler": wrong["scheduler"]="AB"
+                if mutation=="input": wrong["result"]["certificate"]["input_sha256"]="0"*64
+                if mutation=="status": wrong["status"]="NO_CERTIFICATE"
+                if mutation=="first": wrong["first_bounds"][0]=True
+                if mutation=="method": wrong["result"]["method"]=an_rta.OPT
+                wrong["row_sha256"]=campaign.digest({k:v for k,v in wrong.items() if k!="row_sha256"})
+                path.write_text(json.dumps(wrong)+"\n")
+                with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                    campaign.checked_rows(path,[c],[method])
+            base=campaign.execute(c,method,10,an_gap="base")
+            self.assertEqual(base["status"],"CERTIFIED",base)
+            path.write_text(json.dumps(base)+"\n")
+            self.assertEqual(len(campaign.checked_rows(path,[c],[method],an_gap="base")),1)
+            with self.assertRaises(ValueError):
+                campaign.checked_rows(path,[c],[method])
+        # Rejected worker payload must be a technical error, not a certificate.
+        wrong=campaign.evaluate(c,method)
+        wrong["scheduler"]="AB"
+        with patch.object(campaign.subprocess,"run",return_value=campaign.subprocess.CompletedProcess(
+                [],0,stdout=json.dumps(wrong),stderr="")):
+            self.assertEqual(campaign.execute(c,method,10)["status"],"ERROR")
+        # Genuine no-certificate results are still accepted, for all methods.
+        c=case_for([(1,3,4,2)],2,[0,0,0,0])
+        for m in campaign.FORMAL_METHODS:
+            row=campaign.execute(c,m,10)
+            self.assertEqual(row["status"],"NO_CERTIFICATE",row)
 
     def test_worker_resource_and_timeout_states(self):
         c=case_for([(1,3,4,2),(1,5,5,1)],2,[0,1,2,3,4,5])

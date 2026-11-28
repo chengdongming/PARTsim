@@ -35,7 +35,7 @@ def main():
     (args.output/"reference.json").write_text(json.dumps(reference, indent=2)+"\n")
     status = {k: reference[k] for k in ("status", "first_deadline_miss",
                 "certificate_violation", "max_observed_first_completion", "max_observed_response",
-                "response_bound_to_observed_max")}
+                "response_bound_to_observed_max", "right_censored_jobs")}
     if args.native_binary:
         if reference["first_deadline_miss"] is None:
             try:

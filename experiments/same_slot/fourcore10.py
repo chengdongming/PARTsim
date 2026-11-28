@@ -26,6 +26,10 @@ def canonical_config(seed, samples, uc, ue, period_min, period_max, harvest_rate
         raise ValueError("integer generator parameters required")
     if seed < 0 or samples < 1 or not 1 <= period_min <= period_max or harvest_gap < 1:
         raise ValueError("invalid seed, samples, period range or harvest gap")
+    if not isinstance(uc, (list, tuple)) or not isinstance(ue, (list, tuple)):
+        raise ValueError("UC and UE grids must be explicit sequences")
+    if any(type(v) not in (str, int, Fraction) for v in (*uc, *ue, harvest_rate)):
+        raise ValueError("utilization and harvest values must be exact rational strings or integers")
     ucs, ues, rate = tuple(map(Fraction,uc)), tuple(map(Fraction,ue)), Fraction(harvest_rate)
     if (not ucs or len(set(ucs))!=len(ucs) or any(not 0<x<=1 for x in ucs)
             or not ues or len(set(ues))!=len(ues) or any(x<=0 for x in ues) or rate<=0):
@@ -120,7 +124,7 @@ def prepare(output, config):
     path=Path(output)/"inputs/fourcore10.json"
     path.parent.mkdir(parents=True,exist_ok=True)
     if path.exists():
-        if json.loads(path.read_text())!=data:
+        if digest(json.loads(path.read_text())) != digest(data):
             raise ValueError("refusing to overwrite different fourcore10 inputs")
     else:
         write_json(path,data)
@@ -135,6 +139,6 @@ def load(path):
             {k:v for k,v in data.items() if k!="dataset_sha256"}):
         raise ValueError("fourcore10 dataset schema or hash mismatch")
     expected=generate(data["generation"])
-    if data["cases"]!=expected:
+    if digest(data["cases"]) != digest(expected):
         raise ValueError("fourcore10 cases differ from deterministic generation")
     return data
