@@ -1244,7 +1244,7 @@ def _synthetic_service_config(template_name):
 
 def _synthetic_template(source, *, solar_file, pv_area, pv_efficiency):
     rendered = source.replace(
-        'solar_data_file: "data/processed/shenyang_solar_minute.csv"',
+        'solar_data_file: "data/processed/srl_edinburg_solar_minute.csv"',
         f'solar_data_file: "{solar_file}"',
     )
     rendered = rendered.replace("pv_area_m2: 1.0", f"pv_area_m2: {pv_area}")
@@ -1256,7 +1256,9 @@ def _synthetic_template(source, *, solar_file, pv_area, pv_efficiency):
 
 def test_synthetic_service_does_not_require_solar_csv(tmp_path, monkeypatch):
     source = (
-        taskset_store.PROJECT_ROOT / experiment.ORDINARY_SYSTEM_TEMPLATE
+        taskset_store.resolve_system_template(
+            experiment.ORDINARY_SYSTEM_TEMPLATE, taskset_store.PROJECT_ROOT,
+        )
     ).read_text(encoding="utf-8")
     template = tmp_path / "synthetic.yml"
     template.write_text(
@@ -1289,7 +1291,9 @@ def test_synthetic_service_identity_ignores_solar_and_pv_fields(
     tmp_path, monkeypatch,
 ):
     source = (
-        taskset_store.PROJECT_ROOT / experiment.ORDINARY_SYSTEM_TEMPLATE
+        taskset_store.resolve_system_template(
+            experiment.ORDINARY_SYSTEM_TEMPLATE, taskset_store.PROJECT_ROOT,
+        )
     ).read_text(encoding="utf-8")
     template = tmp_path / "synthetic.yml"
     monkeypatch.setattr(taskset_store, "PROJECT_ROOT", tmp_path)

@@ -20,6 +20,10 @@ See [current research scope](docs/CURRENT_RESEARCH_SCOPE.md) for the dependency
 map and validation commands. The [historical experiment index](docs/HISTORICAL_EXPERIMENTS.md)
 documents the archived and retained compatibility routes.
 
+## Solar data
+
+The current real-solar templates use [UTRGV SRL measured 1-minute GHI](data/README.md). The historical NASA trace and synthetic harvesting models are retained.
+
 ## Build
 
 ```bash
